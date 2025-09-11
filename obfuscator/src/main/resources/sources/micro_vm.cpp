@@ -8,8 +8,6 @@ static constexpr uint64_t KEY = 0x5F3759DFB3E8A1C5ULL; // mixed 32/64-bit key
 
 Instruction encode(OpCode op, int64_t operand, uint64_t key) {
     return Instruction{
-        // XOR promotes operands to int; cast the result back to uint8_t to
-        // avoid narrowing warnings on MSVC when list-initializing
         static_cast<uint8_t>(static_cast<uint8_t>(op) ^ static_cast<uint8_t>(key)),
         operand ^ static_cast<int64_t>(key * 0x9E3779B97F4A7C15ULL)
     };
