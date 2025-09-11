@@ -47,16 +47,22 @@ $register_code
         env->DeleteLocalRef(loader_name);
         env->DeleteLocalRef(system_loader);
         env->DeleteLocalRef(class_loader_class);
-        if (env->ExceptionCheck())
+        if (env->ExceptionCheck() || loader_class == nullptr)
             return;
-        env->RegisterNatives(loader_class, loader_methods, 1);
+        if (env->RegisterNatives(loader_class, loader_methods, 1) != JNI_OK || env->ExceptionCheck()) {
+            env->DeleteLocalRef(loader_class);
+            return;
+        }
         env->DeleteLocalRef(loader_class);
     }
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *env = nullptr;
-    vm->GetEnv((void **)&env, JNI_VERSION_1_8);
+    if (vm->GetEnv((void **)&env, JNI_VERSION_1_8) != JNI_OK || env == nullptr)
+        return JNI_ERR;
     native_jvm::prepare_lib(env);
+    if (env->ExceptionCheck())
+        return JNI_ERR;
     return JNI_VERSION_1_8;
 }
