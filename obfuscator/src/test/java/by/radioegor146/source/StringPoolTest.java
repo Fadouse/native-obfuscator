@@ -14,47 +14,45 @@ public class StringPoolTest {
 
         assertEquals(
                 "#include \"string_pool.hpp\"\n" +
+                        "#include <cstddef>\n" +
                         "\n" +
                         "namespace native_jvm::string_pool {\n" +
-                        "    static char pool[5LL] = { 11, 150, 70, 1, 0 };\n" +
+                        "    static char pool[5LL] = { 11, 150, 70, 1, 71 };\n" +
                         "\n" +
                         "    void decrypt_pool() {\n" +
                         "        for (size_t i = 0; i < 5LL; ++i) {\n" +
-                        "            if (pool[i] != 0) {\n" +
-                        "                unsigned char key = (i * 0x5A + 0xAC) & 0xFF;\n" +
-                        "                unsigned char val = static_cast<unsigned char>(pool[i]) - 0x33;\n" +
-                        "                pool[i] = static_cast<char>(val ^ key);\n" +
-                        "            }\n" +
+                        "            unsigned char key = (i * 0x5A + 0xAC) & 0xFF;\n" +
+                        "            unsigned char val = static_cast<unsigned char>(pool[i]) - 0x33;\n" +
+                        "            pool[i] = static_cast<char>(val ^ key);\n" +
                         "        }\n" +
                         "    }\n" +
                         "\n" +
                         "    char *get_pool() {\n" +
                         "        return pool;\n" +
                         "    }\n" +
-                        "}", stringPool.build());
+                        "}\n", stringPool.build());
 
         stringPool.get("other");
 
         assertEquals(
                 "#include \"string_pool.hpp\"\n" +
+                        "#include <cstddef>\n" +
                         "\n" +
                         "namespace native_jvm::string_pool {\n" +
-                        "    static char pool[11LL] = { 11, 150, 70, 1, 0, 52, 239, 125, 76, 215, 0 };\n" +
+                        "    static char pool[11LL] = { 11, 150, 70, 1, 71, 52, 239, 125, 76, 215, 99 };\n" +
                         "\n" +
                         "    void decrypt_pool() {\n" +
                         "        for (size_t i = 0; i < 11LL; ++i) {\n" +
-                        "            if (pool[i] != 0) {\n" +
-                        "                unsigned char key = (i * 0x5A + 0xAC) & 0xFF;\n" +
-                        "                unsigned char val = static_cast<unsigned char>(pool[i]) - 0x33;\n" +
-                        "                pool[i] = static_cast<char>(val ^ key);\n" +
-                        "            }\n" +
+                        "            unsigned char key = (i * 0x5A + 0xAC) & 0xFF;\n" +
+                        "            unsigned char val = static_cast<unsigned char>(pool[i]) - 0x33;\n" +
+                        "            pool[i] = static_cast<char>(val ^ key);\n" +
                         "        }\n" +
                         "    }\n" +
                         "\n" +
                         "    char *get_pool() {\n" +
                         "        return pool;\n" +
                         "    }\n" +
-                        "}", stringPool.build());
+                        "}\n", stringPool.build());
     }
 
     @Test

@@ -82,7 +82,8 @@ public class StringPool {
                         bytes.add(((b ^ key) + 0x33) & 0xFF);
                         index[0]++;
                     }
-                    bytes.add(0);
+                    int key = (index[0] * 0x5A + 0xAC) & 0xFF;
+                    bytes.add((key + 0x33) & 0xFF);
                     index[0]++;
                 });
 
