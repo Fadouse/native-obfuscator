@@ -71,6 +71,11 @@ public class ClassicTest implements Executable {
                     .filter(Files::isRegularFile)
                     .forEach(resourceFiles::add);
 
+            if (!useKrakatau && !krakatauFiles.isEmpty()) {
+                System.err.println("Skipping test due to missing Krakatau2");
+                return;
+            }
+
             Optional<String> mainClassOptional = javaFiles.stream()
                     .filter(uncheckedPredicate(p -> Files.lines(p).collect(Collectors.joining("\n"))
                             .matches("(?s).*public(\\s+static)?\\s+void\\s+main.*")))

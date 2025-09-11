@@ -13,26 +13,30 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IADD:
                 instructionName = null;
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i);",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        props.get("trycatchhandler")));
                 break;
             case Opcodes.ISUB:
                 instructionName = null;
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i);",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        props.get("trycatchhandler")));
                 break;
             case Opcodes.IMUL:
                 instructionName = null;
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i);",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        props.get("trycatchhandler")));
                 break;
             case Opcodes.IDIV:
                 instructionName = null;
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i);",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        props.get("trycatchhandler")));
                 break;
             default:
                 // handled via snippets
