@@ -39,6 +39,11 @@ Instruction encode(OpCode op, int64_t operand, uint64_t seed);
 // returned to allow the VM to participate in obfuscation routines.
 int64_t execute(const Instruction* code, size_t length, uint64_t seed = 0);
 
+// Convenience helper that builds a tiny program performing a binary
+// operation on two operands using the VM.  It returns the top of the VM
+// stack after execution which represents the result of the operation.
+int64_t binop(OpCode op, int64_t a, int64_t b);
+
 } // namespace native_jvm::vm
 
 // NOLINTEND

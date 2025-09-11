@@ -103,5 +103,15 @@ halt:
     return sp ? stack[sp - 1] : 0;
 }
 
+int64_t binop(OpCode op, int64_t a, int64_t b) {
+    uint64_t seed = (static_cast<uint64_t>(a) << 32) ^
+                    static_cast<uint64_t>(b) ^ KEY;
+    Instruction program[3];
+    program[0] = encode(OP_PUSH, a, seed);
+    program[1] = encode(OP_PUSH, b, seed);
+    program[2] = encode(op, 0, seed);
+    return execute(program, 3, seed);
+}
+
 } // namespace native_jvm::vm
 // NOLINTEND

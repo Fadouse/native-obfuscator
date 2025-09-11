@@ -8,6 +8,7 @@ namespace native_jvm::string_pool {
     static unsigned char key[32] = $key;
     static unsigned char nonce[12] = $nonce;
     static char pool[$size] = $value;
+    static bool decoded[$size] = {false};
 
     static inline uint32_t rotl(uint32_t v, int c) {
         return (v << c) | (v >> (32 - c));
@@ -44,6 +45,10 @@ namespace native_jvm::string_pool {
     }
 
     char *decrypt_string(size_t offset) {
+        if (decoded[offset]) {
+            return pool + offset;
+        }
+
         using namespace native_jvm::vm;
         uint64_t seed = static_cast<uint64_t>(offset);
         Instruction program[5];
@@ -77,6 +82,7 @@ namespace native_jvm::string_pool {
                 stream = reinterpret_cast<unsigned char *>(block);
             }
         }
+        decoded[offset] = true;
         return pool + offset;
     }
 }
