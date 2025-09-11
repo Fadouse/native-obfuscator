@@ -33,7 +33,9 @@ public class StringPool {
             pool.put(value, length);
             length += getModifiedUtf8Bytes(value).length + 1;
         }
-        return String.format("((char *)(string_pool + %dLL))", pool.get(value));
+        // Return the offset inside the encrypted pool. The caller is responsible
+        // for invoking string_pool::decrypt_string with this offset.
+        return String.format("%dLL", pool.get(value));
     }
 
     private static byte[] getModifiedUtf8Bytes(String str) {

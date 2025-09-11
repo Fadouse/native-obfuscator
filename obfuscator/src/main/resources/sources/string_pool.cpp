@@ -42,25 +42,30 @@ namespace native_jvm::string_pool {
         }
     }
 
-    void decrypt_pool() {
+    char *decrypt_string(size_t offset) {
         uint32_t key_words[8];
         uint32_t nonce_words[3];
         std::memcpy(key_words, key, 32);
         std::memcpy(nonce_words, nonce, 12);
 
-        size_t len = $size;
+        size_t pos = offset;
         uint32_t block[16];
-        uint32_t counter = 0;
-        for (size_t i = 0; i < len; ) {
-            chacha_block(block, key_words, nonce_words, counter++);
-            unsigned char *stream = reinterpret_cast<unsigned char *>(block);
-            for (int j = 0; j < 64 && i < len; ++j, ++i) {
-                pool[i] ^= static_cast<char>(stream[j]);
+        uint32_t counter = static_cast<uint32_t>(pos / 64);
+        chacha_block(block, key_words, nonce_words, counter);
+        unsigned char *stream = reinterpret_cast<unsigned char *>(block);
+        int index = static_cast<int>(pos % 64);
+
+        while (true) {
+            pool[pos] ^= static_cast<char>(stream[index]);
+            if (pool[pos] == '\0') break;
+            ++pos;
+            ++index;
+            if (index == 64) {
+                index = 0;
+                chacha_block(block, key_words, nonce_words, ++counter);
+                stream = reinterpret_cast<unsigned char *>(block);
             }
         }
-    }
-
-    char *get_pool() {
-        return pool;
+        return pool + offset;
     }
 }

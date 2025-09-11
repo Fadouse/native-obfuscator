@@ -27,12 +27,15 @@ struct Instruction {
     int64_t operand; // encrypted operand
 };
 
-// Helper that produces an encoded instruction using the global key.
-Instruction encode(OpCode op, int64_t operand, uint64_t key);
+// Helper that produces an encoded instruction using the same state
+// evolution as the runtime interpreter. The seed must match the value
+// passed to execute().
+Instruction encode(OpCode op, int64_t operand, uint64_t seed);
 
-// Executes a program encoded as an array of Instructions.  The
-// interpreter uses a stack based execution model and performs dynamic
-// decoding of every instruction.
+// Executes a program encoded as an array of Instructions.  The interpreter
+// uses a stack based execution model with two evolving internal state
+// registers.  Every instruction is decoded dynamically which complicates
+// static analysis of the resulting native code.
 void execute(const Instruction* code, size_t length, uint64_t seed = 0);
 
 } // namespace native_jvm::vm
