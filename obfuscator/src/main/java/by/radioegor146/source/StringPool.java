@@ -71,15 +71,19 @@ public class StringPool {
     }
 
     public String build() {
-        List<Byte> bytes = new ArrayList<>();
+        List<Integer> bytes = new ArrayList<>();
+        int[] index = {0};
         pool.entrySet().stream()
                 .sorted(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .forEach(string -> {
                     for (byte b : getModifiedUtf8Bytes(string)) {
-                        bytes.add(b);
+                        int key = (index[0] * 0x5A + 0xAC) & 0xFF;
+                        bytes.add(((b ^ key) + 0x33) & 0xFF);
+                        index[0]++;
                     }
-                    bytes.add((byte) 0);
+                    bytes.add(0);
+                    index[0]++;
                 });
 
         String result = String.format("{ %s }", bytes.stream().map(String::valueOf)
