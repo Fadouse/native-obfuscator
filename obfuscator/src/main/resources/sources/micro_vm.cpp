@@ -1,93 +1,89 @@
 #include "micro_vm.hpp"
 #include <iostream>
 
+// NOLINTBEGIN - obfuscated control flow by design
 namespace native_jvm::vm {
 
-void execute(const Instruction* code, size_t length) {
-    int32_t stack[256];
+static constexpr uint64_t KEY = 0x5F3759DFB3E8A1C5ULL; // mixed 32/64-bit key
+
+Instruction encode(OpCode op, int64_t operand, uint64_t key) {
+    return Instruction{
+        static_cast<uint8_t>(op) ^ static_cast<uint8_t>(key),
+        operand ^ static_cast<int64_t>(key * 0x9E3779B97F4A7C15ULL)
+    };
+}
+
+void execute(const Instruction* code, size_t length, uint64_t seed) {
+    int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
-    int32_t tmp = 0;
-    constexpr uint32_t KEY = 0x5F3759DFu; // obfuscation key
-    uint32_t state = KEY ^ 0u; // initial state
+    int64_t tmp = 0;
+    uint64_t state = KEY ^ seed;
+    OpCode op = OP_NOP;
 
-    while (true) {
-        switch (state) {
-            case KEY ^ 0u: { // fetch & dispatch
-                if (pc >= length) {
-                    state = KEY ^ 7u;
-                    break;
-                }
-                OpCode op = code[pc].op;
-                tmp = code[pc].operand;
-                ++pc;
-                switch (op) {
-                    case OP_PUSH: state = KEY ^ 1u; break;
-                    case OP_ADD:  state = KEY ^ 2u; break;
-                    case OP_SUB:  state = KEY ^ 3u; break;
-                    case OP_MUL:  state = KEY ^ 4u; break;
-                    case OP_DIV:  state = KEY ^ 5u; break;
-                    case OP_PRINT:state = KEY ^ 6u; break;
-                    case OP_HALT: default: state = KEY ^ 7u; break;
-                }
-                break;
-            }
-            case KEY ^ 1u: { // push
-                if (sp < 256) {
-                    stack[sp++] = tmp;
-                }
-                state = KEY ^ 0u;
-                break;
-            }
-            case KEY ^ 2u: { // add
-                if (sp >= 2) {
-                    stack[sp - 2] += stack[sp - 1];
-                    --sp;
-                }
-                state = KEY ^ 0u;
-                break;
-            }
-            case KEY ^ 3u: { // sub
-                if (sp >= 2) {
-                    stack[sp - 2] -= stack[sp - 1];
-                    --sp;
-                }
-                state = KEY ^ 0u;
-                break;
-            }
-            case KEY ^ 4u: { // mul
-                if (sp >= 2) {
-                    stack[sp - 2] *= stack[sp - 1];
-                    --sp;
-                }
-                state = KEY ^ 0u;
-                break;
-            }
-            case KEY ^ 5u: { // div
-                if (sp >= 2) {
-                    int32_t b = stack[sp - 1];
-                    if (b != 0) {
-                        stack[sp - 2] /= b;
-                    }
-                    --sp;
-                }
-                state = KEY ^ 0u;
-                break;
-            }
-            case KEY ^ 6u: { // print
-                if (sp >= 1) {
-                    std::cout << stack[sp - 1] << std::endl;
-                    --sp;
-                }
-                state = KEY ^ 0u;
-                break;
-            }
-            case KEY ^ 7u:
-            default:
-                return; // halt
-        }
+    goto dispatch; // start of the threaded interpreter
+
+// Main dispatch loop
+dispatch:
+    state = (state + KEY) ^ (KEY >> 3); // evolve state
+    if (pc >= length) goto halt;
+    op = static_cast<OpCode>(code[pc].op ^ static_cast<uint8_t>(state));
+    tmp = code[pc].operand ^ static_cast<int64_t>(state * 0x9E3779B97F4A7C15ULL);
+    ++pc;
+    switch (op) {
+        case OP_PUSH:  goto do_push;
+        case OP_ADD:   goto do_add;
+        case OP_SUB:   goto do_sub;
+        case OP_MUL:   goto do_mul;
+        case OP_DIV:   goto do_div;
+        case OP_PRINT: goto do_print;
+        case OP_NOP:   goto junk; // never executed by valid programs
+        default:       goto halt;
     }
+
+// Actual operations
+// Each block returns to dispatch via an explicit goto to hide
+// structured control-flow patterns from static analysis.
+do_push:
+    if (sp < 256) stack[sp++] = tmp;
+    goto dispatch;
+
+do_add:
+    if (sp >= 2) { stack[sp - 2] += stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_sub:
+    if (sp >= 2) { stack[sp - 2] -= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_mul:
+    if (sp >= 2) { stack[sp - 2] *= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_div:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        if (b != 0) stack[sp - 2] /= b;
+        --sp;
+    }
+    goto dispatch;
+
+do_print:
+    if (sp >= 1) {
+        std::cout << stack[sp - 1] << std::endl;
+        --sp;
+    }
+    goto dispatch;
+
+// Dummy branch used only to confuse decompilers
+junk:
+    state ^= KEY << 7;
+    goto dispatch;
+
+// Exit point
+halt:
+    return;
 }
 
 } // namespace native_jvm::vm
-
+// NOLINTEND
