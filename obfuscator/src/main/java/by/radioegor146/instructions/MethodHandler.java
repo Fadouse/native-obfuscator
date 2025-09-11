@@ -198,7 +198,7 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
         props.put("methodid", context.getCachedMethods().getPointer(methodInfo));
 
         context.output.append(
-                String.format("if (!cmethods[%d]) { cmethods[%d] = env->Get%sMethodID(%s, %s, %s); %s  } ",
+                String.format("if (!cmethods[%d]) { cmethods[%d] = env->Get%sMethodID(%s, string_pool::decrypt_string(%s), string_pool::decrypt_string(%s)); %s  } ",
                         methodId,
                         methodId,
                         isStatic ? "Static" : "",
