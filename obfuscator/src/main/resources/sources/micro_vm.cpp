@@ -13,7 +13,7 @@ Instruction encode(OpCode op, int64_t operand, uint64_t key) {
     };
 }
 
-int64_t execute(const Instruction* code, size_t length, uint64_t seed) {
+int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t seed) {
     int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
@@ -64,7 +64,11 @@ do_mul:
 do_div:
     if (sp >= 2) {
         int64_t b = stack[sp - 1];
-        if (b != 0) stack[sp - 2] /= b;
+        if (b == 0) {
+            env->ThrowNew(env->FindClass("java/lang/ArithmeticException"), "/ by zero");
+            goto halt;
+        }
+        stack[sp - 2] /= b;
         --sp;
     }
     goto dispatch;
@@ -86,7 +90,7 @@ halt:
     return (sp > 0) ? stack[sp - 1] : 0;
 }
 
-int64_t run_arith_vm(OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
+int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
     Instruction program[4];
     uint64_t state = KEY ^ seed;
 
@@ -103,7 +107,7 @@ int64_t run_arith_vm(OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
     state = (state + KEY) ^ (KEY >> 3);
     program[3] = encode(OP_HALT, 0, state);
 
-    return execute(program, 4, seed);
+    return execute(env, program, 4, seed);
 }
 
 } // namespace native_jvm::vm
