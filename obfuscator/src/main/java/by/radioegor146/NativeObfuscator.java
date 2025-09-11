@@ -321,7 +321,7 @@ public class NativeObfuscator {
                     cMakeBuilder.addClassFile("output/" + hiddenClassFileName + ".cpp");
 
                     mainSourceBuilder.addHeader(hiddenClassFileName + ".hpp");
-                    mainSourceBuilder.registerDefine(stringPool.get(hiddenClass.name), hiddenClassFileName);
+                    mainSourceBuilder.registerDefine("string_pool::decrypt_string(" + stringPool.get(hiddenClass.name) + ")", hiddenClassFileName);
 
                     ClassWriter classWriter = new SafeClassWriter(metadataReader, Opcodes.ASM7 | ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
                     hiddenClass.accept(classWriter);

@@ -19,9 +19,6 @@ namespace native_jvm {
         if (env->ExceptionCheck())
             return;
 
-        char* string_pool = string_pool::get_pool();
-        string_pool::decrypt_pool();
-
 $register_code
 
         if (env->ExceptionCheck())

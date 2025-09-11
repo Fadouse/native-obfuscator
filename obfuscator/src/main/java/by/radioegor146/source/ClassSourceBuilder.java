@@ -44,7 +44,6 @@ public class ClassSourceBuilder implements AutoCloseable {
         cppWriter.append("\n");
         cppWriter.append("// ").append(Util.escapeCommentString(className)).append("\n");
         cppWriter.append("namespace native_jvm::classes::__ngen_").append(filename).append(" {\n\n");
-        cppWriter.append("    char *string_pool;\n\n");
 
         if (strings > 0) {
             cppWriter.append(String.format("    jstring cstrings[%d];\n", strings));
@@ -83,10 +82,11 @@ public class ClassSourceBuilder implements AutoCloseable {
 
     public void registerMethods(NodeCache<String> strings, NodeCache<String> classes, String nativeMethods, List<HiddenCppMethod> hiddenMethods) throws IOException {
         cppWriter.append("    void __ngen_register_methods(JNIEnv *env, jclass clazz) {\n");
-        cppWriter.append("        string_pool = string_pool::get_pool();\n\n");
 
         for (Map.Entry<String, Integer> string : strings.getCache().entrySet()) {
-            cppWriter.append("        if (jstring str = env->NewStringUTF(").append(stringPool.get(string.getKey())).append(")) { if (jstring int_str = utils::get_interned(env, str)) { ")
+            cppWriter.append("        if (jstring str = env->NewStringUTF(string_pool::decrypt_string(")
+                    .append(stringPool.get(string.getKey()))
+                    .append("))) { if (jstring int_str = utils::get_interned(env, str)) { ")
                     .append(String.format("cstrings[%d] = ", string.getValue()))
                     .append("(jstring) env->NewGlobalRef(int_str); env->DeleteLocalRef(str); env->DeleteLocalRef(int_str); } }\n");
         }
@@ -101,6 +101,7 @@ public class ClassSourceBuilder implements AutoCloseable {
             cppWriter.append("        };\n\n");
             cppWriter.append("        if (clazz) env->RegisterNatives(clazz, __ngen_methods, sizeof(__ngen_methods) / sizeof(__ngen_methods[0]));\n");
             cppWriter.append("        if (env->ExceptionCheck()) { fprintf(stderr, \"Exception occured while registering native_jvm for %s\\n\", ")
+                    .append("string_pool::decrypt_string(")
                     .append(stringPool.get(className.replace('/', '.')))
                     .append("); fflush(stderr); env->ExceptionDescribe(); env->ExceptionClear(); }\n");
             cppWriter.append("\n");
@@ -114,17 +115,19 @@ public class ClassSourceBuilder implements AutoCloseable {
 
             for (ClassNode hiddenClazz : sortedHiddenMethods.keySet()) {
                 cppWriter.append("        {\n");
-                cppWriter.append("            jclass hidden_class = env->FindClass(").append(stringPool.get(hiddenClazz.name)).append(");\n");
+                cppWriter.append("            jclass hidden_class = env->FindClass(string_pool::decrypt_string(")
+                        .append(stringPool.get(hiddenClazz.name)).append("));\n");
                 cppWriter.append("            JNINativeMethod __ngen_hidden_methods[] = {\n");
                 for (HiddenCppMethod method : sortedHiddenMethods.get(hiddenClazz)) {
                     cppWriter.append(String.format("                { %s, %s, (void *)&%s },\n",
-                            stringPool.get(method.getHiddenMethod().getMethodNode().name),
-                            stringPool.get(method.getHiddenMethod().getMethodNode().desc),
+                            "string_pool::decrypt_string(" + stringPool.get(method.getHiddenMethod().getMethodNode().name) + ")",
+                            "string_pool::decrypt_string(" + stringPool.get(method.getHiddenMethod().getMethodNode().desc) + ")",
                             method.getCppName()));
                 }
                 cppWriter.append("            };\n");
                 cppWriter.append("            if (hidden_class) env->RegisterNatives(hidden_class, __ngen_hidden_methods, sizeof(__ngen_hidden_methods) / sizeof(__ngen_hidden_methods[0]));\n");
                 cppWriter.append("            if (env->ExceptionCheck()) { fprintf(stderr, \"Exception occured while registering native_jvm for %s\\n\", ")
+                        .append("string_pool::decrypt_string(")
                         .append(stringPool.get(hiddenClazz.name.replace('/', '.')))
                         .append("); fflush(stderr); env->ExceptionDescribe(); env->ExceptionClear(); }\n");
                 cppWriter.append("            env->DeleteLocalRef(hidden_class);\n");
