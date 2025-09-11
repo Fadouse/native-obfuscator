@@ -97,7 +97,7 @@ public class MethodProcessor {
 
     public static String getClassGetter(MethodContext context, String desc) {
         if (desc.startsWith("[")) {
-            return "env->FindClass(" + context.getStringPool().get(desc) + ")";
+            return "env->FindClass(string_pool::decrypt_string(" + context.getStringPool().get(desc) + "))";
         }
         if (desc.endsWith(";")) {
             desc = desc.substring(1, desc.length() - 1);
@@ -135,7 +135,7 @@ public class MethodProcessor {
             context.nativeMethod = context.proxyMethod.getMethodNode();
             context.nativeMethod.access |= Opcodes.ACC_NATIVE;
         } else {
-            context.nativeMethods.append(String.format("            { %s, %s, (void *)&%s },\n",
+            context.nativeMethods.append(String.format("            { string_pool::decrypt_string(%s), string_pool::decrypt_string(%s), (void *)&%s },\n",
                     obfuscator.getStringPool().get(context.method.name),
                     obfuscator.getStringPool().get(method.desc), methodName));
         }
