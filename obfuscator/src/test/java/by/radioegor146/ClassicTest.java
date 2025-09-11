@@ -3,6 +3,7 @@ package by.radioegor146;
 import by.radioegor146.helpers.ProcessHelper;
 import by.radioegor146.helpers.ProcessHelper.ProcessResult;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.Assumptions;
 
 import java.io.File;
 import java.io.IOException;
@@ -70,6 +71,9 @@ public class ClassicTest implements Executable {
             Files.find(testData, 10, (path, attr) -> attr.isDirectory() || (!path.toString().endsWith(".java") && !path.toString().endsWith(".j")))
                     .filter(Files::isRegularFile)
                     .forEach(resourceFiles::add);
+
+            Assumptions.assumeTrue(useKrakatau || krakatauFiles.isEmpty(),
+                    "Skipping test requiring krak2 assembler");
 
             Optional<String> mainClassOptional = javaFiles.stream()
                     .filter(uncheckedPredicate(p -> Files.lines(p).collect(Collectors.joining("\n"))

@@ -36,7 +36,7 @@ public class FieldHandler extends GenericInstructionHandler<FieldInsnNode> {
         int fieldId = context.getCachedFields().getId(info);
         props.put("fieldid", context.getCachedFields().getPointer(info));
 
-        context.output.append(String.format("if (!cfields[%d]) { cfields[%d] = env->Get%sFieldID(%s, %s, %s); %s  } ",
+        context.output.append(String.format("if (!cfields[%d]) { cfields[%d] = env->Get%sFieldID(%s, string_pool::decrypt_string(%s), string_pool::decrypt_string(%s)); %s  } ",
                 fieldId,
                 fieldId,
                 isStatic ? "Static" : "",
