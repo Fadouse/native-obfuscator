@@ -103,7 +103,7 @@ public class ClassSourceBuilder implements AutoCloseable {
             cppWriter.append("        if (env->ExceptionCheck()) { fprintf(stderr, \"Exception occured while registering native_jvm for %s\\n\", ")
                     .append("string_pool::decrypt_string(")
                     .append(stringPool.get(className.replace('/', '.')))
-                    .append("); fflush(stderr); env->ExceptionDescribe(); env->ExceptionClear(); }\n");
+                    .append(")); fflush(stderr); env->ExceptionDescribe(); env->ExceptionClear(); }\n");
             cppWriter.append("\n");
         }
 
@@ -129,7 +129,7 @@ public class ClassSourceBuilder implements AutoCloseable {
                 cppWriter.append("            if (env->ExceptionCheck()) { fprintf(stderr, \"Exception occured while registering native_jvm for %s\\n\", ")
                         .append("string_pool::decrypt_string(")
                         .append(stringPool.get(hiddenClazz.name.replace('/', '.')))
-                        .append("); fflush(stderr); env->ExceptionDescribe(); env->ExceptionClear(); }\n");
+                        .append(")); fflush(stderr); env->ExceptionDescribe(); env->ExceptionClear(); }\n");
                 cppWriter.append("            env->DeleteLocalRef(hidden_class);\n");
                 cppWriter.append("        }\n");
 
