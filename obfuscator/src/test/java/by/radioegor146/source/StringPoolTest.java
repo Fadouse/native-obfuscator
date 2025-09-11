@@ -25,10 +25,10 @@ public class StringPoolTest {
     @Test
     public void testGet() {
         StringPool stringPool = new StringPool();
-        assertEquals("0LL", stringPool.get("test"));
-        assertEquals("0LL", stringPool.get("test"));
-        assertEquals("5LL", stringPool.get("\u0080\u0050"));
-        assertEquals("9LL", stringPool.get("\u0800"));
-        assertEquals("13LL", stringPool.get("\u0080"));
+        assertEquals("11377904LL", stringPool.get("test"));
+        assertEquals("11377904LL", stringPool.get("test"));
+        assertEquals("11377909LL", stringPool.get("\u0080\u0050"));
+        assertEquals("11377913LL", stringPool.get("\u0800"));
+        assertEquals("11377917LL", stringPool.get("\u0080"));
     }
 }

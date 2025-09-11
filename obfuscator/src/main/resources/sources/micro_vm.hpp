@@ -35,8 +35,9 @@ Instruction encode(OpCode op, int64_t operand, uint64_t seed);
 // Executes a program encoded as an array of Instructions.  The interpreter
 // uses a stack based execution model with two evolving internal state
 // registers.  Every instruction is decoded dynamically which complicates
-// static analysis of the resulting native code.
-void execute(const Instruction* code, size_t length, uint64_t seed = 0);
+// static analysis of the resulting native code.  The top of the stack is
+// returned to allow the VM to participate in obfuscation routines.
+int64_t execute(const Instruction* code, size_t length, uint64_t seed = 0);
 
 } // namespace native_jvm::vm
 

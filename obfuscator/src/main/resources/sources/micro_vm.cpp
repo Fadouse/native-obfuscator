@@ -25,7 +25,7 @@ Instruction encode(OpCode op, int64_t operand, uint64_t seed) {
     return inst;
 }
 
-void execute(const Instruction* code, size_t length, uint64_t seed) {
+int64_t execute(const Instruction* code, size_t length, uint64_t seed) {
     int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
@@ -100,7 +100,7 @@ junk:
 
 // Exit point
 halt:
-    return;
+    return sp ? stack[sp - 1] : 0;
 }
 
 } // namespace native_jvm::vm

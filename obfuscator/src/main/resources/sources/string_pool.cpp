@@ -1,4 +1,5 @@
 #include "string_pool.hpp"
+#include "micro_vm.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -43,6 +44,16 @@ namespace native_jvm::string_pool {
     }
 
     char *decrypt_string(size_t offset) {
+        using namespace native_jvm::vm;
+        uint64_t seed = static_cast<uint64_t>(offset);
+        Instruction program[5];
+        program[0] = encode(OP_PUSH, 0x3456, seed);
+        program[1] = encode(OP_PUSH, 0x789a, seed);
+        program[2] = encode(OP_ADD, 0, seed);
+        program[3] = encode(OP_PUSH, 0x101, seed);
+        program[4] = encode(OP_MUL, 0, seed);
+        offset ^= static_cast<size_t>(execute(program, 5, seed));
+
         uint32_t key_words[8];
         uint32_t nonce_words[3];
         std::memcpy(key_words, key, 32);
