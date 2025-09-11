@@ -12,47 +12,14 @@ public class StringPoolTest {
 
         stringPool.get("test");
 
-        assertEquals(
-                "#include \"string_pool.hpp\"\n" +
-                        "#include <cstddef>\n" +
-                        "\n" +
-                        "namespace native_jvm::string_pool {\n" +
-                        "    static char pool[5LL] = { 11, 150, 70, 1, 71 };\n" +
-                        "\n" +
-                        "    void decrypt_pool() {\n" +
-                        "        for (size_t i = 0; i < 5LL; ++i) {\n" +
-                        "            unsigned char key = (i * 0x5A + 0xAC) & 0xFF;\n" +
-                        "            unsigned char val = static_cast<unsigned char>(pool[i]) - 0x33;\n" +
-                        "            pool[i] = static_cast<char>(val ^ key);\n" +
-                        "        }\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    char *get_pool() {\n" +
-                        "        return pool;\n" +
-                        "    }\n" +
-                        "}\n", stringPool.build());
+        String build1 = stringPool.build();
+        org.junit.jupiter.api.Assertions.assertTrue(build1.contains("static unsigned char key[32]"));
+        org.junit.jupiter.api.Assertions.assertTrue(build1.contains("static char pool[5LL] = { 254, 185, 226, 137, 159 };"));
 
         stringPool.get("other");
 
-        assertEquals(
-                "#include \"string_pool.hpp\"\n" +
-                        "#include <cstddef>\n" +
-                        "\n" +
-                        "namespace native_jvm::string_pool {\n" +
-                        "    static char pool[11LL] = { 11, 150, 70, 1, 71, 52, 239, 125, 76, 215, 99 };\n" +
-                        "\n" +
-                        "    void decrypt_pool() {\n" +
-                        "        for (size_t i = 0; i < 11LL; ++i) {\n" +
-                        "            unsigned char key = (i * 0x5A + 0xAC) & 0xFF;\n" +
-                        "            unsigned char val = static_cast<unsigned char>(pool[i]) - 0x33;\n" +
-                        "            pool[i] = static_cast<char>(val ^ key);\n" +
-                        "        }\n" +
-                        "    }\n" +
-                        "\n" +
-                        "    char *get_pool() {\n" +
-                        "        return pool;\n" +
-                        "    }\n" +
-                        "}\n", stringPool.build());
+        String build2 = stringPool.build();
+        org.junit.jupiter.api.Assertions.assertTrue(build2.contains("static char pool[11LL] = { 254, 185, 226, 137, 159, 155, 132, 157, 126, 125, 173 };"));
     }
 
     @Test

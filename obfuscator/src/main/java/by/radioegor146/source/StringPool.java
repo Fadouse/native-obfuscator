@@ -4,11 +4,24 @@ import by.radioegor146.Util;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class StringPool {
 
     private long length;
     private final Map<String, Long> pool;
+
+    private static final byte[] KEY = new byte[]{
+            0, 1, 2, 3, 4, 5, 6, 7,
+            8, 9, 10, 11, 12, 13, 14, 15,
+            16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31
+    };
+    private static final byte[] NONCE = new byte[]{
+            0, 0, 0, 9,
+            0, 0, 0, 74,
+            0, 0, 0, 0
+    };
 
     public StringPool() {
         this.length = 0;
@@ -71,29 +84,41 @@ public class StringPool {
     }
 
     public String build() {
-        List<Integer> bytes = new ArrayList<>();
-        int[] index = {0};
+        List<Byte> plainBytes = new ArrayList<>();
         pool.entrySet().stream()
                 .sorted(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .forEach(string -> {
                     for (byte b : getModifiedUtf8Bytes(string)) {
-                        int key = (index[0] * 0x5A + 0xAC) & 0xFF;
-                        bytes.add(((b ^ key) + 0x33) & 0xFF);
-                        index[0]++;
+                        plainBytes.add(b);
                     }
-                    int key = (index[0] * 0x5A + 0xAC) & 0xFF;
-                    bytes.add((key + 0x33) & 0xFF);
-                    index[0]++;
+                    plainBytes.add((byte) 0);
                 });
 
-        String result = String.format("{ %s }", bytes.stream().map(String::valueOf)
+        byte[] plain = new byte[plainBytes.size()];
+        for (int i = 0; i < plainBytes.size(); i++) {
+            plain[i] = plainBytes.get(i);
+        }
+        byte[] encrypted = ChaCha20.crypt(KEY, NONCE, 0, plain);
+
+        String result = String.format("{ %s }", IntStream.range(0, encrypted.length)
+                .map(i -> encrypted[i] & 0xFF)
+                .mapToObj(String::valueOf)
                 .collect(Collectors.joining(", ")));
 
         String template = Util.readResource("sources/string_pool.cpp");
         return Util.dynamicFormat(template, Util.createMap(
-                "size", Math.max(1, bytes.size()) + "LL",
-                "value", result
+                "size", Math.max(1, encrypted.length) + "LL",
+                "value", result,
+                "key", formatArray(KEY),
+                "nonce", formatArray(NONCE)
         ));
+    }
+
+    private static String formatArray(byte[] arr) {
+        return String.format("{ %s }", IntStream.range(0, arr.length)
+                .map(i -> arr[i] & 0xFF)
+                .mapToObj(String::valueOf)
+                .collect(Collectors.joining(", ")));
     }
 }
