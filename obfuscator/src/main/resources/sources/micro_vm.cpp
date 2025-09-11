@@ -8,7 +8,7 @@ static constexpr uint64_t KEY = 0x5F3759DFB3E8A1C5ULL; // mixed 32/64-bit key
 
 Instruction encode(OpCode op, int64_t operand, uint64_t key) {
     return Instruction{
-        static_cast<uint8_t>(op) ^ static_cast<uint8_t>(key),
+        static_cast<uint8_t>(static_cast<uint8_t>(op) ^ static_cast<uint8_t>(key)),
         operand ^ static_cast<int64_t>(key * 0x9E3779B97F4A7C15ULL)
     };
 }
@@ -27,7 +27,8 @@ void execute(const Instruction* code, size_t length, uint64_t seed) {
 dispatch:
     state = (state + KEY) ^ (KEY >> 3); // evolve state
     if (pc >= length) goto halt;
-    op = static_cast<OpCode>(code[pc].op ^ static_cast<uint8_t>(state));
+    // XOR promotes to int; cast back to uint8_t before converting to OpCode
+    op = static_cast<OpCode>(static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(state)));
     tmp = code[pc].operand ^ static_cast<int64_t>(state * 0x9E3779B97F4A7C15ULL);
     ++pc;
     switch (op) {
