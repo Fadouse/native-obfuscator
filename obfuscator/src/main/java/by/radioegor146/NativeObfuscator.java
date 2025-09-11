@@ -120,6 +120,8 @@ public class NativeObfuscator {
         Util.copyResource("sources/native_jvm.hpp", cppDir);
         Util.copyResource("sources/native_jvm_output.hpp", cppDir);
         Util.copyResource("sources/string_pool.hpp", cppDir);
+        Util.copyResource("sources/micro_vm.cpp", cppDir);
+        Util.copyResource("sources/micro_vm.hpp", cppDir);
 
         String projectName = "native_library";
 
@@ -130,6 +132,8 @@ public class NativeObfuscator {
         cMakeBuilder.addMainFile("native_jvm_output.cpp");
         cMakeBuilder.addMainFile("string_pool.hpp");
         cMakeBuilder.addMainFile("string_pool.cpp");
+        cMakeBuilder.addMainFile("micro_vm.hpp");
+        cMakeBuilder.addMainFile("micro_vm.cpp");
 
         if (platform == Platform.HOTSPOT) {
             cMakeBuilder.addFlag("USE_HOTSPOT");
