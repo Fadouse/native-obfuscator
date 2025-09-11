@@ -8,7 +8,37 @@ import org.objectweb.asm.tree.InsnNode;
 public class InsnHandler extends GenericInstructionHandler<InsnNode> {
 
     @Override
-    protected void process(MethodContext context, InsnNode node) {}
+    protected void process(MethodContext context, InsnNode node) {
+        switch (node.getOpcode()) {
+            case Opcodes.IADD:
+                instructionName = null;
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i);",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                break;
+            case Opcodes.ISUB:
+                instructionName = null;
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i);",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                break;
+            case Opcodes.IMUL:
+                instructionName = null;
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i);",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                break;
+            case Opcodes.IDIV:
+                instructionName = null;
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i);",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1")));
+                break;
+            default:
+                // handled via snippets
+                break;
+        }
+    }
 
     @Override
     public String insnToString(MethodContext context, InsnNode node) {

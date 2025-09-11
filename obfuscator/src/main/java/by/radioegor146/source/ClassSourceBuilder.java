@@ -40,6 +40,7 @@ public class ClassSourceBuilder implements AutoCloseable {
     public void addHeader(int strings, int classes, int methods, int fields) throws IOException {
         cppWriter.append("#include \"../native_jvm.hpp\"\n");
         cppWriter.append("#include \"../string_pool.hpp\"\n");
+        cppWriter.append("#include \"../micro_vm.hpp\"\n");
         cppWriter.append("#include \"").append(getHppFilename()).append("\"\n");
         cppWriter.append("\n");
         cppWriter.append("// ").append(Util.escapeCommentString(className)).append("\n");
@@ -65,6 +66,7 @@ public class ClassSourceBuilder implements AutoCloseable {
 
 
         hppWriter.append("#include \"../native_jvm.hpp\"\n");
+        hppWriter.append("#include \"../micro_vm.hpp\"\n");
         hppWriter.append("\n");
         hppWriter.append("#ifndef ").append(filename.concat("_hpp").toUpperCase()).append("_GUARD\n");
         hppWriter.append("\n");
