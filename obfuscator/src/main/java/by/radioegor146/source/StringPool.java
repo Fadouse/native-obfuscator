@@ -23,6 +23,10 @@ public class StringPool {
             0, 0, 0, 0
     };
 
+    // Offsets returned to native code are XOR-ed with this mask and must be
+    // decoded at runtime via the micro VM.
+    private static final long OFFSET_MASK = 0xAD9CF0L;
+
     public StringPool() {
         this.length = 0;
         this.pool = new HashMap<>();
@@ -33,7 +37,9 @@ public class StringPool {
             pool.put(value, length);
             length += getModifiedUtf8Bytes(value).length + 1;
         }
-        return String.format("((char *)(string_pool + %dLL))", pool.get(value));
+        // Return the obfuscated offset. The runtime uses native_jvm::vm to decode
+        // it before accessing the string pool.
+        return String.format("%dLL", pool.get(value) ^ OFFSET_MASK);
     }
 
     private static byte[] getModifiedUtf8Bytes(String str) {

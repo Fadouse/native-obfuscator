@@ -58,7 +58,7 @@ public class Snippets {
             throw new RuntimeException(key + " - token value can't be null");
         });
 
-        result.entrySet().forEach(entry -> entry.setValue(stringPool.get(entry.getValue())));
+        result.entrySet().forEach(entry -> entry.setValue("string_pool::decrypt_string(" + stringPool.get(entry.getValue()) + ")"));
         tokens.forEach((k, v) -> result.putIfAbsent("$" + k, v));
 
         return Util.dynamicRawFormat(value, result);
