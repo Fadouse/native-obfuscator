@@ -13,7 +13,7 @@ Instruction encode(OpCode op, int64_t operand, uint64_t key) {
     };
 }
 
-void execute(const Instruction* code, size_t length, uint64_t seed) {
+int64_t execute(const Instruction* code, size_t length, uint64_t seed) {
     int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
@@ -83,7 +83,27 @@ junk:
 
 // Exit point
 halt:
-    return;
+    return (sp > 0) ? stack[sp - 1] : 0;
+}
+
+int64_t run_arith_vm(OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
+    Instruction program[4];
+    uint64_t state = KEY ^ seed;
+
+    // Encode PUSH lhs
+    state = (state + KEY) ^ (KEY >> 3);
+    program[0] = encode(OP_PUSH, lhs, state);
+    // Encode PUSH rhs
+    state = (state + KEY) ^ (KEY >> 3);
+    program[1] = encode(OP_PUSH, rhs, state);
+    // Encode operation
+    state = (state + KEY) ^ (KEY >> 3);
+    program[2] = encode(op, 0, state);
+    // Encode HALT
+    state = (state + KEY) ^ (KEY >> 3);
+    program[3] = encode(OP_HALT, 0, state);
+
+    return execute(program, 4, seed);
 }
 
 } // namespace native_jvm::vm
