@@ -168,8 +168,10 @@ public class MethodProcessor {
         output.append("    jobject classloader = utils::get_classloader_from_class(env, clazz);\n");
         output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
                 CPP_TYPES[context.ret.getSort()])).append(" }\n");
-        output.append("    if (classloader == nullptr) { env->FatalError(").append(context.getStringPool()
-                .get("classloader == null")).append(String.format("); return (%s) 0; }\n", CPP_TYPES[context.ret.getSort()]));
+        output.append(
+                "    if (classloader == nullptr) { env->FatalError(string_pool::decrypt_string(")
+                .append(context.getStringPool().get("classloader == null"))
+                .append(String.format(")); return (%s) 0; }\n", CPP_TYPES[context.ret.getSort()]));
         output.append("\n");
         if (!isStatic) {
             output.append("    env->DeleteLocalRef(clazz);\n");
