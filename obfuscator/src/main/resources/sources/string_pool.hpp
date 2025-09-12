@@ -6,6 +6,8 @@
 #include <cstdint>
 
 namespace native_jvm::string_pool {
+    unsigned char *decode_key(const unsigned char in[32], uint32_t seed);
+    unsigned char *decode_nonce(const unsigned char in[12], uint32_t seed);
     void decrypt_string(const unsigned char key[32], const unsigned char nonce[12],
                         uint32_t seed, std::size_t offset, std::size_t len);
     void encrypt_string(const unsigned char key[32], const unsigned char nonce[12],

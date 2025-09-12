@@ -1,4 +1,5 @@
 #include "string_pool.hpp"
+#include "micro_vm.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -61,34 +62,66 @@ namespace native_jvm::string_pool {
         }
     }
 
-    static void decode_bytes(const unsigned char *in, unsigned char *out, std::size_t len, uint32_t seed) {
-        for (std::size_t i = 0; i < len; ++i) {
-            out[i] = static_cast<unsigned char>(in[i] ^ (seed >> ((i & 3) * 8)));
-        }
+    unsigned char *decode_key(const unsigned char in[32], uint32_t seed) {
+        auto *out = new unsigned char[32];
+        std::size_t i = 0;
+        unsigned char *ptr = out;
+        unsigned char tmp;
+        goto CHECK;
+    LOOP:
+        tmp = static_cast<unsigned char>(
+                vm::run_arith_vm(nullptr, vm::OP_XOR, in[i],
+                                  seed >> ((i & 3) * 8), seed));
+        *ptr++ = tmp;
+        ++i;
+    CHECK:
+        if (i < 32) goto LOOP;
+        return out;
+    }
+
+    unsigned char *decode_nonce(const unsigned char in[12], uint32_t seed) {
+        auto *out = new unsigned char[12];
+        std::size_t i = 0;
+        unsigned char *ptr = out;
+        unsigned char tmp;
+        goto N_CHECK;
+    N_LOOP:
+        tmp = static_cast<unsigned char>(
+                vm::run_arith_vm(nullptr, vm::OP_XOR, in[i],
+                                  seed >> ((i & 3) * 8), seed));
+        *ptr++ = tmp;
+        ++i;
+    N_CHECK:
+        if (i < 12) goto N_LOOP;
+        return out;
     }
 
     void decrypt_string(const unsigned char key[32], const unsigned char nonce[12],
                         uint32_t seed, std::size_t offset, std::size_t len) {
-        unsigned char real_key[32];
-        unsigned char real_nonce[12];
-        decode_bytes(key, real_key, 32, seed);
-        decode_bytes(nonce, real_nonce, 12, seed);
+        unsigned char *real_key = decode_key(key, seed);
+        unsigned char *real_nonce = decode_nonce(nonce, seed);
         if (!decrypted[offset]) {
             crypt_string(real_key, real_nonce, offset, len);
             std::memset(decrypted + offset, 1, len);
         }
+        std::memset(real_key, 0, 32);
+        std::memset(real_nonce, 0, 12);
+        delete[] real_key;
+        delete[] real_nonce;
     }
 
     void encrypt_string(const unsigned char key[32], const unsigned char nonce[12],
                         uint32_t seed, std::size_t offset, std::size_t len) {
-        unsigned char real_key[32];
-        unsigned char real_nonce[12];
-        decode_bytes(key, real_key, 32, seed);
-        decode_bytes(nonce, real_nonce, 12, seed);
+        unsigned char *real_key = decode_key(key, seed);
+        unsigned char *real_nonce = decode_nonce(nonce, seed);
         if (decrypted[offset]) {
             crypt_string(real_key, real_nonce, offset, len);
             std::memset(decrypted + offset, 0, len);
         }
+        std::memset(real_key, 0, 32);
+        std::memset(real_nonce, 0, 12);
+        delete[] real_key;
+        delete[] real_nonce;
     }
 
     void clear_string(std::size_t offset, std::size_t len) {
