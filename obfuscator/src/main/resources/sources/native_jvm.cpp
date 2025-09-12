@@ -24,6 +24,36 @@ namespace native_jvm::utils {
     bool is_jvm11_link_call_site;
 #endif
 
+    static inline jint mix32(jint key, jint method_id, jint class_id) {
+        return key ^ ((method_id << 3) | class_id);
+    }
+
+    static inline jlong mix64(jlong key, jint method_id, jint class_id) {
+        return key ^ ((((jlong) method_id) << 32) | (jlong) (class_id & 0xffffffff));
+    }
+
+    jint decode_int(jint enc, jint key, jint method_id, jint class_id) {
+        return enc ^ mix32(key, method_id, class_id);
+    }
+
+    jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id) {
+        return enc ^ mix64(key, method_id, class_id);
+    }
+
+    jfloat decode_float(jint enc, jint key, jint method_id, jint class_id) {
+        jint dec = decode_int(enc, key, method_id, class_id);
+        jfloat result;
+        std::memcpy(&result, &dec, sizeof(result));
+        return result;
+    }
+
+    jdouble decode_double(jlong enc, jlong key, jint method_id, jint class_id) {
+        jlong dec = decode_long(enc, key, method_id, class_id);
+        jdouble result;
+        std::memcpy(&result, &dec, sizeof(result));
+        return result;
+    }
+
     void init_utils(JNIEnv *env) {
         jclass clazz = env->FindClass("[Z");
         if (env->ExceptionCheck())
