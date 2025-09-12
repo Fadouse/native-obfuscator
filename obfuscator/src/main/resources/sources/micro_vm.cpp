@@ -43,6 +43,7 @@ int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t se
     int64_t tmp = 0;
     uint64_t state = KEY ^ seed;
     OpCode op = OP_NOP;
+    #include "label_table.inc"
 
     goto dispatch; // start of the threaded interpreter
 
@@ -58,20 +59,10 @@ dispatch:
         tmp = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
     }
     ++pc;
-    switch (op) {
-        case OP_PUSH:  goto do_push;
-        case OP_ADD:   goto do_add;
-        case OP_SUB:   goto do_sub;
-        case OP_MUL:   goto do_mul;
-        case OP_DIV:   goto do_div;
-        case OP_PRINT: goto do_print;
-        case OP_NOP:   goto junk;   // never executed by valid programs
-        case OP_JUNK1: goto do_junk1;
-        case OP_JUNK2: goto do_junk2;
-        case OP_SWAP:  goto do_swap;
-        case OP_DUP:   goto do_dup;
-        default:       goto halt;
-    }
+    if (((state ^ KEY) & 1U) == 2U) goto dummy_dispatch;
+    goto *label_table[label_index[static_cast<uint8_t>(op)]];
+dummy_dispatch:
+    goto dispatch;
 
 // Actual operations
 // Each block returns to dispatch via an explicit goto to hide
@@ -82,6 +73,9 @@ do_push:
 
 do_add:
     if (sp >= 2) { stack[sp - 2] += stack[sp - 1]; --sp; }
+    if ((state ^ KEY) & 1U) goto dummy_add;
+    goto dispatch;
+dummy_add:
     goto dispatch;
 
 do_sub:
@@ -90,6 +84,9 @@ do_sub:
 
 do_mul:
     if (sp >= 2) { stack[sp - 2] *= stack[sp - 1]; --sp; }
+    if ((state ^ KEY) & 1U) goto dummy_mul;
+    goto dispatch;
+dummy_mul:
     goto dispatch;
 
 do_div:
