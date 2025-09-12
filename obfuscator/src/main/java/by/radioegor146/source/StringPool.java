@@ -14,12 +14,14 @@ public class StringPool {
         int length;
         byte[] key;
         byte[] nonce;
+        int seed;
 
-        Entry(long offset, int length, byte[] key, byte[] nonce) {
+        Entry(long offset, int length, byte[] key, byte[] nonce, int seed) {
             this.offset = offset;
             this.length = length;
             this.key = key;
             this.nonce = nonce;
+            this.seed = seed;
         }
     }
 
@@ -42,12 +44,13 @@ public class StringPool {
             byte[] nonce = new byte[12];
             random.nextBytes(key);
             random.nextBytes(nonce);
-            entry = new Entry(length, bytes.length + 1, key, nonce);
+            int seed = random.nextInt();
+            entry = new Entry(length, bytes.length + 1, key, nonce, seed);
             pool.put(value, entry);
             length += entry.length;
         }
-        return String.format("(string_pool::decrypt_string(%s, %s, %dLL, %d), (char *)(string_pool + %dLL))",
-                formatArray(entry.key), formatArray(entry.nonce), entry.offset, entry.length, entry.offset);
+        return String.format("(string_pool::decrypt_string(%s, %s, %d, %dLL, %d), (char *)(string_pool + %dLL))",
+                formatArray(entry.key, entry.seed), formatArray(entry.nonce, entry.seed), entry.seed, entry.offset, entry.length, entry.offset);
     }
 
     public long getOffset(String value) {
@@ -137,12 +140,21 @@ public class StringPool {
         ));
     }
 
-    private static String formatArray(byte[] arr) {
+    private static byte[] encode(byte[] arr, int seed) {
+        byte[] out = new byte[arr.length];
+        for (int i = 0; i < arr.length; i++) {
+            out[i] = (byte) (arr[i] ^ (seed >>> ((i & 3) * 8)));
+        }
+        return out;
+    }
+
+    private static String formatArray(byte[] arr, int seed) {
+        byte[] encoded = encode(arr, seed);
         return String.format(
                 "[]{ static const unsigned char data[%d] = { %s }; return data; }()",
-                arr.length,
-                IntStream.range(0, arr.length)
-                        .map(i -> arr[i] & 0xFF)
+                encoded.length,
+                IntStream.range(0, encoded.length)
+                        .map(i -> encoded[i] & 0xFF)
                         .mapToObj(String::valueOf)
                         .collect(Collectors.joining(", "))
         );

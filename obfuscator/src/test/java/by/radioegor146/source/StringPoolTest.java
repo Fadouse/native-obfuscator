@@ -36,6 +36,10 @@ public class StringPoolTest {
         String res1 = stringPool.get("test");
         assertTrue(res1.startsWith("(string_pool::decrypt_string("));
         assertTrue(res1.endsWith(", 0LL, 5), (char *)(string_pool + 0LL))"));
+        int afterArrays = res1.lastIndexOf("}(), ");
+        assertTrue(afterArrays > 0);
+        String rest = res1.substring(afterArrays + 5);
+        assertTrue(rest.matches("-?\\d+, 0LL, 5\\), \\(char \\*\\)\\(string_pool \\+ 0LL\\)\\)"));
         assertEquals(res1, stringPool.get("test"));
         assertFalse(res1.contains("(unsigned char[]){"));
 
