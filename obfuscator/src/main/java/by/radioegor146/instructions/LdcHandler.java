@@ -39,6 +39,27 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
         return String.valueOf(value);
     }
 
+    private static int chachaRound(int a, int b, int c, int d) {
+        a += b; d ^= a; d = Integer.rotateLeft(d, 16);
+        c += d; b ^= c; b = Integer.rotateLeft(b, 12);
+        a += b; d ^= a; d = Integer.rotateLeft(d, 8);
+        c += d; b ^= c; b = Integer.rotateLeft(b, 7);
+        return a;
+    }
+
+    private static int mix32(int key, int mid, int cid, int seed) {
+        return chachaRound(key, mid, cid, seed);
+    }
+
+    private static long mix64(long key, int mid, int cid, int seed) {
+        int k1 = (int) key;
+        int k2 = (int) (key >>> 32);
+        int s2 = seed ^ 0x9E3779B9;
+        int r1 = chachaRound(k1, mid, cid, seed);
+        int r2 = chachaRound(k2, cid, mid, s2);
+        return (((long) r2) << 32) | (r1 & 0xffffffffL);
+    }
+
     @Override
     protected void process(MethodContext context, LdcInsnNode node) {
         Object cst = node.cst;
@@ -48,49 +69,57 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
         } else if (cst instanceof Integer) {
             instructionName += "_INT";
             int key = ThreadLocalRandom.current().nextInt();
+            int seed = ThreadLocalRandom.current().nextInt();
             int mid = context.methodIndex;
             int cid = context.classIndex;
-            int mixed = key ^ ((mid << 3) | cid);
+            int mixed = mix32(key, mid, cid, seed);
             int enc = ((Integer) cst) ^ mixed;
             props.put("enc", getIntString(enc));
             props.put("key", getIntString(key));
             props.put("mid", String.valueOf(mid));
             props.put("cid", String.valueOf(cid));
+            props.put("seed", getIntString(seed));
         } else if (cst instanceof Long) {
             instructionName += "_LONG";
             long key = ThreadLocalRandom.current().nextLong();
+            int seed = ThreadLocalRandom.current().nextInt();
             int mid = context.methodIndex;
             int cid = context.classIndex;
-            long mixed = key ^ ((((long) mid) << 32) | (cid & 0xffffffffL));
+            long mixed = mix64(key, mid, cid, seed);
             long enc = ((Long) cst) ^ mixed;
             props.put("enc", getLongValue(enc));
             props.put("key", getLongValue(key));
             props.put("mid", String.valueOf(mid));
             props.put("cid", String.valueOf(cid));
+            props.put("seed", getIntString(seed));
         } else if (cst instanceof Float) {
             instructionName += "_FLOAT";
             int bits = Float.floatToRawIntBits((Float) cst);
             int key = ThreadLocalRandom.current().nextInt();
+            int seed = ThreadLocalRandom.current().nextInt();
             int mid = context.methodIndex;
             int cid = context.classIndex;
-            int mixed = key ^ ((mid << 3) | cid);
+            int mixed = mix32(key, mid, cid, seed);
             int enc = bits ^ mixed;
             props.put("enc", getIntString(enc));
             props.put("key", getIntString(key));
             props.put("mid", String.valueOf(mid));
             props.put("cid", String.valueOf(cid));
+            props.put("seed", getIntString(seed));
         } else if (cst instanceof Double) {
             instructionName += "_DOUBLE";
             long bits = Double.doubleToRawLongBits((Double) cst);
             long key = ThreadLocalRandom.current().nextLong();
+            int seed = ThreadLocalRandom.current().nextInt();
             int mid = context.methodIndex;
             int cid = context.classIndex;
-            long mixed = key ^ ((((long) mid) << 32) | (cid & 0xffffffffL));
+            long mixed = mix64(key, mid, cid, seed);
             long enc = bits ^ mixed;
             props.put("enc", getLongValue(enc));
             props.put("key", getLongValue(key));
             props.put("mid", String.valueOf(mid));
             props.put("cid", String.valueOf(cid));
+            props.put("seed", getIntString(seed));
         } else if (cst instanceof Type) {
             instructionName += "_CLASS";
 
