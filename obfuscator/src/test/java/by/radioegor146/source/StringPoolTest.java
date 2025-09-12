@@ -20,23 +20,36 @@ public class StringPoolTest {
 
         String build1 = stringPool.build();
         assertTrue(build1.contains("static char pool[5LL]"));
-        assertTrue(build1.contains("entries[] = { { 0LL"));
+        assertTrue(build1.contains("static unsigned char decrypted[5LL]"));
+        assertFalse(build1.contains("entries"));
 
         stringPool.get("other");
 
         String build2 = stringPool.build();
         assertTrue(build2.contains("static char pool[11LL]"));
-        assertTrue(build2.contains("{ 5LL"));
+        assertTrue(build2.contains("static unsigned char decrypted[11LL]"));
     }
 
     @Test
     public void testGet() {
         StringPool stringPool = new StringPool();
-        assertEquals("(string_pool::decrypt_string(0LL, 5), (char *)(string_pool + 0LL))", stringPool.get("test"));
-        assertEquals("(string_pool::decrypt_string(0LL, 5), (char *)(string_pool + 0LL))", stringPool.get("test"));
-        assertEquals("(string_pool::decrypt_string(5LL, 4), (char *)(string_pool + 5LL))", stringPool.get("\u0080\u0050"));
-        assertEquals("(string_pool::decrypt_string(9LL, 4), (char *)(string_pool + 9LL))", stringPool.get("\u0800"));
-        assertEquals("(string_pool::decrypt_string(13LL, 3), (char *)(string_pool + 13LL))", stringPool.get("\u0080"));
+        String res1 = stringPool.get("test");
+        assertTrue(res1.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res1.endsWith(", 0LL, 5), (char *)(string_pool + 0LL))"));
+        assertEquals(res1, stringPool.get("test"));
+        assertFalse(res1.contains("(unsigned char[]){"));
+
+        String res3 = stringPool.get("\u0080\u0050");
+        assertTrue(res3.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res3.endsWith(", 5LL, 4), (char *)(string_pool + 5LL))"));
+
+        String res4 = stringPool.get("\u0800");
+        assertTrue(res4.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res4.endsWith(", 9LL, 4), (char *)(string_pool + 9LL))"));
+
+        String res5 = stringPool.get("\u0080");
+        assertTrue(res5.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res5.endsWith(", 13LL, 3), (char *)(string_pool + 13LL))"));
     }
 
     @Test
