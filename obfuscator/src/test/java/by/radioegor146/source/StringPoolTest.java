@@ -25,10 +25,10 @@ public class StringPoolTest {
     @Test
     public void testGet() {
         StringPool stringPool = new StringPool();
-        assertEquals("((char *)(string_pool + 0LL))", stringPool.get("test"));
-        assertEquals("((char *)(string_pool + 0LL))", stringPool.get("test"));
-        assertEquals("((char *)(string_pool + 5LL))", stringPool.get("\u0080\u0050"));
-        assertEquals("((char *)(string_pool + 9LL))", stringPool.get("\u0800"));
-        assertEquals("((char *)(string_pool + 13LL))", stringPool.get("\u0080"));
+        assertEquals("(string_pool::decrypt_string(0LL, 5), (char *)(string_pool + 0LL))", stringPool.get("test"));
+        assertEquals("(string_pool::decrypt_string(0LL, 5), (char *)(string_pool + 0LL))", stringPool.get("test"));
+        assertEquals("(string_pool::decrypt_string(5LL, 4), (char *)(string_pool + 5LL))", stringPool.get("\u0080\u0050"));
+        assertEquals("(string_pool::decrypt_string(9LL, 4), (char *)(string_pool + 9LL))", stringPool.get("\u0800"));
+        assertEquals("(string_pool::decrypt_string(13LL, 3), (char *)(string_pool + 13LL))", stringPool.get("\u0080"));
     }
 }

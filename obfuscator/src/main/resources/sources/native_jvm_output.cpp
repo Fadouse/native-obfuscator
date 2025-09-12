@@ -20,7 +20,6 @@ namespace native_jvm {
             return;
 
         char* string_pool = string_pool::get_pool();
-        string_pool::decrypt_pool();
 
 $register_code
 
