@@ -295,6 +295,8 @@ do_neg:
 
 // Dummy branch used only to confuse decompilers
 junk:
+    // toggle and restore state so decoding stays in sync
+    state ^= KEY << 7;
     state ^= KEY << 7;
     goto dispatch;
 
