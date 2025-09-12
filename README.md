@@ -7,6 +7,15 @@ Warning: blacklist/whitelist usage is recommended because this tool slows down c
 
 Also, this tool does not particularly obfuscate your code; it just transpiles it to native. Remember to use protectors like VMProtect, Themida, or obfuscator-llvm (in case of clang usage)
 
+
+本项目完全由 OpenAI 的 Codex 完成
+在该优秀框架的基础上添加了以下功能:
+ - 添加了基本字符串，常量混淆
+ - 基本控制流扁平化混淆
+ - 基础虚拟化保护
+
+**本项目仅作测试项目**
+
 ---
 
 ### To run this tool, you need to have these tools installed:
