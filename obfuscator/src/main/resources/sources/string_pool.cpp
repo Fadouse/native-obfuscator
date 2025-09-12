@@ -7,6 +7,7 @@ namespace native_jvm::string_pool {
     static unsigned char key[32] = $key;
     static unsigned char nonce[12] = $nonce;
     static char pool[$size] = $value;
+    static unsigned char decrypted[$size] = {};
 
     static inline uint32_t rotl(uint32_t v, int c) {
         return (v << c) | (v >> (32 - c));
@@ -73,15 +74,22 @@ namespace native_jvm::string_pool {
     }
 
     void decrypt_string(std::size_t offset, std::size_t len) {
-        crypt_string(offset, len);
+        if (!decrypted[offset]) {
+            crypt_string(offset, len);
+            std::memset(decrypted + offset, 1, len);
+        }
     }
 
     void encrypt_string(std::size_t offset, std::size_t len) {
-        crypt_string(offset, len);
+        if (decrypted[offset]) {
+            crypt_string(offset, len);
+            std::memset(decrypted + offset, 0, len);
+        }
     }
 
     void clear_string(std::size_t offset, std::size_t len) {
         std::memset(pool + offset, 0, len);
+        std::memset(decrypted + offset, 0, len);
     }
 
     char *get_pool() {
