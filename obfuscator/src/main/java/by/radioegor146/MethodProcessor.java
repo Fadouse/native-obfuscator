@@ -188,10 +188,10 @@ public class MethodProcessor {
 
         VmTranslator vmTranslator = new VmTranslator();
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
-        if (vmCode != null) {
+        if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
                     VmTranslator.serialize(vmCode)));
-            output.append(String.format("    jlong __ngen_vm_locals[%d] = {0};\n", method.maxLocals));
+            output.append(String.format("    jlong __ngen_vm_locals[%d] = {0};\n", Math.max(1, method.maxLocals)));
             for (int i = 0; i < argNames.size(); i++) {
                 output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, argNames.get(i)));
             }
