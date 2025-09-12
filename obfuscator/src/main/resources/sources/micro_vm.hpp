@@ -18,7 +18,7 @@ enum OpCode : uint8_t {
     OP_PRINT = 5,
     OP_HALT  = 6,
     OP_NOP   = 7,  // never used, keeps the decoder busy
-    OP_JUNK1 = 8,  // pseudo-op with minimal side effects
+    OP_JUNK1 = 8,  // pseudo-op operating on temp only
     OP_JUNK2 = 9,  // another harmless operation
     OP_SWAP  = 10, // swap two top stack values
     OP_DUP   = 11, // duplicate top stack value

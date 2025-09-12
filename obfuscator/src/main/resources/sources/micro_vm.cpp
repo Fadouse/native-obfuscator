@@ -109,7 +109,7 @@ do_print:
     goto dispatch;
 
 do_junk1:
-    state ^= (KEY << 5) ^ tmp; // simple state perturbation
+    tmp ^= (KEY << 5); // operate on temp only
     goto dispatch;
 
 do_junk2:
