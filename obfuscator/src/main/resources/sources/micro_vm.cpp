@@ -9,8 +9,7 @@
 namespace native_jvm::vm {
 
 static uint64_t KEY = 0;
-static std::array<uint8_t, OP_COUNT> op_map{};     // maps logical opcodes to shuffled values
-static std::array<OpCode, OP_COUNT> inv_op_map{}; // reverse map
+static std::array<uint8_t, OP_COUNT> op_map{}; // maps logical opcodes to shuffled dispatch slots
 
 void init_key(uint64_t seed) {
     std::random_device rd;
@@ -22,7 +21,6 @@ void init_key(uint64_t seed) {
     std::shuffle(values.begin(), values.end(), gen);
     for (uint8_t i = 0; i < OP_COUNT; ++i) {
         op_map[i] = values[i];
-        inv_op_map[values[i]] = static_cast<OpCode>(i);
     }
 }
 
@@ -40,7 +38,15 @@ int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t se
     size_t pc = 0;
     int64_t tmp = 0;
     uint64_t state = KEY ^ seed;
-    OpCode op = OP_NOP;
+    uint8_t mapped = 0;
+
+    using Handler = void*;
+    Handler base_table[OP_COUNT] = {
+        &&do_push, &&do_add, &&do_sub, &&do_mul, &&do_div, &&do_print,
+        &&halt,   &&junk,   &&do_junk1, &&do_junk2, &&do_swap, &&do_dup
+    };
+    Handler table[OP_COUNT];
+    for (uint8_t i = 0; i < OP_COUNT; ++i) table[op_map[i]] = base_table[i];
 
     goto dispatch; // start of the threaded interpreter
 
@@ -48,27 +54,10 @@ int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t se
 dispatch:
     state = (state + KEY) ^ (KEY >> 3); // evolve state
     if (pc >= length) goto halt;
-    // XOR promotes to int; cast back to uint8_t before converting to OpCode
-    {
-        uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(state));
-        op = inv_op_map[mapped];
-    }
+    mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(state));
     tmp = code[pc].operand ^ static_cast<int64_t>(state * 0x9E3779B97F4A7C15ULL);
     ++pc;
-    switch (op) {
-        case OP_PUSH:  goto do_push;
-        case OP_ADD:   goto do_add;
-        case OP_SUB:   goto do_sub;
-        case OP_MUL:   goto do_mul;
-        case OP_DIV:   goto do_div;
-        case OP_PRINT: goto do_print;
-        case OP_NOP:   goto junk;   // never executed by valid programs
-        case OP_JUNK1: goto do_junk1;
-        case OP_JUNK2: goto do_junk2;
-        case OP_SWAP:  goto do_swap;
-        case OP_DUP:   goto do_dup;
-        default:       goto halt;
-    }
+    goto *table[mapped];
 
 // Actual operations
 // Each block returns to dispatch via an explicit goto to hide
