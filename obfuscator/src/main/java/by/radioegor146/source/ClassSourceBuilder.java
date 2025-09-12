@@ -41,7 +41,9 @@ public class ClassSourceBuilder implements AutoCloseable {
         cppWriter.append("#include \"../native_jvm.hpp\"\n");
         cppWriter.append("#include \"../string_pool.hpp\"\n");
         cppWriter.append("#include \"../micro_vm.hpp\"\n");
+        cppWriter.append("#include <functional>\n");
         cppWriter.append("#include \"").append(getHppFilename()).append("\"\n");
+        cppWriter.append("#ifdef NDEBUG\n#define __NGEN_STRONG_OBF 1\n#else\n#define __NGEN_STRONG_OBF 0\n#endif\n");
         cppWriter.append("\n");
         cppWriter.append("// ").append(Util.escapeCommentString(className)).append("\n");
         cppWriter.append("namespace native_jvm::classes::__ngen_").append(filename).append(" {\n\n");

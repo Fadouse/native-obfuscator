@@ -278,14 +278,47 @@ public class MethodProcessor {
 
         context.stackPointer = 0;
 
+        ArrayList<String> lambdaNames = new ArrayList<>();
+
         for (int instruction = 0; instruction < method.instructions.size(); ++instruction) {
             AbstractInsnNode node = method.instructions.get(instruction);
             context.output.append("    // ").append(Util.escapeCommentString(handlers[node.getType()]
                     .insnToString(context, node))).append("; Stack: ").append(context.stackPointer).append("\n");
+            int start = context.output.length();
             handlers[node.getType()].accept(context, node);
+            String snippet = context.output.substring(start);
+            context.output.setLength(start);
+            String lambdaName = String.format("__ngen_insn_%d", instruction);
+            lambdaNames.add(lambdaName);
+            context.output.append("    auto ").append(lambdaName).append(" = [&]() {\n");
+            for (String line : snippet.split("\n")) {
+                if (!line.isEmpty()) {
+                    context.output.append("        ").append(line).append("\n");
+                }
+            }
+            context.output.append("    };\n");
             context.stackPointer = handlers[node.getType()].getNewStackPointer(node, context.stackPointer);
             context.output.append("    // New stack: ").append(context.stackPointer).append("\n");
         }
+
+        context.output.append("    std::function<void()> __ngen_table[] = {\n");
+        for (int i = 0; i < lambdaNames.size(); ++i) {
+            context.output.append("        ").append(lambdaNames.get(i));
+            if (i != lambdaNames.size() - 1) {
+                context.output.append(",");
+            }
+            context.output.append("\n");
+        }
+        context.output.append("    };\n");
+        context.output.append("    for (int __ngen_i = 0; __ngen_i < (int)(sizeof(__ngen_table)/sizeof(__ngen_table[0])); ++__ngen_i) {\n");
+        context.output.append("    #if __NGEN_STRONG_OBF\n");
+        context.output.append("        int __ngen_idx = (__ngen_i ^ 0xAA) ^ 0xAA;\n");
+        context.output.append("        if (false && __ngen_idx == -1) { __ngen_table[0](); }\n");
+        context.output.append("        __ngen_table[__ngen_idx]();\n");
+        context.output.append("    #else\n");
+        context.output.append("        __ngen_table[__ngen_i]();\n");
+        context.output.append("    #endif\n");
+        context.output.append("    }\n");
 
         output.append(String.format("    return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]));
 
