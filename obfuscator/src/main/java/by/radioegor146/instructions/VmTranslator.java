@@ -109,6 +109,9 @@ public class VmTranslator {
                     return null; // unsupported instruction
             }
         }
+        if (result.isEmpty()) {
+            return null;
+        }
         return result.toArray(new Instruction[0]);
     }
 
