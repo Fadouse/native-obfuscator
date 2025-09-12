@@ -22,7 +22,11 @@ enum OpCode : uint8_t {
     OP_JUNK2 = 9,  // another harmless operation
     OP_SWAP  = 10, // swap two top stack values
     OP_DUP   = 11, // duplicate top stack value
-    OP_COUNT = 12  // helper constant with number of opcodes
+    OP_LOAD  = 12, // load local variable onto the stack
+    OP_IF_ICMPEQ = 13, // compare two ints and jump if equal
+    OP_IF_ICMPNE = 14, // compare two ints and jump if not equal
+    OP_GOTO = 15, // unconditional jump
+    OP_COUNT = 16  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
@@ -45,8 +49,15 @@ void init_key(uint64_t seed);
 // interpreter uses a stack based execution model and performs dynamic
 // decoding of every instruction.  The return value is the top of the
 // stack after the program halts which allows host code to retrieve
-// computed values.
-int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t seed);
+// computed values. Locals should point to an array of initial local
+// variables for OP_LOAD instructions.
+int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
+                const int64_t* locals, size_t locals_length, uint64_t seed);
+
+// Encodes a program in-place using the internal key so that it can be
+// executed by the VM.  The seed should be the same value passed to
+// execute.
+void encode_program(Instruction* code, size_t length, uint64_t seed);
 
 // Helper utility used by the obfuscator to perform simple arithmetic
 // through the VM.  It encodes a tiny program that evaluates
