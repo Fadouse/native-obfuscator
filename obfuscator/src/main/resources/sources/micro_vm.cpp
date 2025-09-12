@@ -26,11 +26,13 @@ void init_key(uint64_t seed) {
     }
 }
 
-Instruction encode(OpCode op, int64_t operand, uint64_t key) {
+Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
     uint8_t mapped = op_map[static_cast<uint8_t>(op)];
+    uint64_t mix = key ^ nonce;
     return Instruction{
-        static_cast<uint8_t>(mapped ^ static_cast<uint8_t>(key)),
-        operand ^ static_cast<int64_t>(key * 0x9E3779B97F4A7C15ULL)
+        static_cast<uint8_t>(mapped ^ static_cast<uint8_t>(mix)),
+        operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL),
+        nonce
     };
 }
 
@@ -50,10 +52,11 @@ dispatch:
     if (pc >= length) goto halt;
     // XOR promotes to int; cast back to uint8_t before converting to OpCode
     {
-        uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(state));
+        uint64_t mix = state ^ code[pc].nonce;
+        uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
         op = inv_op_map[mapped];
+        tmp = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
     }
-    tmp = code[pc].operand ^ static_cast<int64_t>(state * 0x9E3779B97F4A7C15ULL);
     ++pc;
     switch (op) {
         case OP_PUSH:  goto do_push;
@@ -135,8 +138,6 @@ halt:
 }
 
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
-    init_key(seed);
-
     std::vector<Instruction> program;
     program.reserve(16);
     uint64_t state = KEY ^ seed;
@@ -144,7 +145,8 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
 
     auto emit = [&](OpCode opcode, int64_t operand) {
         state = (state + KEY) ^ (KEY >> 3);
-        program.push_back(encode(opcode, operand, state));
+        uint64_t nonce = rng();
+        program.push_back(encode(opcode, operand, state, nonce));
     };
 
     auto emit_junk = [&]() {

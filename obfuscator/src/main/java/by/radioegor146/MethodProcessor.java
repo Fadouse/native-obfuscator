@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.*;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 public class MethodProcessor {
@@ -180,6 +181,9 @@ public class MethodProcessor {
                     CPP_TYPES[context.ret.getSort()])).append(" }\n");
         }
         output.append("    jobject lookup = nullptr;\n");
+
+        long vmKeySeed = ThreadLocalRandom.current().nextLong();
+        output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
 
         if (method.tryCatchBlocks != null) {
             for (TryCatchBlockNode tryCatch : method.tryCatchBlocks) {
