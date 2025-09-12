@@ -96,10 +96,10 @@ namespace native_jvm::utils {
 
     jstring get_interned(JNIEnv *env, jstring value);
 
-    jint decode_int(jint enc, jint key, jint method_id, jint class_id);
-    jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id);
-    jfloat decode_float(jint enc, jint key, jint method_id, jint class_id);
-    jdouble decode_double(jlong enc, jlong key, jint method_id, jint class_id);
+    jint decode_int(jint enc, jint key, jint method_id, jint class_id, jint seed);
+    jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id, jint seed);
+    jfloat decode_float(jint enc, jint key, jint method_id, jint class_id, jint seed);
+    jdouble decode_double(jlong enc, jlong key, jint method_id, jint class_id, jint seed);
 }
 
 #endif
