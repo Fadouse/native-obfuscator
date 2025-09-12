@@ -202,6 +202,11 @@ public class MethodProcessor {
                     "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
                     CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
             output.append("}\n");
+
+            method.localVariables.clear();
+            method.tryCatchBlocks.clear();
+
+            specialMethodProcessor.postProcess(context);
             return;
         }
 
