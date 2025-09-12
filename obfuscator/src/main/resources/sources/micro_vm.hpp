@@ -17,7 +17,12 @@ enum OpCode : uint8_t {
     OP_DIV   = 4,
     OP_PRINT = 5,
     OP_HALT  = 6,
-    OP_NOP   = 7, // never used, keeps the decoder busy
+    OP_NOP   = 7,  // never used, keeps the decoder busy
+    OP_JUNK1 = 8,  // pseudo-op with minimal side effects
+    OP_JUNK2 = 9,  // another harmless operation
+    OP_SWAP  = 10, // swap two top stack values
+    OP_DUP   = 11, // duplicate top stack value
+    OP_COUNT = 12  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
