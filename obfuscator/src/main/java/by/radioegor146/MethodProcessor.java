@@ -162,27 +162,6 @@ public class MethodProcessor {
             output.append("    env->DeleteLocalRef(ignored_hidden);\n");
         }
 
-        if (!isStatic) {
-            output.append("    jclass clazz = utils::get_class_from_object(env, obj);\n");
-            output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
-                    CPP_TYPES[context.ret.getSort()])).append(" }\n");
-        }
-        output.append("    jobject classloader = utils::get_classloader_from_class(env, clazz);\n");
-        output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
-                CPP_TYPES[context.ret.getSort()])).append(" }\n");
-        output.append("    if (classloader == nullptr) { env->FatalError(").append(context.getStringPool()
-                .get("classloader == null")).append(String.format("); return (%s) 0; }\n", CPP_TYPES[context.ret.getSort()]));
-        output.append("\n");
-        if (!isStatic) {
-            output.append("    env->DeleteLocalRef(clazz);\n");
-            output.append("    clazz = utils::find_class_wo_static(env, classloader, ")
-                    .append(context.getCachedStrings().getPointer(context.clazz.name.replace('/', '.')))
-                    .append(");\n");
-            output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
-                    CPP_TYPES[context.ret.getSort()])).append(" }\n");
-        }
-        output.append("    jobject lookup = nullptr;\n");
-
         long vmKeySeed = ThreadLocalRandom.current().nextLong();
         output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
 
@@ -209,6 +188,27 @@ public class MethodProcessor {
             specialMethodProcessor.postProcess(context);
             return;
         }
+
+        if (!isStatic) {
+            output.append("    jclass clazz = utils::get_class_from_object(env, obj);\n");
+            output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
+                    CPP_TYPES[context.ret.getSort()])).append(" }\n");
+        }
+        output.append("    jobject classloader = utils::get_classloader_from_class(env, clazz);\n");
+        output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
+                CPP_TYPES[context.ret.getSort()])).append(" }\n");
+        output.append("    if (classloader == nullptr) { env->FatalError(").append(context.getStringPool()
+                .get("classloader == null")).append(String.format("); return (%s) 0; }\n", CPP_TYPES[context.ret.getSort()]));
+        output.append("\n");
+        if (!isStatic) {
+            output.append("    env->DeleteLocalRef(clazz);\n");
+            output.append("    clazz = utils::find_class_wo_static(env, classloader, ")
+                    .append(context.getCachedStrings().getPointer(context.clazz.name.replace('/', '.')))
+                    .append(");\n");
+            output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
+                    CPP_TYPES[context.ret.getSort()])).append(" }\n");
+        }
+        output.append("    jobject lookup = nullptr;\n");
 
         if (method.tryCatchBlocks != null) {
             for (TryCatchBlockNode tryCatch : method.tryCatchBlocks) {
