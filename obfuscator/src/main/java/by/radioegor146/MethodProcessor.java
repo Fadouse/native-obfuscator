@@ -280,6 +280,18 @@ public class MethodProcessor {
         context.dispatcherMode = true;
 
         int instructionCount = method.instructions.size();
+        if (instructionCount == 0) {
+            if (context.ret.getSort() == Type.VOID) {
+                output.append("    return;\n");
+            } else {
+                output.append(String.format("    return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]));
+            }
+            output.append("}\n");
+            method.localVariables.clear();
+            method.tryCatchBlocks.clear();
+            specialMethodProcessor.postProcess(context);
+            return;
+        }
         int[] states = new int[instructionCount];
         for (int i = 0; i < instructionCount; i++) {
             states[i] = context.getLabelPool().generateStandaloneState();
