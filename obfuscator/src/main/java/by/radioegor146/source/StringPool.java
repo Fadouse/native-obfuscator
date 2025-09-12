@@ -1,7 +1,9 @@
 package by.radioegor146.source;
 
 import by.radioegor146.Util;
+import by.radioegor146.instructions.LdcHandler;
 
+import java.security.SecureRandom;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -11,43 +13,49 @@ public class StringPool {
     private static class Entry {
         long offset;
         int length;
+        byte[] key;
+        byte[] nonce;
+        String keyExpr;
+        String nonceExpr;
 
-        Entry(long offset, int length) {
+        Entry(long offset, int length, byte[] key, byte[] nonce, String keyExpr, String nonceExpr) {
             this.offset = offset;
             this.length = length;
+            this.key = key;
+            this.nonce = nonce;
+            this.keyExpr = keyExpr;
+            this.nonceExpr = nonceExpr;
         }
     }
 
     private long length;
     private final Map<String, Entry> pool;
 
-    private static final byte[] KEY = new byte[]{
-            0, 1, 2, 3, 4, 5, 6, 7,
-            8, 9, 10, 11, 12, 13, 14, 15,
-            16, 17, 18, 19, 20, 21, 22, 23,
-            24, 25, 26, 27, 28, 29, 30, 31
-    };
-    private static final byte[] NONCE = new byte[]{
-            0, 0, 0, 9,
-            0, 0, 0, 74,
-            0, 0, 0, 0
-    };
+    private final SecureRandom random;
 
     public StringPool() {
         this.length = 0;
         this.pool = new HashMap<>();
+        this.random = new SecureRandom();
     }
 
     public String get(String value) {
         Entry entry = pool.get(value);
         if (entry == null) {
             byte[] bytes = getModifiedUtf8Bytes(value);
-            entry = new Entry(length, bytes.length + 1);
+            byte[] key = new byte[32];
+            byte[] nonce = new byte[12];
+            random.nextBytes(key);
+            random.nextBytes(nonce);
+            String keyExpr = encodeArray(key);
+            String nonceExpr = encodeArray(nonce);
+            entry = new Entry(length, bytes.length + 1, key, nonce, keyExpr, nonceExpr);
             pool.put(value, entry);
             length += entry.length;
         }
-        return String.format("(string_pool::decrypt_string(%dLL, %d), (char *)(string_pool + %dLL))",
-                entry.offset, entry.length, entry.offset);
+        return String.format("([](){ static unsigned char k[32] = %s; static unsigned char n[12] = %s; " +
+                        "string_pool::decrypt_string(k, n, %dLL, %d); return (char *)(string_pool + %dLL); }())",
+                entry.keyExpr, entry.nonceExpr, entry.offset, entry.length, entry.offset);
     }
 
     public long getOffset(String value) {
@@ -106,24 +114,26 @@ public class StringPool {
     }
 
     public String build() {
-        List<Byte> plainBytes = new ArrayList<>();
+        List<Byte> encryptedBytes = new ArrayList<>();
         pool.entrySet().stream()
                 .sorted(Comparator.comparingLong(e -> e.getValue().offset))
-                .map(Map.Entry::getKey)
-                .forEach(string -> {
-                    for (byte b : getModifiedUtf8Bytes(string)) {
-                        plainBytes.add(b);
+                .forEach(e -> {
+                    String string = e.getKey();
+                    Entry entry = e.getValue();
+                    byte[] bytes = getModifiedUtf8Bytes(string);
+                    byte[] plain = Arrays.copyOf(bytes, bytes.length + 1);
+                    byte[] encrypted = ChaCha20.crypt(entry.key, entry.nonce, 0, plain);
+                    for (byte b : encrypted) {
+                        encryptedBytes.add(b);
                     }
-                    plainBytes.add((byte) 0);
                 });
 
-        byte[] plain = new byte[plainBytes.size()];
-        for (int i = 0; i < plainBytes.size(); i++) {
-            plain[i] = plainBytes.get(i);
+        byte[] encrypted = new byte[encryptedBytes.size()];
+        for (int i = 0; i < encryptedBytes.size(); i++) {
+            encrypted[i] = encryptedBytes.get(i);
         }
-        byte[] encrypted = ChaCha20.crypt(KEY, NONCE, 0, plain);
 
-        String result = String.format("{ %s }", IntStream.range(0, encrypted.length)
+        String poolArray = String.format("{ %s }", IntStream.range(0, encrypted.length)
                 .map(i -> encrypted[i] & 0xFF)
                 .mapToObj(String::valueOf)
                 .collect(Collectors.joining(", ")));
@@ -131,16 +141,39 @@ public class StringPool {
         String template = Util.readResource("sources/string_pool.cpp");
         return Util.dynamicFormat(template, Util.createMap(
                 "size", Math.max(1, encrypted.length) + "LL",
-                "value", result,
-                "key", formatArray(KEY),
-                "nonce", formatArray(NONCE)
+                "value", poolArray
         ));
     }
 
-    private static String formatArray(byte[] arr) {
+    private String encodeArray(byte[] arr) {
         return String.format("{ %s }", IntStream.range(0, arr.length)
-                .map(i -> arr[i] & 0xFF)
-                .mapToObj(String::valueOf)
+                .mapToObj(i -> encodeByte(arr[i]))
                 .collect(Collectors.joining(", ")));
+    }
+
+    private String encodeByte(byte b) {
+        int value = b & 0xFF;
+        int key = random.nextInt();
+        int seed = random.nextInt();
+        int mid = random.nextInt();
+        int cid = random.nextInt();
+        int mixed = mix32(key, mid, cid, seed);
+        int enc = value ^ mixed;
+        return String.format("(unsigned char)native_jvm::utils::decode_int(%s, %s, %s, %s, %s)",
+                LdcHandler.getIntString(enc), LdcHandler.getIntString(key),
+                LdcHandler.getIntString(mid), LdcHandler.getIntString(cid),
+                LdcHandler.getIntString(seed));
+    }
+
+    private static int chachaRound(int a, int b, int c, int d) {
+        a += b; d ^= a; d = Integer.rotateLeft(d, 16);
+        c += d; b ^= c; b = Integer.rotateLeft(b, 12);
+        a += b; d ^= a; d = Integer.rotateLeft(d, 8);
+        c += d; b ^= c; b = Integer.rotateLeft(b, 7);
+        return a;
+    }
+
+    private static int mix32(int key, int mid, int cid, int seed) {
+        return chachaRound(key, mid, cid, seed);
     }
 }
