@@ -31,10 +31,11 @@ enum OpCode : uint8_t {
 struct Instruction {
     uint8_t op;      // encrypted opcode
     int64_t operand; // encrypted operand
+    uint64_t nonce;  // per-instruction random nonce
 };
 
 // Helper that produces an encoded instruction using the global key.
-Instruction encode(OpCode op, int64_t operand, uint64_t key);
+Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce);
 
 // Initializes the global KEY used for encoding/decoding instructions.
 // Must be called before executing any VM code.
