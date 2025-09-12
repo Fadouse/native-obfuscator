@@ -8,8 +8,18 @@ import java.util.stream.IntStream;
 
 public class StringPool {
 
+    private static class Entry {
+        long offset;
+        int length;
+
+        Entry(long offset, int length) {
+            this.offset = offset;
+            this.length = length;
+        }
+    }
+
     private long length;
-    private final Map<String, Long> pool;
+    private final Map<String, Entry> pool;
 
     private static final byte[] KEY = new byte[]{
             0, 1, 2, 3, 4, 5, 6, 7,
@@ -29,11 +39,23 @@ public class StringPool {
     }
 
     public String get(String value) {
-        if (!pool.containsKey(value)) {
-            pool.put(value, length);
-            length += getModifiedUtf8Bytes(value).length + 1;
+        Entry entry = pool.get(value);
+        if (entry == null) {
+            byte[] bytes = getModifiedUtf8Bytes(value);
+            entry = new Entry(length, bytes.length + 1);
+            pool.put(value, entry);
+            length += entry.length;
         }
-        return String.format("((char *)(string_pool + %dLL))", pool.get(value));
+        return String.format("(string_pool::decrypt_string(%dLL, %d), (char *)(string_pool + %dLL))",
+                entry.offset, entry.length, entry.offset);
+    }
+
+    public long getOffset(String value) {
+        return pool.get(value).offset;
+    }
+
+    public int getLength(String value) {
+        return pool.get(value).length;
     }
 
     private static byte[] getModifiedUtf8Bytes(String str) {
@@ -86,7 +108,7 @@ public class StringPool {
     public String build() {
         List<Byte> plainBytes = new ArrayList<>();
         pool.entrySet().stream()
-                .sorted(Map.Entry.comparingByValue())
+                .sorted(Comparator.comparingLong(e -> e.getValue().offset))
                 .map(Map.Entry::getKey)
                 .forEach(string -> {
                     for (byte b : getModifiedUtf8Bytes(string)) {

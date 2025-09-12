@@ -42,22 +42,46 @@ namespace native_jvm::string_pool {
         }
     }
 
-    void decrypt_pool() {
+    static void crypt_string(std::size_t offset, std::size_t len) {
         uint32_t key_words[8];
         uint32_t nonce_words[3];
         std::memcpy(key_words, key, 32);
         std::memcpy(nonce_words, nonce, 12);
 
-        size_t len = $size;
+        std::size_t end = offset + len;
         uint32_t block[16];
-        uint32_t counter = 0;
-        for (size_t i = 0; i < len; ) {
+        uint32_t counter = static_cast<uint32_t>(offset / 64);
+        std::size_t i = offset;
+        int j = static_cast<int>(offset % 64);
+
+        chacha_block(block, key_words, nonce_words, counter);
+        unsigned char *stream = reinterpret_cast<unsigned char *>(block);
+        if (j != 0) {
+            for (; j < 64 && i < end; ++j, ++i) {
+                pool[i] ^= static_cast<char>(stream[j]);
+            }
+            counter++;
+        }
+
+        while (i < end) {
             chacha_block(block, key_words, nonce_words, counter++);
-            unsigned char *stream = reinterpret_cast<unsigned char *>(block);
-            for (int j = 0; j < 64 && i < len; ++j, ++i) {
+            stream = reinterpret_cast<unsigned char *>(block);
+            for (j = 0; j < 64 && i < end; ++j, ++i) {
                 pool[i] ^= static_cast<char>(stream[j]);
             }
         }
+    }
+
+    void decrypt_string(std::size_t offset, std::size_t len) {
+        crypt_string(offset, len);
+    }
+
+    void encrypt_string(std::size_t offset, std::size_t len) {
+        crypt_string(offset, len);
+    }
+
+    void clear_string(std::size_t offset, std::size_t len) {
+        std::memset(pool + offset, 0, len);
     }
 
     char *get_pool() {
