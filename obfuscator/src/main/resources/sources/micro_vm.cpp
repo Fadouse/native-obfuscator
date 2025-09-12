@@ -37,7 +37,7 @@ Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
 }
 
 int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
-                const int64_t* locals, size_t locals_length, uint64_t seed) {
+                int64_t* locals, size_t locals_length, uint64_t seed) {
     int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
@@ -72,6 +72,7 @@ dispatch:
         case OP_SWAP:  goto do_swap;
         case OP_DUP:   goto do_dup;
         case OP_LOAD:  goto do_load;
+        case OP_STORE: goto do_store;
         case OP_IF_ICMPEQ: goto do_if_icmpeq;
         case OP_IF_ICMPNE: goto do_if_icmpne;
         case OP_GOTO:  goto do_goto;
@@ -135,6 +136,13 @@ do_dup:
 do_load:
     if (sp < 256 && tmp >= 0 && static_cast<size_t>(tmp) < locals_length) {
         stack[sp++] = locals[tmp];
+    }
+    goto dispatch;
+
+do_store:
+    if (sp >= 1 && tmp >= 0 && static_cast<size_t>(tmp) < locals_length && locals != nullptr) {
+        locals[tmp] = stack[sp - 1];
+        --sp;
     }
     goto dispatch;
 

@@ -26,7 +26,8 @@ enum OpCode : uint8_t {
     OP_IF_ICMPEQ = 13, // compare two ints and jump if equal
     OP_IF_ICMPNE = 14, // compare two ints and jump if not equal
     OP_GOTO = 15, // unconditional jump
-    OP_COUNT = 16  // helper constant with number of opcodes
+    OP_STORE = 16, // store top of stack into local variable
+    OP_COUNT = 17  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
@@ -50,9 +51,9 @@ void init_key(uint64_t seed);
 // decoding of every instruction.  The return value is the top of the
 // stack after the program halts which allows host code to retrieve
 // computed values. Locals should point to an array of initial local
-// variables for OP_LOAD instructions.
+// variables for OP_LOAD/OP_STORE instructions.
 int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
-                const int64_t* locals, size_t locals_length, uint64_t seed);
+                int64_t* locals, size_t locals_length, uint64_t seed);
 
 // Encodes a program in-place using the internal key so that it can be
 // executed by the VM.  The seed should be the same value passed to

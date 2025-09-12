@@ -42,6 +42,7 @@ public class VmTranslator {
         public static final int OP_IF_ICMPEQ = 13;
         public static final int OP_IF_ICMPNE = 14;
         public static final int OP_GOTO = 15;
+        public static final int OP_STORE = 16;
     }
 
     /**
@@ -76,6 +77,15 @@ public class VmTranslator {
                 case Opcodes.IADD:
                     result.add(new Instruction(VmOpcodes.OP_ADD, 0));
                     break;
+                case Opcodes.ISUB:
+                    result.add(new Instruction(VmOpcodes.OP_SUB, 0));
+                    break;
+                case Opcodes.IMUL:
+                    result.add(new Instruction(VmOpcodes.OP_MUL, 0));
+                    break;
+                case Opcodes.IDIV:
+                    result.add(new Instruction(VmOpcodes.OP_DIV, 0));
+                    break;
                 case Opcodes.BIPUSH:
                 case Opcodes.SIPUSH:
                     result.add(new Instruction(VmOpcodes.OP_PUSH, ((IntInsnNode) insn).operand));
@@ -90,6 +100,15 @@ public class VmTranslator {
                     int val = opcode - Opcodes.ICONST_0;
                     if (opcode == Opcodes.ICONST_M1) val = -1;
                     result.add(new Instruction(VmOpcodes.OP_PUSH, val));
+                    break;
+                case Opcodes.ISTORE:
+                    result.add(new Instruction(VmOpcodes.OP_STORE, ((VarInsnNode) insn).var));
+                    break;
+                case 59: // ISTORE_0
+                case 60: // ISTORE_1
+                case 61: // ISTORE_2
+                case 62: // ISTORE_3
+                    result.add(new Instruction(VmOpcodes.OP_STORE, opcode - 59));
                     break;
                 case Opcodes.GOTO:
                     result.add(new Instruction(VmOpcodes.OP_GOTO, labelIds.get(((JumpInsnNode) insn).label)));
