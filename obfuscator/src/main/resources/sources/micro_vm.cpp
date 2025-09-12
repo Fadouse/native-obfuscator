@@ -11,6 +11,7 @@ namespace native_jvm::vm {
 static thread_local uint64_t KEY = 0;
 static thread_local std::array<uint8_t, OP_COUNT> op_map{};     // maps logical opcodes to shuffled values
 static thread_local std::array<OpCode, OP_COUNT> inv_op_map{}; // reverse map
+static thread_local bool vm_state_initialized = false;
 
 void init_key(uint64_t seed) {
     std::random_device rd;
@@ -23,6 +24,13 @@ void init_key(uint64_t seed) {
     for (uint8_t i = 0; i < OP_COUNT; ++i) {
         op_map[i] = values[i];
         inv_op_map[values[i]] = static_cast<OpCode>(i);
+    }
+    vm_state_initialized = true;
+}
+
+void ensure_init(uint64_t seed) {
+    if (!vm_state_initialized) {
+        init_key(seed);
     }
 }
 
@@ -179,6 +187,7 @@ halt:
 }
 
 void encode_program(Instruction* code, size_t length, uint64_t seed) {
+    ensure_init(seed);
     uint64_t state = KEY ^ seed;
     std::mt19937_64 rng(KEY ^ (seed << 1));
     for (size_t i = 0; i < length; ++i) {
@@ -189,6 +198,7 @@ void encode_program(Instruction* code, size_t length, uint64_t seed) {
 }
 
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
+    ensure_init(seed);
     std::vector<Instruction> program;
     program.reserve(16);
     uint64_t state = KEY ^ seed;
