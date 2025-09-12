@@ -8,9 +8,9 @@
 // NOLINTBEGIN - obfuscated control flow by design
 namespace native_jvm::vm {
 
-static uint64_t KEY = 0;
-static std::array<uint8_t, OP_COUNT> op_map{};     // maps logical opcodes to shuffled values
-static std::array<OpCode, OP_COUNT> inv_op_map{}; // reverse map
+static thread_local uint64_t KEY = 0;
+static thread_local std::array<uint8_t, OP_COUNT> op_map{};     // maps logical opcodes to shuffled values
+static thread_local std::array<OpCode, OP_COUNT> inv_op_map{}; // reverse map
 
 void init_key(uint64_t seed) {
     std::random_device rd;
