@@ -10,7 +10,7 @@ Also, this tool does not particularly obfuscate your code; it just transpiles it
 
 本项目完全由 OpenAI 的 Codex 完成
 在该优秀框架的基础上添加了以下功能:
- - 添加了基本字符串，常量混淆
+ - 基本字符串，常量混淆
  - 基本控制流扁平化混淆
  - 基础虚拟化保护
 
