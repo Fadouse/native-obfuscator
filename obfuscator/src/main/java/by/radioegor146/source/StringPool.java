@@ -138,6 +138,13 @@ public class StringPool {
                 .mapToObj(String::valueOf)
                 .collect(Collectors.joining(", ")));
 
+        String entriesArray;
+        if (entries.isEmpty()) {
+            entriesArray = "{ 0LL, { 0 }, { 0 } }";
+        } else {
+            entriesArray = entries.stream().collect(Collectors.joining(", "));
+        }
+
         String template = Util.readResource("sources/string_pool.cpp");
         return Util.dynamicFormat(template, Util.createMap(
                 "size", Math.max(1, encrypted.length) + "LL",

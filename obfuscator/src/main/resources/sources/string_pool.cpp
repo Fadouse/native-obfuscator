@@ -40,13 +40,12 @@ namespace native_jvm::string_pool {
             out[i] += state[i];
         }
     }
-
     static void crypt_string(const unsigned char key[32], const unsigned char nonce[12],
                              std::size_t offset, std::size_t len) {
         uint32_t key_words[8];
         uint32_t nonce_words[3];
-        std::memcpy(key_words, key, 32);
-        std::memcpy(nonce_words, nonce, 12);
+        std::memcpy(key_words, e->key, 32);
+        std::memcpy(nonce_words, e->nonce, 12);
 
         uint32_t block[16];
         uint32_t counter = 0;
