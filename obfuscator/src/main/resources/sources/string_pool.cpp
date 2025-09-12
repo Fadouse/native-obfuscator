@@ -4,7 +4,6 @@
 #include <cstring>
 
 namespace native_jvm::string_pool {
-    static entry entries[] = { $entries };
     static char pool[$size] = $value;
     static unsigned char decrypted[$size] = {};
 
@@ -42,24 +41,11 @@ namespace native_jvm::string_pool {
         }
     }
 
-    static entry *find_entry(std::size_t offset) {
-        for (auto &e : entries) {
-            if (e.offset == offset) {
-                return &e;
-            }
-        }
-        return nullptr;
-    }
-
-    static void crypt_string(std::size_t offset, std::size_t len) {
-        entry *e = find_entry(offset);
-        if (e == nullptr) {
-            return;
-        }
+    static void crypt_string(std::size_t offset, std::size_t len, const unsigned char key[32], const unsigned char nonce[12]) {
         uint32_t key_words[8];
         uint32_t nonce_words[3];
-        std::memcpy(key_words, e->key, 32);
-        std::memcpy(nonce_words, e->nonce, 12);
+        std::memcpy(key_words, key, 32);
+        std::memcpy(nonce_words, nonce, 12);
 
         uint32_t block[16];
         uint32_t counter = 0;
@@ -74,16 +60,16 @@ namespace native_jvm::string_pool {
         }
     }
 
-    void decrypt_string(std::size_t offset, std::size_t len) {
+    void decrypt_string(std::size_t offset, std::size_t len, const unsigned char key[32], const unsigned char nonce[12]) {
         if (!decrypted[offset]) {
-            crypt_string(offset, len);
+            crypt_string(offset, len, key, nonce);
             std::memset(decrypted + offset, 1, len);
         }
     }
 
-    void encrypt_string(std::size_t offset, std::size_t len) {
+    void encrypt_string(std::size_t offset, std::size_t len, const unsigned char key[32], const unsigned char nonce[12]) {
         if (decrypted[offset]) {
-            crypt_string(offset, len);
+            crypt_string(offset, len, key, nonce);
             std::memset(decrypted + offset, 0, len);
         }
     }
