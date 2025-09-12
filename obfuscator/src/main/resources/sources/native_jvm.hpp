@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <mutex>
 #include <initializer_list>
+#include <cstdint>
 
 #ifndef NATIVE_JVM_HPP_GUARD
 
@@ -94,6 +95,11 @@ namespace native_jvm::utils {
     void clear_refs(JNIEnv *env, std::unordered_set<jobject> &refs);
 
     jstring get_interned(JNIEnv *env, jstring value);
+
+    jint decode_int(jint enc, jint key, jint method_id, jint class_id);
+    jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id);
+    jfloat decode_float(jint enc, jint key, jint method_id, jint class_id);
+    jdouble decode_double(jlong enc, jlong key, jint method_id, jint class_id);
 }
 
 #endif

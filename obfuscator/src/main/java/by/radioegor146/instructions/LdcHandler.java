@@ -5,6 +5,8 @@ import by.radioegor146.MethodProcessor;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.LdcInsnNode;
 
+import java.util.concurrent.ThreadLocalRandom;
+
 public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
 
     public static String getIntString(int value) {
@@ -45,16 +47,38 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
             props.put("cst_ptr", context.getCachedStrings().getPointer(node.cst.toString()));
         } else if (cst instanceof Integer) {
             instructionName += "_INT";
-            props.put("cst", getIntString((Integer) cst));
+            int key = ThreadLocalRandom.current().nextInt();
+            int enc = ((Integer) cst) ^ key;
+            props.put("enc", getIntString(enc));
+            props.put("key", getIntString(key));
+            props.put("mid", String.valueOf(context.methodIndex));
+            props.put("cid", String.valueOf(context.classIndex));
         } else if (cst instanceof Long) {
             instructionName += "_LONG";
-            props.put("cst", getLongValue((Long) cst));
+            long key = ThreadLocalRandom.current().nextLong();
+            long enc = ((Long) cst) ^ key;
+            props.put("enc", getLongValue(enc));
+            props.put("key", getLongValue(key));
+            props.put("mid", String.valueOf(context.methodIndex));
+            props.put("cid", String.valueOf(context.classIndex));
         } else if (cst instanceof Float) {
             instructionName += "_FLOAT";
-            props.put("cst", getFloatValue((Float) node.cst));
+            int bits = Float.floatToRawIntBits((Float) cst);
+            int key = ThreadLocalRandom.current().nextInt();
+            int enc = bits ^ key;
+            props.put("enc", getIntString(enc));
+            props.put("key", getIntString(key));
+            props.put("mid", String.valueOf(context.methodIndex));
+            props.put("cid", String.valueOf(context.classIndex));
         } else if (cst instanceof Double) {
             instructionName += "_DOUBLE";
-            props.put("cst", getDoubleValue((Double) node.cst));
+            long bits = Double.doubleToRawLongBits((Double) cst);
+            long key = ThreadLocalRandom.current().nextLong();
+            long enc = bits ^ key;
+            props.put("enc", getLongValue(enc));
+            props.put("key", getLongValue(key));
+            props.put("mid", String.valueOf(context.methodIndex));
+            props.put("cid", String.valueOf(context.classIndex));
         } else if (cst instanceof Type) {
             instructionName += "_CLASS";
 
