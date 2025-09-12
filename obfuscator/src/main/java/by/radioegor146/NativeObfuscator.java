@@ -122,6 +122,30 @@ public class NativeObfuscator {
         Util.copyResource("sources/string_pool.hpp", cppDir);
         Util.copyResource("sources/micro_vm.cpp", cppDir);
         Util.copyResource("sources/micro_vm.hpp", cppDir);
+        Util.copyResource("sources/shuffle_labels.py", cppDir);
+        Util.copyResource("sources/label_table.inc", cppDir);
+
+        boolean shuffled = false;
+        String[] pythonCandidates = {"python3", "python"};
+        for (String python : pythonCandidates) {
+            try {
+                Process proc = new ProcessBuilder(python, "shuffle_labels.py")
+                        .directory(cppDir.toFile())
+                        .inheritIO()
+                        .start();
+                if (proc.waitFor() == 0) {
+                    shuffled = true;
+                    break;
+                }
+            } catch (IOException | InterruptedException e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        if (!shuffled) {
+            logger.warn("Failed to shuffle labels, using default table");
+        }
 
         String projectName = "native_library";
 
