@@ -49,8 +49,11 @@ public class StringPool {
             pool.put(value, entry);
             length += entry.length;
         }
-        return String.format("(string_pool::decrypt_string(%s, %s, %d, %dLL, %d), (char *)(string_pool + %dLL))",
-                formatArray(entry.key, entry.seed), formatArray(entry.nonce, entry.seed), entry.seed, entry.offset, entry.length, entry.offset);
+        return String.format(
+                "(string_pool::decrypt_string(string_pool::decode_key(%s, %d), string_pool::decode_nonce(%s, %d), %d, %dLL, %d), (char *)(string_pool + %dLL))",
+                formatArray(entry.key, entry.seed), entry.seed,
+                formatArray(entry.nonce, entry.seed), entry.seed,
+                entry.seed, entry.offset, entry.length, entry.offset);
     }
 
     public long getOffset(String value) {

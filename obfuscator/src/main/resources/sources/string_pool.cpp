@@ -96,32 +96,30 @@ namespace native_jvm::string_pool {
         return out;
     }
 
-    void decrypt_string(const unsigned char key[32], const unsigned char nonce[12],
+    void decrypt_string(unsigned char *key, unsigned char *nonce,
                         uint32_t seed, std::size_t offset, std::size_t len) {
-        unsigned char *real_key = decode_key(key, seed);
-        unsigned char *real_nonce = decode_nonce(nonce, seed);
+        (void)seed;
         if (!decrypted[offset]) {
-            crypt_string(real_key, real_nonce, offset, len);
+            crypt_string(key, nonce, offset, len);
             std::memset(decrypted + offset, 1, len);
         }
-        std::memset(real_key, 0, 32);
-        std::memset(real_nonce, 0, 12);
-        delete[] real_key;
-        delete[] real_nonce;
+        std::memset(key, 0, 32);
+        std::memset(nonce, 0, 12);
+        delete[] key;
+        delete[] nonce;
     }
 
-    void encrypt_string(const unsigned char key[32], const unsigned char nonce[12],
+    void encrypt_string(unsigned char *key, unsigned char *nonce,
                         uint32_t seed, std::size_t offset, std::size_t len) {
-        unsigned char *real_key = decode_key(key, seed);
-        unsigned char *real_nonce = decode_nonce(nonce, seed);
+        (void)seed;
         if (decrypted[offset]) {
-            crypt_string(real_key, real_nonce, offset, len);
+            crypt_string(key, nonce, offset, len);
             std::memset(decrypted + offset, 0, len);
         }
-        std::memset(real_key, 0, 32);
-        std::memset(real_nonce, 0, 12);
-        delete[] real_key;
-        delete[] real_nonce;
+        std::memset(key, 0, 32);
+        std::memset(nonce, 0, 12);
+        delete[] key;
+        delete[] nonce;
     }
 
     void clear_string(std::size_t offset, std::size_t len) {
