@@ -19,14 +19,14 @@ public class StringPoolTest {
         stringPool.get("test");
 
         String build1 = stringPool.build();
-        assertTrue(build1.contains("static char pool[5LL]"));
+        assertTrue(build1.contains("static unsigned char pool[5LL]"));
         assertTrue(build1.contains("static unsigned char decrypted[5LL]"));
         assertFalse(build1.contains("entries"));
 
         stringPool.get("other");
 
         String build2 = stringPool.build();
-        assertTrue(build2.contains("static char pool[11LL]"));
+        assertTrue(build2.contains("static unsigned char pool[11LL]"));
         assertTrue(build2.contains("static unsigned char decrypted[11LL]"));
     }
 

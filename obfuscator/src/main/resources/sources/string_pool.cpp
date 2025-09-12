@@ -5,7 +5,7 @@
 #include <cstring>
 
 namespace native_jvm::string_pool {
-    static char pool[$size] = $value;
+    static unsigned char pool[$size] = $value;
     static unsigned char decrypted[$size] = {};
 
     static inline uint32_t rotl(uint32_t v, int c) {
@@ -57,7 +57,7 @@ namespace native_jvm::string_pool {
             chacha_block(block, key_words, nonce_words, counter++);
             stream = reinterpret_cast<unsigned char *>(block);
             for (std::size_t j = 0; j < 64 && i < len; ++j, ++i) {
-                pool[offset + i] ^= static_cast<char>(stream[j]);
+                pool[offset + i] ^= stream[j];
             }
         }
     }
@@ -128,7 +128,7 @@ namespace native_jvm::string_pool {
     }
 
     char *get_pool() {
-        return pool;
+        return reinterpret_cast<char *>(pool);
     }
 }
 
