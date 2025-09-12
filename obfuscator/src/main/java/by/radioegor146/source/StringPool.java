@@ -46,8 +46,8 @@ public class StringPool {
             pool.put(value, entry);
             length += entry.length;
         }
-        return String.format("(string_pool::decrypt_string(%dLL, %d), (char *)(string_pool + %dLL))",
-                entry.offset, entry.length, entry.offset);
+        return String.format("(string_pool::decrypt_string(%s, %s, %dLL, %d), (char *)(string_pool + %dLL))",
+                formatArray(entry.key), formatArray(entry.nonce), entry.offset, entry.length, entry.offset);
     }
 
     public long getOffset(String value) {
@@ -107,7 +107,6 @@ public class StringPool {
 
     public String build() {
         List<Byte> encryptedBytes = new ArrayList<>();
-        List<String> entries = new ArrayList<>();
         pool.entrySet().stream()
                 .sorted(Comparator.comparingLong(e -> e.getValue().offset))
                 .forEach(e -> {
@@ -119,8 +118,6 @@ public class StringPool {
                     for (byte b : encrypted) {
                         encryptedBytes.add(b);
                     }
-                    entries.add(String.format("{ %dLL, %s, %s }", entry.offset,
-                            formatArray(entry.key), formatArray(entry.nonce)));
                 });
 
         byte[] encrypted = new byte[encryptedBytes.size()];
@@ -133,23 +130,15 @@ public class StringPool {
                 .mapToObj(String::valueOf)
                 .collect(Collectors.joining(", ")));
 
-        String entriesArray;
-        if (entries.isEmpty()) {
-            entriesArray = "{ 0LL, { 0 }, { 0 } }";
-        } else {
-            entriesArray = entries.stream().collect(Collectors.joining(", "));
-        }
-
         String template = Util.readResource("sources/string_pool.cpp");
         return Util.dynamicFormat(template, Util.createMap(
                 "size", Math.max(1, encrypted.length) + "LL",
-                "value", poolArray,
-                "entries", entriesArray
+                "value", poolArray
         ));
     }
 
     private static String formatArray(byte[] arr) {
-        return String.format("{ %s }", IntStream.range(0, arr.length)
+        return String.format("(unsigned char[]){ %s }", IntStream.range(0, arr.length)
                 .map(i -> arr[i] & 0xFF)
                 .mapToObj(String::valueOf)
                 .collect(Collectors.joining(", ")));
