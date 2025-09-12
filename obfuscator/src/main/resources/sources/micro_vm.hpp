@@ -27,7 +27,22 @@ enum OpCode : uint8_t {
     OP_IF_ICMPNE = 14, // compare two ints and jump if not equal
     OP_GOTO = 15, // unconditional jump
     OP_STORE = 16, // store top of stack into local variable
-    OP_COUNT = 17  // helper constant with number of opcodes
+    OP_AND   = 17, // bitwise and
+    OP_OR    = 18, // bitwise or
+    OP_XOR   = 19, // bitwise xor
+    OP_SHL   = 20, // shift left
+    OP_SHR   = 21, // arithmetic shift right
+    OP_USHR  = 22, // logical shift right
+    OP_IF_ICMPLT = 23, // compare two ints and jump if less than
+    OP_IF_ICMPLE = 24, // compare two ints and jump if <=
+    OP_IF_ICMPGT = 25, // compare two ints and jump if >
+    OP_IF_ICMPGE = 26, // compare two ints and jump if >=
+    OP_I2L  = 27, // convert int to long
+    OP_I2B  = 28, // convert int to byte
+    OP_I2C  = 29, // convert int to char
+    OP_I2S  = 30, // convert int to short
+    OP_NEG  = 31, // negate int
+    OP_COUNT = 32  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
@@ -65,6 +80,9 @@ void encode_program(Instruction* code, size_t length, uint64_t seed);
 //    result = lhs (op) rhs
 // for one of the arithmetic operations and returns the computed value.
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed);
+
+// Executes a unary operation (conversion or negation) through the VM.
+int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed);
 
 } // namespace native_jvm::vm
 

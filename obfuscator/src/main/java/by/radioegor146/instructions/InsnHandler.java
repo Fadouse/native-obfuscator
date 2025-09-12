@@ -75,6 +75,121 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
                         props.get("trycatchhandler")));
                 break;
             }
+            case Opcodes.IAND: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                if (ThreadLocalRandom.current().nextBoolean()) {
+                    long junkSeed = ThreadLocalRandom.current().nextLong();
+                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    context.output.append(String.format(
+                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                }
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_AND, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                        props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.IOR: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                if (ThreadLocalRandom.current().nextBoolean()) {
+                    long junkSeed = ThreadLocalRandom.current().nextLong();
+                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    context.output.append(String.format(
+                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                }
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_OR, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                        props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.IXOR: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                if (ThreadLocalRandom.current().nextBoolean()) {
+                    long junkSeed = ThreadLocalRandom.current().nextLong();
+                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    context.output.append(String.format(
+                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                }
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_XOR, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                        props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.ISHL: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHL, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                        props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.ISHR: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHR, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                        props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.IUSHR: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_USHR, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                        props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.I2B: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2B, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.I2C: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2C, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.I2S: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2S, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.I2L: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.j = native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2L, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.INEG: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_NEG, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                break;
+            }
             default:
                 // handled via snippets
                 break;

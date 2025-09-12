@@ -43,6 +43,21 @@ public class VmTranslator {
         public static final int OP_IF_ICMPNE = 14;
         public static final int OP_GOTO = 15;
         public static final int OP_STORE = 16;
+        public static final int OP_AND = 17;
+        public static final int OP_OR = 18;
+        public static final int OP_XOR = 19;
+        public static final int OP_SHL = 20;
+        public static final int OP_SHR = 21;
+        public static final int OP_USHR = 22;
+        public static final int OP_IF_ICMPLT = 23;
+        public static final int OP_IF_ICMPLE = 24;
+        public static final int OP_IF_ICMPGT = 25;
+        public static final int OP_IF_ICMPGE = 26;
+        public static final int OP_I2L = 27;
+        public static final int OP_I2B = 28;
+        public static final int OP_I2C = 29;
+        public static final int OP_I2S = 30;
+        public static final int OP_NEG = 31;
     }
 
     /**
@@ -86,6 +101,24 @@ public class VmTranslator {
                 case Opcodes.IDIV:
                     result.add(new Instruction(VmOpcodes.OP_DIV, 0));
                     break;
+                case Opcodes.IAND:
+                    result.add(new Instruction(VmOpcodes.OP_AND, 0));
+                    break;
+                case Opcodes.IOR:
+                    result.add(new Instruction(VmOpcodes.OP_OR, 0));
+                    break;
+                case Opcodes.IXOR:
+                    result.add(new Instruction(VmOpcodes.OP_XOR, 0));
+                    break;
+                case Opcodes.ISHL:
+                    result.add(new Instruction(VmOpcodes.OP_SHL, 0));
+                    break;
+                case Opcodes.ISHR:
+                    result.add(new Instruction(VmOpcodes.OP_SHR, 0));
+                    break;
+                case Opcodes.IUSHR:
+                    result.add(new Instruction(VmOpcodes.OP_USHR, 0));
+                    break;
                 case Opcodes.BIPUSH:
                 case Opcodes.SIPUSH:
                     result.add(new Instruction(VmOpcodes.OP_PUSH, ((IntInsnNode) insn).operand));
@@ -119,8 +152,35 @@ public class VmTranslator {
                 case Opcodes.IF_ICMPNE:
                     result.add(new Instruction(VmOpcodes.OP_IF_ICMPNE, labelIds.get(((JumpInsnNode) insn).label)));
                     break;
+                case Opcodes.IF_ICMPLT:
+                    result.add(new Instruction(VmOpcodes.OP_IF_ICMPLT, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.IF_ICMPLE:
+                    result.add(new Instruction(VmOpcodes.OP_IF_ICMPLE, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.IF_ICMPGT:
+                    result.add(new Instruction(VmOpcodes.OP_IF_ICMPGT, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.IF_ICMPGE:
+                    result.add(new Instruction(VmOpcodes.OP_IF_ICMPGE, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
                 case Opcodes.IRETURN:
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));
+                    break;
+                case Opcodes.I2B:
+                    result.add(new Instruction(VmOpcodes.OP_I2B, 0));
+                    break;
+                case Opcodes.I2C:
+                    result.add(new Instruction(VmOpcodes.OP_I2C, 0));
+                    break;
+                case Opcodes.I2S:
+                    result.add(new Instruction(VmOpcodes.OP_I2S, 0));
+                    break;
+                case Opcodes.I2L:
+                    result.add(new Instruction(VmOpcodes.OP_I2L, 0));
+                    break;
+                case Opcodes.INEG:
+                    result.add(new Instruction(VmOpcodes.OP_NEG, 0));
                     break;
                 case -1: // labels/frames/lines
                     break;

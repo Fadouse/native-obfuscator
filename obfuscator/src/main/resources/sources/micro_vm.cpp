@@ -84,6 +84,21 @@ dispatch:
         case OP_IF_ICMPEQ: goto do_if_icmpeq;
         case OP_IF_ICMPNE: goto do_if_icmpne;
         case OP_GOTO:  goto do_goto;
+        case OP_AND:  goto do_and;
+        case OP_OR:   goto do_or;
+        case OP_XOR:  goto do_xor;
+        case OP_SHL:  goto do_shl;
+        case OP_SHR:  goto do_shr;
+        case OP_USHR: goto do_ushr;
+        case OP_IF_ICMPLT: goto do_if_icmplt;
+        case OP_IF_ICMPLE: goto do_if_icmple;
+        case OP_IF_ICMPGT: goto do_if_icmpgt;
+        case OP_IF_ICMPGE: goto do_if_icmpge;
+        case OP_I2L: goto do_i2l;
+        case OP_I2B: goto do_i2b;
+        case OP_I2C: goto do_i2c;
+        case OP_I2S: goto do_i2s;
+        case OP_NEG: goto do_neg;
         default:       goto halt;
     }
 
@@ -176,6 +191,86 @@ do_goto:
     pc = static_cast<size_t>(tmp);
     goto dispatch;
 
+do_and:
+    if (sp >= 2) { stack[sp - 2] &= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_or:
+    if (sp >= 2) { stack[sp - 2] |= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_xor:
+    if (sp >= 2) { stack[sp - 2] ^= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_shl:
+    if (sp >= 2) { stack[sp - 2] <<= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_shr:
+    if (sp >= 2) { stack[sp - 2] >>= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_ushr:
+    if (sp >= 2) { stack[sp - 2] = static_cast<int64_t>(static_cast<uint64_t>(stack[sp - 2]) >> stack[sp - 1]); --sp; }
+    goto dispatch;
+
+do_if_icmplt:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a < b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_icmple:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a <= b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_icmpgt:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a > b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_icmpge:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a >= b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_i2l:
+    if (sp >= 1) stack[sp - 1] = static_cast<int64_t>(static_cast<int32_t>(stack[sp - 1]));
+    goto dispatch;
+
+do_i2b:
+    if (sp >= 1) stack[sp - 1] = static_cast<int64_t>(static_cast<int8_t>(stack[sp - 1]));
+    goto dispatch;
+
+do_i2c:
+    if (sp >= 1) stack[sp - 1] = static_cast<int64_t>(static_cast<uint16_t>(stack[sp - 1]));
+    goto dispatch;
+
+do_i2s:
+    if (sp >= 1) stack[sp - 1] = static_cast<int64_t>(static_cast<int16_t>(stack[sp - 1]));
+    goto dispatch;
+
+do_neg:
+    if (sp >= 1) stack[sp - 1] = -stack[sp - 1];
+    goto dispatch;
+
 // Dummy branch used only to confuse decompilers
 junk:
     state ^= KEY << 7;
@@ -223,6 +318,38 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
     emit(OP_PUSH, lhs);
     emit_junk();
     emit(OP_PUSH, rhs);
+    emit_junk();
+    emit(op, 0);
+    emit_junk();
+    emit(OP_HALT, 0);
+
+    return execute(env, program.data(), program.size(), nullptr, 0, seed);
+}
+
+int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed) {
+    ensure_init(seed);
+    std::vector<Instruction> program;
+    program.reserve(8);
+    uint64_t state = KEY ^ seed;
+    std::mt19937_64 rng(KEY ^ (seed << 1));
+
+    auto emit = [&](OpCode opcode, int64_t operand) {
+        state = (state + KEY) ^ (KEY >> 3);
+        uint64_t nonce = rng();
+        program.push_back(encode(opcode, operand, state, nonce));
+    };
+
+    auto emit_junk = [&]() {
+        std::uniform_int_distribution<int> count_dist(0, 2);
+        std::uniform_int_distribution<int> choice_dist(0, 1);
+        int count = count_dist(rng);
+        for (int i = 0; i < count; ++i) {
+            OpCode junk = choice_dist(rng) ? OP_JUNK1 : OP_JUNK2;
+            emit(junk, 0);
+        }
+    };
+
+    emit(OP_PUSH, value);
     emit_junk();
     emit(op, 0);
     emit_junk();
