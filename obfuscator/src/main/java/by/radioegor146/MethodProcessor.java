@@ -1,6 +1,7 @@
 package by.radioegor146;
 
 import by.radioegor146.instructions.*;
+import by.radioegor146.instructions.VmTranslator;
 import by.radioegor146.special.ClInitSpecialMethodProcessor;
 import by.radioegor146.special.DefaultSpecialMethodProcessor;
 import by.radioegor146.special.SpecialMethodProcessor;
@@ -184,6 +185,25 @@ public class MethodProcessor {
 
         long vmKeySeed = ThreadLocalRandom.current().nextLong();
         output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
+
+        VmTranslator vmTranslator = new VmTranslator();
+        VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
+        if (vmCode != null) {
+            output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
+                    VmTranslator.serialize(vmCode)));
+            output.append(String.format("    jlong __ngen_vm_locals[%d] = {0};\n", method.maxLocals));
+            for (int i = 0; i < argNames.size(); i++) {
+                output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, argNames.get(i)));
+            }
+            output.append(String.format(
+                    "    native_jvm::vm::encode_program(__ngen_vm_code, %d, %dLL);\n",
+                    vmCode.length, vmKeySeed));
+            output.append(String.format(
+                    "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
+                    CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+            output.append("}\n");
+            return;
+        }
 
         if (method.tryCatchBlocks != null) {
             for (TryCatchBlockNode tryCatch : method.tryCatchBlocks) {

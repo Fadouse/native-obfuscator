@@ -36,7 +36,8 @@ Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
     };
 }
 
-int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t seed) {
+int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
+                const int64_t* locals, size_t locals_length, uint64_t seed) {
     int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
@@ -70,6 +71,10 @@ dispatch:
         case OP_JUNK2: goto do_junk2;
         case OP_SWAP:  goto do_swap;
         case OP_DUP:   goto do_dup;
+        case OP_LOAD:  goto do_load;
+        case OP_IF_ICMPEQ: goto do_if_icmpeq;
+        case OP_IF_ICMPNE: goto do_if_icmpne;
+        case OP_GOTO:  goto do_goto;
         default:       goto halt;
     }
 
@@ -127,6 +132,34 @@ do_dup:
     if (sp >= 1 && sp < 256) stack[sp++] = stack[sp - 1];
     goto dispatch;
 
+do_load:
+    if (sp < 256 && tmp >= 0 && static_cast<size_t>(tmp) < locals_length) {
+        stack[sp++] = locals[tmp];
+    }
+    goto dispatch;
+
+do_if_icmpeq:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a == b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_icmpne:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a != b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_goto:
+    pc = static_cast<size_t>(tmp);
+    goto dispatch;
+
 // Dummy branch used only to confuse decompilers
 junk:
     state ^= KEY << 7;
@@ -135,6 +168,16 @@ junk:
 // Exit point
 halt:
     return (sp > 0) ? stack[sp - 1] : 0;
+}
+
+void encode_program(Instruction* code, size_t length, uint64_t seed) {
+    uint64_t state = KEY ^ seed;
+    std::mt19937_64 rng(KEY ^ (seed << 1));
+    for (size_t i = 0; i < length; ++i) {
+        state = (state + KEY) ^ (KEY >> 3);
+        uint64_t nonce = rng();
+        code[i] = encode(static_cast<OpCode>(code[i].op), code[i].operand, state, nonce);
+    }
 }
 
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
@@ -167,7 +210,7 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
     emit_junk();
     emit(OP_HALT, 0);
 
-    return execute(env, program.data(), program.size(), seed);
+    return execute(env, program.data(), program.size(), nullptr, 0, seed);
 }
 
 } // namespace native_jvm::vm
