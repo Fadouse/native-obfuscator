@@ -37,6 +37,7 @@ public class StringPoolTest {
         assertTrue(res1.startsWith("(string_pool::decrypt_string("));
         assertTrue(res1.endsWith(", 0LL, 5), (char *)(string_pool + 0LL))"));
         assertEquals(res1, stringPool.get("test"));
+        assertFalse(res1.contains("(unsigned char[]){"));
 
         String res3 = stringPool.get("\u0080\u0050");
         assertTrue(res3.startsWith("(string_pool::decrypt_string("));

@@ -138,9 +138,13 @@ public class StringPool {
     }
 
     private static String formatArray(byte[] arr) {
-        return String.format("(unsigned char[]){ %s }", IntStream.range(0, arr.length)
-                .map(i -> arr[i] & 0xFF)
-                .mapToObj(String::valueOf)
-                .collect(Collectors.joining(", ")));
+        return String.format(
+                "[]{ static const unsigned char data[%d] = { %s }; return data; }()",
+                arr.length,
+                IntStream.range(0, arr.length)
+                        .map(i -> arr[i] & 0xFF)
+                        .mapToObj(String::valueOf)
+                        .collect(Collectors.joining(", "))
+        );
     }
 }
