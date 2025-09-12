@@ -33,26 +33,24 @@ public class StringPoolTest {
     @Test
     public void testGet() {
         StringPool stringPool = new StringPool();
+        String prefix = "(string_pool::decrypt_string(string_pool::decode_key(";
         String res1 = stringPool.get("test");
-        assertTrue(res1.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res1.startsWith(prefix));
+        assertTrue(res1.contains("string_pool::decode_nonce("));
         assertTrue(res1.endsWith(", 0LL, 5), (char *)(string_pool + 0LL))"));
-        int afterArrays = res1.lastIndexOf("}(), ");
-        assertTrue(afterArrays > 0);
-        String rest = res1.substring(afterArrays + 5);
-        assertTrue(rest.matches("-?\\d+, 0LL, 5\\), \\(char \\*\\)\\(string_pool \\+ 0LL\\)\\)"));
         assertEquals(res1, stringPool.get("test"));
         assertFalse(res1.contains("(unsigned char[]){"));
 
         String res3 = stringPool.get("\u0080\u0050");
-        assertTrue(res3.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res3.startsWith(prefix));
         assertTrue(res3.endsWith(", 5LL, 4), (char *)(string_pool + 5LL))"));
 
         String res4 = stringPool.get("\u0800");
-        assertTrue(res4.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res4.startsWith(prefix));
         assertTrue(res4.endsWith(", 9LL, 4), (char *)(string_pool + 9LL))"));
 
         String res5 = stringPool.get("\u0080");
-        assertTrue(res5.startsWith("(string_pool::decrypt_string("));
+        assertTrue(res5.startsWith(prefix));
         assertTrue(res5.endsWith(", 13LL, 3), (char *)(string_pool + 13LL))"));
     }
 
