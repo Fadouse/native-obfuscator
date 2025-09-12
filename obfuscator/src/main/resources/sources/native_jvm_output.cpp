@@ -19,7 +19,7 @@ namespace native_jvm {
         if (env->ExceptionCheck())
             return;
 
-        char* string_pool = string_pool::get_pool();
+        char* pool = string_pool::get_pool();
 
 $register_code
 
