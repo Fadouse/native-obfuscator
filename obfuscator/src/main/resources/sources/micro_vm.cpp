@@ -9,8 +9,10 @@
 namespace native_jvm::vm {
 
 static thread_local uint64_t KEY = 0;
-static thread_local std::array<uint8_t, OP_COUNT> op_map{};     // maps logical opcodes to shuffled values
-static thread_local std::array<OpCode, OP_COUNT> inv_op_map{}; // reverse map
+static thread_local std::array<uint8_t, OP_COUNT> op_map{};     // first mapping layer
+static thread_local std::array<uint8_t, OP_COUNT> op_map2{};    // second mapping layer
+static thread_local std::array<uint8_t, OP_COUNT> inv_op_map2{}; // reverse second layer
+static thread_local std::array<OpCode, OP_COUNT> inv_op_map{};  // reverse first layer
 static thread_local bool vm_state_initialized = false;
 
 void init_key(uint64_t seed) {
@@ -25,6 +27,14 @@ void init_key(uint64_t seed) {
         op_map[i] = values[i];
         inv_op_map[values[i]] = static_cast<OpCode>(i);
     }
+
+    std::array<uint8_t, OP_COUNT> values2{};
+    for (uint8_t i = 0; i < OP_COUNT; ++i) values2[i] = i;
+    std::shuffle(values2.begin(), values2.end(), gen);
+    for (uint8_t i = 0; i < OP_COUNT; ++i) {
+        op_map2[i] = values2[i];
+        inv_op_map2[values2[i]] = i;
+    }
     vm_state_initialized = true;
 }
 
@@ -36,6 +46,7 @@ void ensure_init(uint64_t seed) {
 
 Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
     uint8_t mapped = op_map[static_cast<uint8_t>(op)];
+    mapped = op_map2[mapped];
     uint64_t mix = key ^ nonce;
     return Instruction{
         static_cast<uint8_t>(mapped ^ static_cast<uint8_t>(mix)),
@@ -52,6 +63,7 @@ int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
     int64_t tmp = 0;
     uint64_t state = KEY ^ seed;
     OpCode op = OP_NOP;
+    uint64_t mask = 0;
 
     goto dispatch; // start of the threaded interpreter
 
@@ -63,10 +75,20 @@ dispatch:
     {
         uint64_t mix = state ^ code[pc].nonce;
         uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
+        mapped = inv_op_map2[mapped];
         op = inv_op_map[mapped];
         tmp = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
     }
     ++pc;
+    static thread_local uint64_t chaos = 0;
+    mask = state ^ KEY ^ chaos;
+    if ((mask & 1ULL) == 0) {
+        chaos ^= mask + pc;
+        op_map[0] ^= static_cast<uint8_t>(chaos);
+        op_map[0] ^= static_cast<uint8_t>(chaos); // undo to keep semantics
+    } else {
+        chaos += mask ^ pc;
+    }
     switch (op) {
         case OP_PUSH:  goto do_push;
         case OP_ADD:   goto do_add;
@@ -292,6 +314,14 @@ void encode_program(Instruction* code, size_t length, uint64_t seed) {
     }
 }
 
+static int64_t execute_variant(JNIEnv* env, const Instruction* code, size_t length,
+                               int64_t* locals, size_t locals_length, uint64_t seed) {
+    volatile uint64_t noise = KEY ^ seed;
+    noise ^= noise << 13;
+    // noise is intentionally unused to introduce a distinct entry
+    return execute(env, code, length, locals, locals_length, seed);
+}
+
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
     ensure_init(seed);
     std::vector<Instruction> program;
@@ -306,15 +336,17 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
     };
 
     auto emit_junk = [&]() {
-        std::uniform_int_distribution<int> count_dist(0, 2);
-        std::uniform_int_distribution<int> choice_dist(0, 1);
+        std::uniform_int_distribution<int> count_dist(0, 3);
+        std::uniform_int_distribution<int> choice_dist(0, 2);
         int count = count_dist(rng);
         for (int i = 0; i < count; ++i) {
-            OpCode junk = choice_dist(rng) ? OP_JUNK1 : OP_JUNK2;
+            int choice = choice_dist(rng);
+            OpCode junk = choice == 0 ? OP_JUNK1 : (choice == 1 ? OP_JUNK2 : OP_NOP);
             emit(junk, 0);
         }
     };
 
+    emit_junk();
     emit(OP_PUSH, lhs);
     emit_junk();
     emit(OP_PUSH, rhs);
@@ -323,7 +355,10 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
     emit_junk();
     emit(OP_HALT, 0);
 
-    return execute(env, program.data(), program.size(), nullptr, 0, seed);
+    using ExecFn = int64_t(*)(JNIEnv*, const Instruction*, size_t, int64_t*, size_t, uint64_t);
+    std::uniform_int_distribution<int> entry_dist(0, 1);
+    ExecFn entries[2] = {execute, execute_variant};
+    return entries[entry_dist(rng)](env, program.data(), program.size(), nullptr, 0, seed);
 }
 
 int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed) {
