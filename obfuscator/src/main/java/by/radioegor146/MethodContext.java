@@ -38,6 +38,8 @@ public class MethodContext {
 
     public String cppNativeMethodName;
 
+    public boolean dispatcherMode;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex) {
         this.obfuscator = obfuscator;
