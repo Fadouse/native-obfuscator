@@ -48,37 +48,49 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
         } else if (cst instanceof Integer) {
             instructionName += "_INT";
             int key = ThreadLocalRandom.current().nextInt();
-            int enc = ((Integer) cst) ^ key;
+            int mid = context.methodIndex;
+            int cid = context.classIndex;
+            int mixed = key ^ ((mid << 3) | cid);
+            int enc = ((Integer) cst) ^ mixed;
             props.put("enc", getIntString(enc));
             props.put("key", getIntString(key));
-            props.put("mid", String.valueOf(context.methodIndex));
-            props.put("cid", String.valueOf(context.classIndex));
+            props.put("mid", String.valueOf(mid));
+            props.put("cid", String.valueOf(cid));
         } else if (cst instanceof Long) {
             instructionName += "_LONG";
             long key = ThreadLocalRandom.current().nextLong();
-            long enc = ((Long) cst) ^ key;
+            int mid = context.methodIndex;
+            int cid = context.classIndex;
+            long mixed = key ^ ((((long) mid) << 32) | (cid & 0xffffffffL));
+            long enc = ((Long) cst) ^ mixed;
             props.put("enc", getLongValue(enc));
             props.put("key", getLongValue(key));
-            props.put("mid", String.valueOf(context.methodIndex));
-            props.put("cid", String.valueOf(context.classIndex));
+            props.put("mid", String.valueOf(mid));
+            props.put("cid", String.valueOf(cid));
         } else if (cst instanceof Float) {
             instructionName += "_FLOAT";
             int bits = Float.floatToRawIntBits((Float) cst);
             int key = ThreadLocalRandom.current().nextInt();
-            int enc = bits ^ key;
+            int mid = context.methodIndex;
+            int cid = context.classIndex;
+            int mixed = key ^ ((mid << 3) | cid);
+            int enc = bits ^ mixed;
             props.put("enc", getIntString(enc));
             props.put("key", getIntString(key));
-            props.put("mid", String.valueOf(context.methodIndex));
-            props.put("cid", String.valueOf(context.classIndex));
+            props.put("mid", String.valueOf(mid));
+            props.put("cid", String.valueOf(cid));
         } else if (cst instanceof Double) {
             instructionName += "_DOUBLE";
             long bits = Double.doubleToRawLongBits((Double) cst);
             long key = ThreadLocalRandom.current().nextLong();
-            long enc = bits ^ key;
+            int mid = context.methodIndex;
+            int cid = context.classIndex;
+            long mixed = key ^ ((((long) mid) << 32) | (cid & 0xffffffffL));
+            long enc = bits ^ mixed;
             props.put("enc", getLongValue(enc));
             props.put("key", getLongValue(key));
-            props.put("mid", String.valueOf(context.methodIndex));
-            props.put("cid", String.valueOf(context.classIndex));
+            props.put("mid", String.valueOf(mid));
+            props.put("cid", String.valueOf(cid));
         } else if (cst instanceof Type) {
             instructionName += "_CLASS";
 
