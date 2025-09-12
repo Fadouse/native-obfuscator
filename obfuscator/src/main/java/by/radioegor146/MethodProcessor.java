@@ -374,6 +374,8 @@ public class MethodProcessor {
         output.append("        }\n");
         output.append("    }\n\n");
 
+        output.append("}\n");
+
         method.localVariables.clear();
         method.tryCatchBlocks.clear();
 
