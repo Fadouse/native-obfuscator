@@ -61,18 +61,32 @@ namespace native_jvm::string_pool {
         }
     }
 
+    static void decode_bytes(const unsigned char *in, unsigned char *out, std::size_t len, uint32_t seed) {
+        for (std::size_t i = 0; i < len; ++i) {
+            out[i] = static_cast<unsigned char>(in[i] ^ (seed >> ((i & 3) * 8)));
+        }
+    }
+
     void decrypt_string(const unsigned char key[32], const unsigned char nonce[12],
-                        std::size_t offset, std::size_t len) {
+                        uint32_t seed, std::size_t offset, std::size_t len) {
+        unsigned char real_key[32];
+        unsigned char real_nonce[12];
+        decode_bytes(key, real_key, 32, seed);
+        decode_bytes(nonce, real_nonce, 12, seed);
         if (!decrypted[offset]) {
-            crypt_string(key, nonce, offset, len);
+            crypt_string(real_key, real_nonce, offset, len);
             std::memset(decrypted + offset, 1, len);
         }
     }
 
     void encrypt_string(const unsigned char key[32], const unsigned char nonce[12],
-                        std::size_t offset, std::size_t len) {
+                        uint32_t seed, std::size_t offset, std::size_t len) {
+        unsigned char real_key[32];
+        unsigned char real_nonce[12];
+        decode_bytes(key, real_key, 32, seed);
+        decode_bytes(nonce, real_nonce, 12, seed);
         if (decrypted[offset]) {
-            crypt_string(key, nonce, offset, len);
+            crypt_string(real_key, real_nonce, offset, len);
             std::memset(decrypted + offset, 0, len);
         }
     }
