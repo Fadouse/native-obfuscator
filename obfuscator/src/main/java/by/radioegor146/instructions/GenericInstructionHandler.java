@@ -36,9 +36,9 @@ public abstract class GenericInstructionHandler<T extends AbstractInsnNode> impl
         if (tryCatchBlockNodeList.size() > 0) {
             String tryCatchLabelName = context.catches.computeIfAbsent(new CatchesBlock(tryCatchBlockNodeList.stream().map(item ->
                     new CatchesBlock.CatchBlock(item.type, item.handler)).collect(Collectors.toList())),
-                    key -> String.format("L_CATCH_%d", context.catches.size()));
+                    key -> String.valueOf(context.getLabelPool().generateStandaloneState()));
             tryCatch.append(context.getSnippets().getSnippet("TRYCATCH_START"));
-            tryCatch.append(" goto ").append(tryCatchLabelName).append("; }");
+            tryCatch.append(" __ngen_state = ").append(tryCatchLabelName).append("; break; }");
         } else {
             tryCatch.append(context.getSnippets().getSnippet("TRYCATCH_EMPTY", Util.createMap(
                     "rettype", MethodProcessor.CPP_TYPES[context.ret.getSort()]

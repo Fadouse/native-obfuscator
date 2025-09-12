@@ -277,17 +277,47 @@ public class MethodProcessor {
         context.argTypes.forEach(t -> context.locals.add(TYPE_TO_STACK[t.getSort()]));
 
         context.stackPointer = 0;
+        context.dispatcherMode = true;
 
-        for (int instruction = 0; instruction < method.instructions.size(); ++instruction) {
+        int instructionCount = method.instructions.size();
+        int[] states = new int[instructionCount];
+        for (int i = 0; i < instructionCount; i++) {
+            states[i] = context.getLabelPool().generateStandaloneState();
+            AbstractInsnNode n = method.instructions.get(i);
+            if (n instanceof LabelNode) {
+                context.getLabelPool().setState(((LabelNode) n).getLabel(), states[i]);
+            }
+        }
+        int fakeState = context.getLabelPool().generateStandaloneState();
+
+        output.append(String.format("    int __ngen_state = %d;\n", states[0]));
+        output.append("    while (true) {\n");
+        output.append("        switch (__ngen_state) {\n");
+
+        for (int instruction = 0; instruction < instructionCount; ++instruction) {
             AbstractInsnNode node = method.instructions.get(instruction);
-            context.output.append("    // ").append(Util.escapeCommentString(handlers[node.getType()]
+            output.append(String.format("        case %d: {\n", states[instruction]));
+            context.output.append("        // ").append(Util.escapeCommentString(handlers[node.getType()]
                     .insnToString(context, node))).append("; Stack: ").append(context.stackPointer).append("\n");
+            context.output.append("        ");
             handlers[node.getType()].accept(context, node);
             context.stackPointer = handlers[node.getType()].getNewStackPointer(node, context.stackPointer);
-            context.output.append("    // New stack: ").append(context.stackPointer).append("\n");
+            context.output.append("        // New stack: ").append(context.stackPointer).append("\n");
+            boolean changesFlow = node instanceof JumpInsnNode || node instanceof LookupSwitchInsnNode
+                    || node instanceof TableSwitchInsnNode;
+            int opcode = node.getOpcode();
+            if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) changesFlow = true;
+            if (opcode == Opcodes.ATHROW) changesFlow = true;
+            if (!changesFlow) {
+                int nextState = (instruction + 1 < instructionCount) ? states[instruction + 1] : fakeState;
+                context.output.append("            __ngen_state = ").append(String.valueOf(nextState)).append("; break;\n");
+            }
+            context.output.append("        }\n");
         }
 
-        output.append(String.format("    return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]));
+        output.append(String.format("        case %d: { // fake block\n", fakeState));
+        output.append(String.format("            __ngen_state = %d; break;\n", states[0]));
+        output.append("        }\n");
 
         boolean hasAddedNewBlocks = true;
 
@@ -300,42 +330,49 @@ public class MethodProcessor {
                     continue;
                 }
                 proceedBlocks.add(catchBlock);
-                output.append("    ").append(context.catches.get(catchBlock)).append(": ");
+                output.append("        case ").append(context.catches.get(catchBlock)).append(": {\n");
                 CatchesBlock.CatchBlock currentCatchBlock = catchBlock.getCatches().get(0);
                 if (currentCatchBlock.getClazz() == null) {
-                    output.append(context.getSnippets().getSnippet("TRYCATCH_ANY_L", Util.createMap(
-                            "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
-                    )));
-                    output.append("\n");
+                    output.append("            ")
+                            .append(context.getSnippets().getSnippet("TRYCATCH_ANY_L", Util.createMap(
+                                    "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
+                            )))
+                            .append("\n");
+                    output.append("        }\n");
                     continue;
                 }
-                output.append(context.getSnippets().getSnippet("TRYCATCH_CHECK_STACK", Util.createMap(
-                        "exception_class_ptr", context.getCachedClasses().getPointer(currentCatchBlock.getClazz()),
-                        "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
-                )));
-                output.append("\n");
+                output.append("            ")
+                        .append(context.getSnippets().getSnippet("TRYCATCH_CHECK_STACK", Util.createMap(
+                                "exception_class_ptr", context.getCachedClasses().getPointer(currentCatchBlock.getClazz()),
+                                "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
+                        )))
+                        .append("\n");
                 if (catchBlock.getCatches().size() == 1) {
-                    output.append("    ");
-                    output.append(context.getSnippets().getSnippet("TRYCATCH_END_STACK", Util.createMap(
-                            "rettype", CPP_TYPES[context.ret.getSort()]
-                    )));
-                    output.append("\n");
+                    output.append("            ")
+                            .append(context.getSnippets().getSnippet("TRYCATCH_END_STACK", Util.createMap(
+                                    "rettype", CPP_TYPES[context.ret.getSort()]
+                            )))
+                            .append("\n");
+                    output.append("        }\n");
                     continue;
                 }
                 CatchesBlock nextCatchesBlock = new CatchesBlock(catchBlock.getCatches().stream().skip(1).collect(Collectors.toList()));
                 if (context.catches.get(nextCatchesBlock) == null) {
-                    context.catches.put(nextCatchesBlock, String.format("L_CATCH_%d", context.catches.size()));
+                    context.catches.put(nextCatchesBlock, String.valueOf(context.getLabelPool().generateStandaloneState()));
                     hasAddedNewBlocks = true;
                 }
-                output.append("    ");
-                output.append(context.getSnippets().getSnippet("TRYCATCH_ANY_L", Util.createMap(
-                        "handler_block", context.catches.get(nextCatchesBlock)
-                )));
-                output.append("\n");
+                output.append("            ")
+                        .append(context.getSnippets().getSnippet("TRYCATCH_ANY_L", Util.createMap(
+                                "handler_block", context.catches.get(nextCatchesBlock)
+                        )))
+                        .append("\n");
+                output.append("        }\n");
             }
         }
 
-        output.append("}\n\n");
+        output.append(String.format("        default: return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]));
+        output.append("        }\n");
+        output.append("    }\n\n");
 
         method.localVariables.clear();
         method.tryCatchBlocks.clear();
