@@ -1,21 +1,35 @@
 #include "micro_vm.hpp"
 #include <iostream>
 #include <random>
+#include <algorithm>
+#include <array>
+#include <vector>
 
 // NOLINTBEGIN - obfuscated control flow by design
 namespace native_jvm::vm {
 
 static uint64_t KEY = 0;
+static std::array<uint8_t, OP_COUNT> op_map{};     // maps logical opcodes to shuffled values
+static std::array<OpCode, OP_COUNT> inv_op_map{}; // reverse map
 
 void init_key(uint64_t seed) {
     std::random_device rd;
     std::mt19937_64 gen(rd() ^ seed);
     KEY = gen();
+
+    std::array<uint8_t, OP_COUNT> values{};
+    for (uint8_t i = 0; i < OP_COUNT; ++i) values[i] = i;
+    std::shuffle(values.begin(), values.end(), gen);
+    for (uint8_t i = 0; i < OP_COUNT; ++i) {
+        op_map[i] = values[i];
+        inv_op_map[values[i]] = static_cast<OpCode>(i);
+    }
 }
 
 Instruction encode(OpCode op, int64_t operand, uint64_t key) {
+    uint8_t mapped = op_map[static_cast<uint8_t>(op)];
     return Instruction{
-        static_cast<uint8_t>(static_cast<uint8_t>(op) ^ static_cast<uint8_t>(key)),
+        static_cast<uint8_t>(mapped ^ static_cast<uint8_t>(key)),
         operand ^ static_cast<int64_t>(key * 0x9E3779B97F4A7C15ULL)
     };
 }
@@ -35,7 +49,10 @@ dispatch:
     state = (state + KEY) ^ (KEY >> 3); // evolve state
     if (pc >= length) goto halt;
     // XOR promotes to int; cast back to uint8_t before converting to OpCode
-    op = static_cast<OpCode>(static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(state)));
+    {
+        uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(state));
+        op = inv_op_map[mapped];
+    }
     tmp = code[pc].operand ^ static_cast<int64_t>(state * 0x9E3779B97F4A7C15ULL);
     ++pc;
     switch (op) {
@@ -45,7 +62,11 @@ dispatch:
         case OP_MUL:   goto do_mul;
         case OP_DIV:   goto do_div;
         case OP_PRINT: goto do_print;
-        case OP_NOP:   goto junk; // never executed by valid programs
+        case OP_NOP:   goto junk;   // never executed by valid programs
+        case OP_JUNK1: goto do_junk1;
+        case OP_JUNK2: goto do_junk2;
+        case OP_SWAP:  goto do_swap;
+        case OP_DUP:   goto do_dup;
         default:       goto halt;
     }
 
@@ -87,6 +108,22 @@ do_print:
     }
     goto dispatch;
 
+do_junk1:
+    tmp ^= (KEY << 5); // operate on temp only
+    goto dispatch;
+
+do_junk2:
+    tmp ^= state >> 7; // operate on temp only
+    goto dispatch;
+
+do_swap:
+    if (sp >= 2) std::swap(stack[sp - 1], stack[sp - 2]);
+    goto dispatch;
+
+do_dup:
+    if (sp >= 1 && sp < 256) stack[sp++] = stack[sp - 1];
+    goto dispatch;
+
 // Dummy branch used only to confuse decompilers
 junk:
     state ^= KEY << 7;
@@ -100,23 +137,35 @@ halt:
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
     init_key(seed);
 
-    Instruction program[4];
+    std::vector<Instruction> program;
+    program.reserve(16);
     uint64_t state = KEY ^ seed;
+    std::mt19937_64 rng(KEY ^ (seed << 1));
 
-    // Encode PUSH lhs
-    state = (state + KEY) ^ (KEY >> 3);
-    program[0] = encode(OP_PUSH, lhs, state);
-    // Encode PUSH rhs
-    state = (state + KEY) ^ (KEY >> 3);
-    program[1] = encode(OP_PUSH, rhs, state);
-    // Encode operation
-    state = (state + KEY) ^ (KEY >> 3);
-    program[2] = encode(op, 0, state);
-    // Encode HALT
-    state = (state + KEY) ^ (KEY >> 3);
-    program[3] = encode(OP_HALT, 0, state);
+    auto emit = [&](OpCode opcode, int64_t operand) {
+        state = (state + KEY) ^ (KEY >> 3);
+        program.push_back(encode(opcode, operand, state));
+    };
 
-    return execute(env, program, 4, seed);
+    auto emit_junk = [&]() {
+        std::uniform_int_distribution<int> count_dist(0, 2);
+        std::uniform_int_distribution<int> choice_dist(0, 1);
+        int count = count_dist(rng);
+        for (int i = 0; i < count; ++i) {
+            OpCode junk = choice_dist(rng) ? OP_JUNK1 : OP_JUNK2;
+            emit(junk, 0);
+        }
+    };
+
+    emit(OP_PUSH, lhs);
+    emit_junk();
+    emit(OP_PUSH, rhs);
+    emit_junk();
+    emit(op, 0);
+    emit_junk();
+    emit(OP_HALT, 0);
+
+    return execute(env, program.data(), program.size(), seed);
 }
 
 } // namespace native_jvm::vm

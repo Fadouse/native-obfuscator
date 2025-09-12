@@ -14,6 +14,13 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IADD: {
                 instructionName = null;
                 long seed = ThreadLocalRandom.current().nextLong();
+                if (ThreadLocalRandom.current().nextBoolean()) {
+                    long junkSeed = ThreadLocalRandom.current().nextLong();
+                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    context.output.append(String.format(
+                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                }
                 context.output.append(String.format(
                         "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i, %dLL);%s",
                         props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
@@ -23,6 +30,13 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.ISUB: {
                 instructionName = null;
                 long seed = ThreadLocalRandom.current().nextLong();
+                if (ThreadLocalRandom.current().nextBoolean()) {
+                    long junkSeed = ThreadLocalRandom.current().nextLong();
+                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    context.output.append(String.format(
+                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                }
                 context.output.append(String.format(
                         "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i, %dLL);%s",
                         props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
@@ -32,6 +46,13 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IMUL: {
                 instructionName = null;
                 long seed = ThreadLocalRandom.current().nextLong();
+                if (ThreadLocalRandom.current().nextBoolean()) {
+                    long junkSeed = ThreadLocalRandom.current().nextLong();
+                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    context.output.append(String.format(
+                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                }
                 context.output.append(String.format(
                         "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i, %dLL);%s",
                         props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
@@ -41,6 +62,13 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IDIV: {
                 instructionName = null;
                 long seed = ThreadLocalRandom.current().nextLong();
+                if (ThreadLocalRandom.current().nextBoolean()) {
+                    long junkSeed = ThreadLocalRandom.current().nextLong();
+                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    context.output.append(String.format(
+                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                }
                 context.output.append(String.format(
                         "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i, %dLL);%s",
                         props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
