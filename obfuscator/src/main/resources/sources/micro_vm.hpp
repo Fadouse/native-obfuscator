@@ -31,18 +31,22 @@ struct Instruction {
 // Helper that produces an encoded instruction using the global key.
 Instruction encode(OpCode op, int64_t operand, uint64_t key);
 
+// Initializes the global KEY used for encoding/decoding instructions.
+// Must be called before executing any VM code.
+void init_key(uint64_t seed);
+
 // Executes a program encoded as an array of Instructions.  The
 // interpreter uses a stack based execution model and performs dynamic
 // decoding of every instruction.  The return value is the top of the
 // stack after the program halts which allows host code to retrieve
 // computed values.
-int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t seed = 0);
+int64_t execute(JNIEnv* env, const Instruction* code, size_t length, uint64_t seed);
 
 // Helper utility used by the obfuscator to perform simple arithmetic
 // through the VM.  It encodes a tiny program that evaluates
 //    result = lhs (op) rhs
 // for one of the arithmetic operations and returns the computed value.
-int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed = 0);
+int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed);
 
 } // namespace native_jvm::vm
 

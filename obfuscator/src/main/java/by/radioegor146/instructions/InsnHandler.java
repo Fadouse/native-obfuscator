@@ -4,40 +4,49 @@ import by.radioegor146.MethodContext;
 import by.radioegor146.Util;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.InsnNode;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class InsnHandler extends GenericInstructionHandler<InsnNode> {
 
     @Override
     protected void process(MethodContext context, InsnNode node) {
         switch (node.getOpcode()) {
-            case Opcodes.IADD:
+            case Opcodes.IADD: {
                 instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
                         props.get("trycatchhandler")));
                 break;
-            case Opcodes.ISUB:
+            }
+            case Opcodes.ISUB: {
                 instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
                         props.get("trycatchhandler")));
                 break;
-            case Opcodes.IMUL:
+            }
+            case Opcodes.IMUL: {
                 instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
                         props.get("trycatchhandler")));
                 break;
-            case Opcodes.IDIV:
+            }
+            case Opcodes.IDIV: {
                 instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
                 context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"),
+                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i, %dLL);%s",
+                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
                         props.get("trycatchhandler")));
                 break;
+            }
             default:
                 // handled via snippets
                 break;

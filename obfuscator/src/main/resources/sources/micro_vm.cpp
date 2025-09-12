@@ -1,10 +1,17 @@
 #include "micro_vm.hpp"
 #include <iostream>
+#include <random>
 
 // NOLINTBEGIN - obfuscated control flow by design
 namespace native_jvm::vm {
 
-static constexpr uint64_t KEY = 0x5F3759DFB3E8A1C5ULL; // mixed 32/64-bit key
+static uint64_t KEY = 0;
+
+void init_key(uint64_t seed) {
+    std::random_device rd;
+    std::mt19937_64 gen(rd() ^ seed);
+    KEY = gen();
+}
 
 Instruction encode(OpCode op, int64_t operand, uint64_t key) {
     return Instruction{
@@ -91,6 +98,8 @@ halt:
 }
 
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
+    init_key(seed);
+
     Instruction program[4];
     uint64_t state = KEY ^ seed;
 
