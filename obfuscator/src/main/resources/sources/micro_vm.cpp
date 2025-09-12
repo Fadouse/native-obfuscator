@@ -83,6 +83,27 @@ dispatch:
         case OP_STORE: goto do_store;
         case OP_IF_ICMPEQ: goto do_if_icmpeq;
         case OP_IF_ICMPNE: goto do_if_icmpne;
+        case OP_AND:   goto do_and;
+        case OP_OR:    goto do_or;
+        case OP_XOR:   goto do_xor;
+        case OP_SHL:   goto do_shl;
+        case OP_SHR:   goto do_shr;
+        case OP_USHR:  goto do_ushr;
+        case OP_IF_ICMPLT: goto do_if_icmplt;
+        case OP_IF_ICMPLE: goto do_if_icmple;
+        case OP_IF_ICMPGT: goto do_if_icmpgt;
+        case OP_IF_ICMPGE: goto do_if_icmpge;
+        case OP_IFEQ:  goto do_ifeq;
+        case OP_IFNE:  goto do_ifne;
+        case OP_IFLT:  goto do_iflt;
+        case OP_IFLE:  goto do_ifle;
+        case OP_IFGT:  goto do_ifgt;
+        case OP_IFGE:  goto do_ifge;
+        case OP_I2L:   goto do_i2l;
+        case OP_L2I:   goto do_l2i;
+        case OP_I2B:   goto do_i2b;
+        case OP_I2C:   goto do_i2c;
+        case OP_I2S:   goto do_i2s;
         case OP_GOTO:  goto do_goto;
         default:       goto halt;
     }
@@ -154,6 +175,30 @@ do_store:
     }
     goto dispatch;
 
+do_and:
+    if (sp >= 2) { stack[sp - 2] &= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_or:
+    if (sp >= 2) { stack[sp - 2] |= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_xor:
+    if (sp >= 2) { stack[sp - 2] ^= stack[sp - 1]; --sp; }
+    goto dispatch;
+
+do_shl:
+    if (sp >= 2) { stack[sp - 2] <<= (int)(stack[sp - 1] & 0x1F); --sp; }
+    goto dispatch;
+
+do_shr:
+    if (sp >= 2) { stack[sp - 2] >>= (int)(stack[sp - 1] & 0x1F); --sp; }
+    goto dispatch;
+
+do_ushr:
+    if (sp >= 2) { stack[sp - 2] = (int64_t)((uint64_t)stack[sp - 2] >> (stack[sp - 1] & 0x1F)); --sp; }
+    goto dispatch;
+
 do_if_icmpeq:
     if (sp >= 2) {
         int64_t b = stack[sp - 1];
@@ -170,6 +215,110 @@ do_if_icmpne:
         sp -= 2;
         if (a != b) pc = static_cast<size_t>(tmp);
     }
+    goto dispatch;
+
+do_if_icmplt:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a < b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_icmple:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a <= b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_icmpgt:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a > b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_icmpge:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a >= b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_ifeq:
+    if (sp >= 1) {
+        int64_t a = stack[sp - 1];
+        --sp;
+        if (a == 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_ifne:
+    if (sp >= 1) {
+        int64_t a = stack[sp - 1];
+        --sp;
+        if (a != 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_iflt:
+    if (sp >= 1) {
+        int64_t a = stack[sp - 1];
+        --sp;
+        if (a < 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_ifle:
+    if (sp >= 1) {
+        int64_t a = stack[sp - 1];
+        --sp;
+        if (a <= 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_ifgt:
+    if (sp >= 1) {
+        int64_t a = stack[sp - 1];
+        --sp;
+        if (a > 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_ifge:
+    if (sp >= 1) {
+        int64_t a = stack[sp - 1];
+        --sp;
+        if (a >= 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_i2l:
+    if (sp >= 1) { stack[sp - 1] = static_cast<int64_t>(static_cast<int32_t>(stack[sp - 1])); }
+    goto dispatch;
+
+do_l2i:
+    if (sp >= 1) { stack[sp - 1] = static_cast<int32_t>(stack[sp - 1]); }
+    goto dispatch;
+
+do_i2b:
+    if (sp >= 1) { stack[sp - 1] = static_cast<int8_t>(stack[sp - 1]); }
+    goto dispatch;
+
+do_i2c:
+    if (sp >= 1) { stack[sp - 1] = static_cast<uint16_t>(stack[sp - 1]); }
+    goto dispatch;
+
+do_i2s:
+    if (sp >= 1) { stack[sp - 1] = static_cast<int16_t>(stack[sp - 1]); }
     goto dispatch;
 
 do_goto:
@@ -222,8 +371,18 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
 
     emit(OP_PUSH, lhs);
     emit_junk();
-    emit(OP_PUSH, rhs);
-    emit_junk();
+    switch (op) {
+        case OP_I2L:
+        case OP_L2I:
+        case OP_I2B:
+        case OP_I2C:
+        case OP_I2S:
+            break; // unary operations, no second push
+        default:
+            emit(OP_PUSH, rhs);
+            emit_junk();
+            break;
+    }
     emit(op, 0);
     emit_junk();
     emit(OP_HALT, 0);

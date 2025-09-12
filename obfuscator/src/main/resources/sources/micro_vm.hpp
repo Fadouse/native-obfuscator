@@ -27,7 +27,31 @@ enum OpCode : uint8_t {
     OP_IF_ICMPNE = 14, // compare two ints and jump if not equal
     OP_GOTO = 15, // unconditional jump
     OP_STORE = 16, // store top of stack into local variable
-    OP_COUNT = 17  // helper constant with number of opcodes
+    // logical/bitwise operations
+    OP_AND   = 17,
+    OP_OR    = 18,
+    OP_XOR   = 19,
+    OP_SHL   = 20,
+    OP_SHR   = 21,
+    OP_USHR  = 22,
+    // additional comparisons
+    OP_IF_ICMPLT = 23,
+    OP_IF_ICMPLE = 24,
+    OP_IF_ICMPGT = 25,
+    OP_IF_ICMPGE = 26,
+    OP_IFEQ = 27,
+    OP_IFNE = 28,
+    OP_IFLT = 29,
+    OP_IFLE = 30,
+    OP_IFGT = 31,
+    OP_IFGE = 32,
+    // type conversions
+    OP_I2L = 33,
+    OP_L2I = 34,
+    OP_I2B = 35,
+    OP_I2C = 36,
+    OP_I2S = 37,
+    OP_COUNT = 38  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

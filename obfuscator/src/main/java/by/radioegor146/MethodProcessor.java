@@ -186,6 +186,7 @@ public class MethodProcessor {
         long vmKeySeed = ThreadLocalRandom.current().nextLong();
         output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
 
+        // Try to translate entire method into VM instructions first.
         VmTranslator vmTranslator = new VmTranslator();
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
         if (vmCode != null && vmCode.length > 0) {
@@ -209,6 +210,7 @@ public class MethodProcessor {
             specialMethodProcessor.postProcess(context);
             return;
         }
+        // Fallback path: generate native templates when VM translation is not possible.
 
         if (method.tryCatchBlocks != null) {
             for (TryCatchBlockNode tryCatch : method.tryCatchBlocks) {
