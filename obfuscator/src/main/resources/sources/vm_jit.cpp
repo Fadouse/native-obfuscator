@@ -1,5 +1,6 @@
 #include "vm_jit.hpp"
 #include <iostream>
+#include <cstring>
 
 namespace native_jvm::vm {
 
@@ -17,6 +18,9 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
         const auto& ins = prog->ins[pc++];
         switch (ins.op) {
             case OP_PUSH:
+            case OP_LDC:
+            case OP_LDC_W:
+            case OP_LDC2_W:
                 if (sp < 256) stack[sp++] = ins.operand;
                 break;
             case OP_ADD:
@@ -54,11 +58,11 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 break;
             case OP_LOAD:
                 if (sp < 256 && ins.operand >= 0 && static_cast<size_t>(ins.operand) < locals_len)
-                    stack[sp++] = locals[ins.operand];
+                    stack[sp++] = locals[static_cast<size_t>(ins.operand)];
                 break;
             case OP_STORE:
                 if (sp >= 1 && ins.operand >= 0 && static_cast<size_t>(ins.operand) < locals_len && locals != nullptr)
-                    locals[ins.operand] = stack[--sp];
+                    locals[static_cast<size_t>(ins.operand)] = stack[--sp];
                 break;
             case OP_IF_ICMPEQ:
                 if (sp >= 2) {
@@ -134,11 +138,11 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 break;
             case OP_ALOAD:
                 if (sp < 256 && ins.operand >= 0 && static_cast<size_t>(ins.operand) < locals_len)
-                    stack[sp++] = locals[ins.operand];
+                    stack[sp++] = locals[static_cast<size_t>(ins.operand)];
                 break;
             case OP_ASTORE:
                 if (sp >= 1 && ins.operand >= 0 && static_cast<size_t>(ins.operand) < locals_len && locals != nullptr)
-                    locals[ins.operand] = stack[--sp];
+                    locals[static_cast<size_t>(ins.operand)] = stack[--sp];
                 break;
             case OP_AALOAD:
                 if (sp >= 2) {
@@ -159,6 +163,36 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 break;
             case OP_INVOKESTATIC:
                 // simplified: treat as no-op
+                break;
+            case OP_FCONST_0:
+                if (sp < 256) stack[sp++] = 0;
+                break;
+            case OP_FCONST_1:
+                if (sp < 256) {
+                    int32_t bits; float v = 1.0f; std::memcpy(&bits, &v, sizeof(float));
+                    stack[sp++] = bits;
+                }
+                break;
+            case OP_FCONST_2:
+                if (sp < 256) {
+                    int32_t bits; float v = 2.0f; std::memcpy(&bits, &v, sizeof(float));
+                    stack[sp++] = bits;
+                }
+                break;
+            case OP_DCONST_0:
+                if (sp < 256) stack[sp++] = 0;
+                break;
+            case OP_DCONST_1:
+                if (sp < 256) {
+                    int64_t bits; double v = 1.0; std::memcpy(&bits, &v, sizeof(double));
+                    stack[sp++] = bits;
+                }
+                break;
+            case OP_LCONST_0:
+                if (sp < 256) stack[sp++] = 0;
+                break;
+            case OP_LCONST_1:
+                if (sp < 256) stack[sp++] = 1;
                 break;
             case OP_HALT:
                 return (sp > 0) ? stack[sp-1] : 0;

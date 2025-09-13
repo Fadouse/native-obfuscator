@@ -34,9 +34,9 @@ public class VmTranslator {
     /** Representation of a VM instruction. */
     public static class Instruction {
         public final int opcode;
-        public final int operand;
+        public final long operand;
 
-        public Instruction(int opcode, int operand) {
+        public Instruction(int opcode, long operand) {
             this.opcode = opcode;
             this.operand = operand;
         }
@@ -99,6 +99,16 @@ public class VmTranslator {
         public static final int OP_DSUB = 52;
         public static final int OP_DMUL = 53;
         public static final int OP_DDIV = 54;
+        public static final int OP_LDC = 55;
+        public static final int OP_LDC_W = 56;
+        public static final int OP_LDC2_W = 57;
+        public static final int OP_FCONST_0 = 58;
+        public static final int OP_FCONST_1 = 59;
+        public static final int OP_FCONST_2 = 60;
+        public static final int OP_DCONST_0 = 61;
+        public static final int OP_DCONST_1 = 62;
+        public static final int OP_LCONST_0 = 63;
+        public static final int OP_LCONST_1 = 64;
     }
 
     /**
@@ -263,6 +273,41 @@ public class VmTranslator {
                     if (opcode == Opcodes.ICONST_M1) val = -1;
                     result.add(new Instruction(VmOpcodes.OP_PUSH, val));
                     break;
+                case Opcodes.LCONST_0:
+                    result.add(new Instruction(VmOpcodes.OP_LCONST_0, 0));
+                    break;
+                case Opcodes.LCONST_1:
+                    result.add(new Instruction(VmOpcodes.OP_LCONST_1, 0));
+                    break;
+                case Opcodes.FCONST_0:
+                    result.add(new Instruction(VmOpcodes.OP_FCONST_0, 0));
+                    break;
+                case Opcodes.FCONST_1:
+                    result.add(new Instruction(VmOpcodes.OP_FCONST_1, 0));
+                    break;
+                case Opcodes.FCONST_2:
+                    result.add(new Instruction(VmOpcodes.OP_FCONST_2, 0));
+                    break;
+                case Opcodes.DCONST_0:
+                    result.add(new Instruction(VmOpcodes.OP_DCONST_0, 0));
+                    break;
+                case Opcodes.DCONST_1:
+                    result.add(new Instruction(VmOpcodes.OP_DCONST_1, 0));
+                    break;
+                case Opcodes.LDC:
+                    Object cst = ((LdcInsnNode) insn).cst;
+                    if (cst instanceof Integer) {
+                        result.add(new Instruction(VmOpcodes.OP_LDC, (Integer) cst));
+                    } else if (cst instanceof Float) {
+                        result.add(new Instruction(VmOpcodes.OP_LDC, Float.floatToIntBits((Float) cst)));
+                    } else if (cst instanceof Long) {
+                        result.add(new Instruction(VmOpcodes.OP_LDC2_W, (Long) cst));
+                    } else if (cst instanceof Double) {
+                        result.add(new Instruction(VmOpcodes.OP_LDC2_W, Double.doubleToLongBits((Double) cst)));
+                    } else {
+                        return null; // unsupported constant
+                    }
+                    break;
                 case Opcodes.ISTORE:
                     result.add(new Instruction(VmOpcodes.OP_STORE, ((VarInsnNode) insn).var));
                     break;
@@ -368,7 +413,7 @@ public class VmTranslator {
         sb.append('{');
         for (int i = 0; i < code.length; i++) {
             Instruction ins = code[i];
-            sb.append(String.format("{ %d, %d, 0ULL }", ins.opcode, (long) ins.operand));
+            sb.append(String.format("{ %d, %d, 0ULL }", ins.opcode, ins.operand));
             if (i + 1 < code.length) sb.append(", ");
         }
         sb.append('}');
