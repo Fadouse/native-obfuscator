@@ -1,9 +1,11 @@
 #include "micro_vm.hpp"
+#include "vm_jit.hpp"
 #include <iostream>
 #include <random>
 #include <algorithm>
 #include <array>
 #include <vector>
+#include <unordered_map>
 
 // NOLINTBEGIN - obfuscated control flow by design
 namespace native_jvm::vm {
@@ -14,6 +16,9 @@ static thread_local std::array<uint8_t, OP_COUNT> op_map2{};    // second mappin
 static thread_local std::array<uint8_t, OP_COUNT> inv_op_map2{}; // reverse second layer
 static thread_local std::array<OpCode, OP_COUNT> inv_op_map{};  // reverse first layer
 static thread_local bool vm_state_initialized = false;
+static thread_local std::unordered_map<const Instruction*, JitCompiled> jit_cache{};
+static thread_local std::unordered_map<const Instruction*, size_t> exec_counts{};
+static constexpr size_t HOT_THRESHOLD = 10;
 
 void init_key(uint64_t seed) {
     std::random_device rd;
@@ -41,6 +46,24 @@ void init_key(uint64_t seed) {
 void ensure_init(uint64_t seed) {
     if (!vm_state_initialized) {
         init_key(seed);
+    }
+}
+
+void decode_for_jit(const Instruction* code, size_t length, uint64_t seed,
+                    std::vector<DecodedInstruction>& out) {
+    ensure_init(seed);
+    out.clear();
+    out.reserve(length);
+    uint64_t state = KEY ^ seed;
+    for (size_t pc = 0; pc < length; ++pc) {
+        state = (state + KEY) ^ (KEY >> 3);
+        uint64_t mix = state ^ code[pc].nonce;
+        uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
+        mapped ^= static_cast<uint8_t>(code[pc].nonce);
+        mapped = inv_op_map2[mapped];
+        OpCode op = inv_op_map[mapped];
+        int64_t operand = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
+        out.push_back({op, operand});
     }
 }
 
@@ -356,6 +379,22 @@ void encode_program(Instruction* code, size_t length, uint64_t seed) {
         uint64_t nonce = rng() ^ state;
         code[i] = encode(static_cast<OpCode>(code[i].op), code[i].operand, state, nonce);
     }
+}
+
+int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
+                    int64_t* locals, size_t locals_length, uint64_t seed) {
+    ensure_init(seed);
+    auto it = jit_cache.find(code);
+    if (it != jit_cache.end()) {
+        return it->second.func(env, locals, locals_length, seed, it->second.ctx);
+    }
+    size_t& cnt = exec_counts[code];
+    if (++cnt > HOT_THRESHOLD) {
+        JitCompiled compiled = compile(code, length, seed);
+        it = jit_cache.emplace(code, compiled).first;
+        return it->second.func(env, locals, locals_length, seed, it->second.ctx);
+    }
+    return execute(env, code, length, locals, locals_length, seed);
 }
 
 static int64_t execute_variant(JNIEnv* env, const Instruction* code, size_t length,

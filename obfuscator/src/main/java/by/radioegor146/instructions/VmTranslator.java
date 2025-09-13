@@ -13,6 +13,24 @@ import java.util.*;
  */
 public class VmTranslator {
 
+    private boolean useJit;
+
+    public VmTranslator() {
+        this(false);
+    }
+
+    public VmTranslator(boolean useJit) {
+        this.useJit = useJit;
+    }
+
+    public boolean isUseJit() {
+        return useJit;
+    }
+
+    public void setUseJit(boolean useJit) {
+        this.useJit = useJit;
+    }
+
     /** Representation of a VM instruction. */
     public static class Instruction {
         public final int opcode;
