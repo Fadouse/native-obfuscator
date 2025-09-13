@@ -6,6 +6,7 @@
 #include <array>
 #include <vector>
 #include <unordered_map>
+#include <cstring>
 
 // NOLINTBEGIN - obfuscated control flow by design
 namespace native_jvm::vm {
@@ -127,7 +128,13 @@ dispatch:
         case OP_SWAP:  goto do_swap;
         case OP_DUP:   goto do_dup;
         case OP_LOAD:  goto do_load;
+        case OP_LLOAD:
+        case OP_FLOAD:
+        case OP_DLOAD: goto do_load;
         case OP_STORE: goto do_store;
+        case OP_LSTORE:
+        case OP_FSTORE:
+        case OP_DSTORE: goto do_store;
         case OP_IF_ICMPEQ: goto do_if_icmpeq;
         case OP_IF_ICMPNE: goto do_if_icmpne;
         case OP_GOTO:  goto do_goto;
@@ -150,6 +157,18 @@ dispatch:
         case OP_ASTORE: goto do_astore;
         case OP_AALOAD: goto do_aaload;
         case OP_AASTORE: goto do_aastore;
+        case OP_LADD: goto do_add;
+        case OP_LSUB: goto do_sub;
+        case OP_LMUL: goto do_mul;
+        case OP_LDIV: goto do_div;
+        case OP_FADD: goto do_fadd;
+        case OP_FSUB: goto do_fsub;
+        case OP_FMUL: goto do_fmul;
+        case OP_FDIV: goto do_fdiv;
+        case OP_DADD: goto do_dadd;
+        case OP_DSUB: goto do_dsub;
+        case OP_DMUL: goto do_dmul;
+        case OP_DDIV: goto do_ddiv;
         case OP_INVOKESTATIC: goto do_invokestatic;
         default:       goto halt;
     }
@@ -181,6 +200,118 @@ do_div:
             goto halt;
         }
         stack[sp - 2] /= b;
+        --sp;
+    }
+    goto dispatch;
+
+do_fadd:
+    if (sp >= 2) {
+        float a, b, r;
+        int32_t ba = static_cast<int32_t>(stack[sp - 2]);
+        int32_t bb = static_cast<int32_t>(stack[sp - 1]);
+        std::memcpy(&a, &ba, sizeof(float));
+        std::memcpy(&b, &bb, sizeof(float));
+        r = a + b;
+        std::memcpy(&ba, &r, sizeof(float));
+        stack[sp - 2] = static_cast<int64_t>(ba);
+        --sp;
+    }
+    goto dispatch;
+
+do_fsub:
+    if (sp >= 2) {
+        float a, b, r;
+        int32_t ba = static_cast<int32_t>(stack[sp - 2]);
+        int32_t bb = static_cast<int32_t>(stack[sp - 1]);
+        std::memcpy(&a, &ba, sizeof(float));
+        std::memcpy(&b, &bb, sizeof(float));
+        r = a - b;
+        std::memcpy(&ba, &r, sizeof(float));
+        stack[sp - 2] = static_cast<int64_t>(ba);
+        --sp;
+    }
+    goto dispatch;
+
+do_fmul:
+    if (sp >= 2) {
+        float a, b, r;
+        int32_t ba = static_cast<int32_t>(stack[sp - 2]);
+        int32_t bb = static_cast<int32_t>(stack[sp - 1]);
+        std::memcpy(&a, &ba, sizeof(float));
+        std::memcpy(&b, &bb, sizeof(float));
+        r = a * b;
+        std::memcpy(&ba, &r, sizeof(float));
+        stack[sp - 2] = static_cast<int64_t>(ba);
+        --sp;
+    }
+    goto dispatch;
+
+do_fdiv:
+    if (sp >= 2) {
+        float a, b, r;
+        int32_t ba = static_cast<int32_t>(stack[sp - 2]);
+        int32_t bb = static_cast<int32_t>(stack[sp - 1]);
+        std::memcpy(&a, &ba, sizeof(float));
+        std::memcpy(&b, &bb, sizeof(float));
+        r = a / b;
+        std::memcpy(&ba, &r, sizeof(float));
+        stack[sp - 2] = static_cast<int64_t>(ba);
+        --sp;
+    }
+    goto dispatch;
+
+do_dadd:
+    if (sp >= 2) {
+        double a, b, r;
+        int64_t ba = stack[sp - 2];
+        int64_t bb = stack[sp - 1];
+        std::memcpy(&a, &ba, sizeof(double));
+        std::memcpy(&b, &bb, sizeof(double));
+        r = a + b;
+        std::memcpy(&ba, &r, sizeof(double));
+        stack[sp - 2] = ba;
+        --sp;
+    }
+    goto dispatch;
+
+do_dsub:
+    if (sp >= 2) {
+        double a, b, r;
+        int64_t ba = stack[sp - 2];
+        int64_t bb = stack[sp - 1];
+        std::memcpy(&a, &ba, sizeof(double));
+        std::memcpy(&b, &bb, sizeof(double));
+        r = a - b;
+        std::memcpy(&ba, &r, sizeof(double));
+        stack[sp - 2] = ba;
+        --sp;
+    }
+    goto dispatch;
+
+do_dmul:
+    if (sp >= 2) {
+        double a, b, r;
+        int64_t ba = stack[sp - 2];
+        int64_t bb = stack[sp - 1];
+        std::memcpy(&a, &ba, sizeof(double));
+        std::memcpy(&b, &bb, sizeof(double));
+        r = a * b;
+        std::memcpy(&ba, &r, sizeof(double));
+        stack[sp - 2] = ba;
+        --sp;
+    }
+    goto dispatch;
+
+do_ddiv:
+    if (sp >= 2) {
+        double a, b, r;
+        int64_t ba = stack[sp - 2];
+        int64_t bb = stack[sp - 1];
+        std::memcpy(&a, &ba, sizeof(double));
+        std::memcpy(&b, &bb, sizeof(double));
+        r = a / b;
+        std::memcpy(&ba, &r, sizeof(double));
+        stack[sp - 2] = ba;
         --sp;
     }
     goto dispatch;
