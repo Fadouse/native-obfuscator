@@ -396,15 +396,28 @@ public class VmTranslator {
                     }
                     break;
                 case Opcodes.DUP_X2:
-                    result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
-                    if (typeStack.size() >= 3) {
+                    if (typeStack.size() >= 2) {
                         int t1 = typeStack.pop();
                         int t2 = typeStack.pop();
-                        int t3 = typeStack.pop();
-                        typeStack.push(t1);
-                        typeStack.push(t3);
-                        typeStack.push(t2);
-                        typeStack.push(t1);
+                        if (t1 == 1 && t2 == 2) {
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (typeStack.size() >= 1) {
+                            int t3 = typeStack.pop();
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t3);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else {
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                        }
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
                     }
                     break;
                 case Opcodes.DUP2:
@@ -424,31 +437,75 @@ public class VmTranslator {
                     }
                     break;
                 case Opcodes.DUP2_X1:
-                    result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
-                    if (typeStack.size() >= 3) {
+                    if (typeStack.size() >= 2) {
                         int t1 = typeStack.pop();
                         int t2 = typeStack.pop();
-                        int t3 = typeStack.pop();
-                        typeStack.push(t2);
-                        typeStack.push(t1);
-                        typeStack.push(t3);
-                        typeStack.push(t2);
-                        typeStack.push(t1);
+                        if (t1 == 2) {
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (typeStack.size() >= 1) {
+                            int t3 = typeStack.pop();
+                            result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            typeStack.push(t3);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else {
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                        }
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
                     }
                     break;
                 case Opcodes.DUP2_X2:
-                    result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
-                    if (typeStack.size() >= 4) {
+                    if (typeStack.size() >= 2) {
                         int t1 = typeStack.pop();
                         int t2 = typeStack.pop();
-                        int t3 = typeStack.pop();
-                        int t4 = typeStack.pop();
-                        typeStack.push(t2);
-                        typeStack.push(t1);
-                        typeStack.push(t4);
-                        typeStack.push(t3);
-                        typeStack.push(t2);
-                        typeStack.push(t1);
+                        if (t1 == 2 && t2 == 2) {
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (t1 == 2 && typeStack.size() >= 2) {
+                            int t3 = typeStack.pop();
+                            int t4 = typeStack.pop();
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t4);
+                            typeStack.push(t3);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (typeStack.size() >= 2) {
+                            int t3 = typeStack.pop();
+                            int t4 = typeStack.pop();
+                            if (t3 == 2) {
+                                result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                                typeStack.push(t3);
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                            } else {
+                                result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                                typeStack.push(t4);
+                                typeStack.push(t3);
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                            }
+                        } else {
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                        }
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
                     }
                     break;
                 case Opcodes.SWAP:

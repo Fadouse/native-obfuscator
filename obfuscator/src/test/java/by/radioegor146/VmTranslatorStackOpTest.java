@@ -165,4 +165,45 @@ public class VmTranslatorStackOpTest {
         };
         assertThrows(ArrayIndexOutOfBoundsException.class, () -> run(bad, new long[0]));
     }
+
+    @Test
+    public void testCategory2FormsTranslate() {
+        VmTranslator translator = new VmTranslator();
+
+        MethodNode m1 = new MethodNode(Opcodes.ACC_STATIC, "m1", "()V", null, null);
+        m1.instructions.add(new InsnNode(Opcodes.LCONST_0));
+        m1.instructions.add(new InsnNode(Opcodes.ICONST_1));
+        m1.instructions.add(new InsnNode(Opcodes.DUP_X2));
+        m1.instructions.add(new InsnNode(Opcodes.POP));
+        m1.instructions.add(new InsnNode(Opcodes.POP2));
+        m1.instructions.add(new InsnNode(Opcodes.ICONST_0));
+        m1.instructions.add(new InsnNode(Opcodes.IRETURN));
+        Instruction[] c1 = translator.translate(m1);
+        assertNotNull(c1);
+        assertTrue(Arrays.stream(c1).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP_X1));
+
+        MethodNode m2 = new MethodNode(Opcodes.ACC_STATIC, "m2", "()V", null, null);
+        m2.instructions.add(new InsnNode(Opcodes.ICONST_0));
+        m2.instructions.add(new InsnNode(Opcodes.LCONST_0));
+        m2.instructions.add(new InsnNode(Opcodes.DUP2_X1));
+        m2.instructions.add(new InsnNode(Opcodes.POP2));
+        m2.instructions.add(new InsnNode(Opcodes.POP));
+        m2.instructions.add(new InsnNode(Opcodes.ICONST_0));
+        m2.instructions.add(new InsnNode(Opcodes.IRETURN));
+        Instruction[] c2 = translator.translate(m2);
+        assertNotNull(c2);
+        assertTrue(Arrays.stream(c2).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP_X1));
+
+        MethodNode m3 = new MethodNode(Opcodes.ACC_STATIC, "m3", "()V", null, null);
+        m3.instructions.add(new InsnNode(Opcodes.LCONST_0));
+        m3.instructions.add(new InsnNode(Opcodes.LCONST_1));
+        m3.instructions.add(new InsnNode(Opcodes.DUP2_X2));
+        m3.instructions.add(new InsnNode(Opcodes.POP2));
+        m3.instructions.add(new InsnNode(Opcodes.POP2));
+        m3.instructions.add(new InsnNode(Opcodes.ICONST_0));
+        m3.instructions.add(new InsnNode(Opcodes.IRETURN));
+        Instruction[] c3 = translator.translate(m3);
+        assertNotNull(c3);
+        assertTrue(Arrays.stream(c3).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP_X1));
+    }
 }
