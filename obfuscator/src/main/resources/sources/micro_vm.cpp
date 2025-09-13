@@ -333,7 +333,24 @@ dispatch:
         case OP_DSTORE: goto do_store;
         case OP_IF_ICMPEQ: goto do_if_icmpeq;
         case OP_IF_ICMPNE: goto do_if_icmpne;
+        case OP_IFNULL: goto do_ifnull;
+        case OP_IFNONNULL: goto do_ifnonnull;
+        case OP_IF_ACMPEQ: goto do_if_acmpeq;
+        case OP_IF_ACMPNE: goto do_if_acmpne;
+        case OP_TABLESWITCH: goto do_tableswitch;
+        case OP_LOOKUPSWITCH: goto do_lookupswitch;
         case OP_GOTO:  goto do_goto;
+        case OP_GOTO_W: goto do_goto;
+        case OP_IFNULL_W: goto do_ifnull;
+        case OP_IFNONNULL_W: goto do_ifnonnull;
+        case OP_IF_ACMPEQ_W: goto do_if_acmpeq;
+        case OP_IF_ACMPNE_W: goto do_if_acmpne;
+        case OP_IF_ICMPEQ_W: goto do_if_icmpeq;
+        case OP_IF_ICMPNE_W: goto do_if_icmpne;
+        case OP_IF_ICMPLT_W: goto do_if_icmplt;
+        case OP_IF_ICMPLE_W: goto do_if_icmple;
+        case OP_IF_ICMPGT_W: goto do_if_icmpgt;
+        case OP_IF_ICMPGE_W: goto do_if_icmpge;
         case OP_AND:  goto do_and;
         case OP_OR:   goto do_or;
         case OP_XOR:  goto do_xor;
@@ -732,6 +749,64 @@ do_if_icmpge:
         int64_t a = stack[sp - 2];
         sp -= 2;
         if (a >= b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_ifnull:
+    if (sp >= 1) {
+        int64_t a = stack[--sp];
+        if (a == 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_ifnonnull:
+    if (sp >= 1) {
+        int64_t a = stack[--sp];
+        if (a != 0) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_acmpeq:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a == b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_if_acmpne:
+    if (sp >= 2) {
+        int64_t b = stack[sp - 1];
+        int64_t a = stack[sp - 2];
+        sp -= 2;
+        if (a != b) pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_tableswitch:
+    if (sp >= 1) {
+        auto* ts = reinterpret_cast<TableSwitch*>(tmp);
+        int32_t idx = static_cast<int32_t>(stack[--sp]);
+        if (idx < ts->low || idx > ts->high) {
+            pc = ts->default_target;
+        } else {
+            pc = ts->targets[idx - ts->low];
+        }
+    }
+    goto dispatch;
+
+do_lookupswitch:
+    if (sp >= 1) {
+        auto* ls = reinterpret_cast<LookupSwitch*>(tmp);
+        int32_t key = static_cast<int32_t>(stack[--sp]);
+        pc = ls->default_target;
+        for (int32_t i = 0; i < ls->count; ++i) {
+            if (ls->keys[i] == key) {
+                pc = ls->targets[i];
+                break;
+            }
+        }
     }
     goto dispatch;
 

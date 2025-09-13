@@ -60,6 +60,45 @@ public class VmTranslator {
         return fieldRefs;
     }
 
+    /** Describes a TABLESWITCH instruction's jump table. */
+    public static class TableSwitchInfo {
+        public final int defaultLabel;
+        public final int low;
+        public final int high;
+        public final int[] labels;
+
+        public TableSwitchInfo(int defaultLabel, int low, int high, int[] labels) {
+            this.defaultLabel = defaultLabel;
+            this.low = low;
+            this.high = high;
+            this.labels = labels;
+        }
+    }
+
+    /** Describes a LOOKUPSWITCH instruction's key->label pairs. */
+    public static class LookupSwitchInfo {
+        public final int defaultLabel;
+        public final int[] keys;
+        public final int[] labels;
+
+        public LookupSwitchInfo(int defaultLabel, int[] keys, int[] labels) {
+            this.defaultLabel = defaultLabel;
+            this.keys = keys;
+            this.labels = labels;
+        }
+    }
+
+    private final List<TableSwitchInfo> tableSwitches = new ArrayList<>();
+    private final List<LookupSwitchInfo> lookupSwitches = new ArrayList<>();
+
+    public List<TableSwitchInfo> getTableSwitches() {
+        return tableSwitches;
+    }
+
+    public List<LookupSwitchInfo> getLookupSwitches() {
+        return lookupSwitches;
+    }
+
     /** Constants mirroring native_jvm::vm::OpCode. */
     public static class VmOpcodes {
         public static final int OP_PUSH = 0;
@@ -167,6 +206,23 @@ public class VmTranslator {
         public static final int OP_INVOKESPECIAL = 102;
         public static final int OP_INVOKEINTERFACE = 103;
         public static final int OP_INVOKEDYNAMIC = 104;
+        public static final int OP_IFNULL = 105;
+        public static final int OP_IFNONNULL = 106;
+        public static final int OP_IF_ACMPEQ = 107;
+        public static final int OP_IF_ACMPNE = 108;
+        public static final int OP_TABLESWITCH = 109;
+        public static final int OP_LOOKUPSWITCH = 110;
+        public static final int OP_GOTO_W = 111;
+        public static final int OP_IFNULL_W = 112;
+        public static final int OP_IFNONNULL_W = 113;
+        public static final int OP_IF_ACMPEQ_W = 114;
+        public static final int OP_IF_ACMPNE_W = 115;
+        public static final int OP_IF_ICMPEQ_W = 116;
+        public static final int OP_IF_ICMPNE_W = 117;
+        public static final int OP_IF_ICMPLT_W = 118;
+        public static final int OP_IF_ICMPLE_W = 119;
+        public static final int OP_IF_ICMPGT_W = 120;
+        public static final int OP_IF_ICMPGE_W = 121;
     }
 
     /**
@@ -176,6 +232,8 @@ public class VmTranslator {
      */
     public Instruction[] translate(MethodNode method) {
         fieldRefs.clear();
+        tableSwitches.clear();
+        lookupSwitches.clear();
         Map<LabelNode, Integer> labelIds = new HashMap<>();
         int index = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -515,6 +573,9 @@ public class VmTranslator {
                 case Opcodes.GOTO:
                     result.add(new Instruction(VmOpcodes.OP_GOTO, labelIds.get(((JumpInsnNode) insn).label)));
                     break;
+                case 200: // GOTO_W
+                    result.add(new Instruction(VmOpcodes.OP_GOTO_W, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
                 case Opcodes.IF_ICMPEQ:
                     result.add(new Instruction(VmOpcodes.OP_IF_ICMPEQ, labelIds.get(((JumpInsnNode) insn).label)));
                     break;
@@ -533,6 +594,41 @@ public class VmTranslator {
                 case Opcodes.IF_ICMPGE:
                     result.add(new Instruction(VmOpcodes.OP_IF_ICMPGE, labelIds.get(((JumpInsnNode) insn).label)));
                     break;
+                case Opcodes.IFNULL:
+                    result.add(new Instruction(VmOpcodes.OP_IFNULL, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.IFNONNULL:
+                    result.add(new Instruction(VmOpcodes.OP_IFNONNULL, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.IF_ACMPEQ:
+                    result.add(new Instruction(VmOpcodes.OP_IF_ACMPEQ, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.IF_ACMPNE:
+                    result.add(new Instruction(VmOpcodes.OP_IF_ACMPNE, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.TABLESWITCH: {
+                    TableSwitchInsnNode ts = (TableSwitchInsnNode) insn;
+                    int def = labelIds.get(ts.dflt);
+                    int[] labelsArr = new int[ts.labels.size()];
+                    for (int i = 0; i < labelsArr.length; i++) {
+                        labelsArr[i] = labelIds.get(ts.labels.get(i));
+                    }
+                    tableSwitches.add(new TableSwitchInfo(def, ts.min, ts.max, labelsArr));
+                    result.add(new Instruction(VmOpcodes.OP_TABLESWITCH, tableSwitches.size() - 1));
+                    break;
+                }
+                case Opcodes.LOOKUPSWITCH: {
+                    LookupSwitchInsnNode ls = (LookupSwitchInsnNode) insn;
+                    int def = labelIds.get(ls.dflt);
+                    int[] keys = ls.keys.stream().mapToInt(Integer::intValue).toArray();
+                    int[] labelsArr = new int[ls.labels.size()];
+                    for (int i = 0; i < labelsArr.length; i++) {
+                        labelsArr[i] = labelIds.get(ls.labels.get(i));
+                    }
+                    lookupSwitches.add(new LookupSwitchInfo(def, keys, labelsArr));
+                    result.add(new Instruction(VmOpcodes.OP_LOOKUPSWITCH, lookupSwitches.size() - 1));
+                    break;
+                }
                 case Opcodes.IRETURN:
                 case Opcodes.LRETURN:
                 case Opcodes.FRETURN:
