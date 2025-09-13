@@ -135,6 +135,12 @@ public class VmTranslator {
         public static final int OP_BASTORE = 88;
         public static final int OP_CASTORE = 89;
         public static final int OP_SASTORE = 90;
+        public static final int OP_NEW = 91;
+        public static final int OP_ANEWARRAY = 92;
+        public static final int OP_NEWARRAY = 93;
+        public static final int OP_MULTIANEWARRAY = 94;
+        public static final int OP_CHECKCAST = 95;
+        public static final int OP_INSTANCEOF = 96;
     }
 
     /**
@@ -155,6 +161,8 @@ public class VmTranslator {
 
         List<Instruction> result = new ArrayList<>();
         int invokeIndex = 0;
+        Map<String, Integer> classIds = new HashMap<>();
+        int classIndex = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             int opcode = insn.getOpcode();
             switch (opcode) {
@@ -326,6 +334,63 @@ public class VmTranslator {
                 case Opcodes.SASTORE:
                     result.add(new Instruction(VmOpcodes.OP_SASTORE, 0));
                     break;
+                case Opcodes.NEW: {
+                    String desc = ((TypeInsnNode) insn).desc;
+                    Integer idObj = classIds.get(desc);
+                    if (idObj == null) {
+                        idObj = classIndex++;
+                        classIds.put(desc, idObj);
+                    }
+                    result.add(new Instruction(VmOpcodes.OP_NEW, idObj));
+                    break;
+                }
+                case Opcodes.ANEWARRAY: {
+                    String desc = ((TypeInsnNode) insn).desc;
+                    Integer idObj = classIds.get(desc);
+                    if (idObj == null) {
+                        idObj = classIndex++;
+                        classIds.put(desc, idObj);
+                    }
+                    result.add(new Instruction(VmOpcodes.OP_ANEWARRAY, idObj));
+                    break;
+                }
+                case Opcodes.NEWARRAY: {
+                    int type = ((IntInsnNode) insn).operand;
+                    result.add(new Instruction(VmOpcodes.OP_NEWARRAY, type));
+                    break;
+                }
+                case Opcodes.MULTIANEWARRAY: {
+                    MultiANewArrayInsnNode m = (MultiANewArrayInsnNode) insn;
+                    String desc = m.desc;
+                    Integer idObj = classIds.get(desc);
+                    if (idObj == null) {
+                        idObj = classIndex++;
+                        classIds.put(desc, idObj);
+                    }
+                    long operand = ((long) idObj << 32) | (m.dims & 0xFFFFFFFFL);
+                    result.add(new Instruction(VmOpcodes.OP_MULTIANEWARRAY, operand));
+                    break;
+                }
+                case Opcodes.CHECKCAST: {
+                    String desc = ((TypeInsnNode) insn).desc;
+                    Integer idObj = classIds.get(desc);
+                    if (idObj == null) {
+                        idObj = classIndex++;
+                        classIds.put(desc, idObj);
+                    }
+                    result.add(new Instruction(VmOpcodes.OP_CHECKCAST, idObj));
+                    break;
+                }
+                case Opcodes.INSTANCEOF: {
+                    String desc = ((TypeInsnNode) insn).desc;
+                    Integer idObj = classIds.get(desc);
+                    if (idObj == null) {
+                        idObj = classIndex++;
+                        classIds.put(desc, idObj);
+                    }
+                    result.add(new Instruction(VmOpcodes.OP_INSTANCEOF, idObj));
+                    break;
+                }
                 case Opcodes.BIPUSH:
                 case Opcodes.SIPUSH:
                     result.add(new Instruction(VmOpcodes.OP_PUSH, ((IntInsnNode) insn).operand));

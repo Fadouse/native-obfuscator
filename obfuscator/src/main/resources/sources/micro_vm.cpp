@@ -1,5 +1,6 @@
 #include "micro_vm.hpp"
 #include "vm_jit.hpp"
+#include "native_jvm.hpp"
 #include <iostream>
 #include <random>
 #include <algorithm>
@@ -176,6 +177,12 @@ dispatch:
         case OP_BASTORE: goto do_bastore;
         case OP_CASTORE: goto do_castore;
         case OP_SASTORE: goto do_sastore;
+        case OP_NEW: goto do_new;
+        case OP_ANEWARRAY: goto do_anewarray;
+        case OP_NEWARRAY: goto do_newarray;
+        case OP_MULTIANEWARRAY: goto do_multianewarray;
+        case OP_CHECKCAST: goto do_checkcast;
+        case OP_INSTANCEOF: goto do_instanceof;
         case OP_LADD: goto do_add;
         case OP_LSUB: goto do_sub;
         case OP_LMUL: goto do_mul;
@@ -746,6 +753,105 @@ do_sastore:
         jsize index = static_cast<jsize>(stack[--sp]);
         jshortArray arr = reinterpret_cast<jshortArray>(stack[--sp]);
         env->SetShortArrayRegion(arr, index, 1, &value);
+    }
+    goto dispatch;
+
+do_new:
+    if (sp < 256) {
+        const char* name = reinterpret_cast<const char*>(tmp);
+        jclass clazz = env->FindClass(name);
+        if (clazz) {
+            jobject obj = env->AllocObject(clazz);
+            stack[sp++] = reinterpret_cast<int64_t>(obj);
+            env->DeleteLocalRef(clazz);
+        }
+    }
+    goto dispatch;
+
+do_anewarray:
+    if (sp >= 1) {
+        jint length = static_cast<jint>(stack[--sp]);
+        const char* name = reinterpret_cast<const char*>(tmp);
+        jclass clazz = env->FindClass(name);
+        jobjectArray arr = nullptr;
+        if (clazz) {
+            arr = env->NewObjectArray(length, clazz, nullptr);
+            env->DeleteLocalRef(clazz);
+        }
+        stack[sp++] = reinterpret_cast<int64_t>(arr);
+    }
+    goto dispatch;
+
+do_newarray:
+    if (sp >= 1) {
+        jint length = static_cast<jint>(stack[--sp]);
+        jarray arr = nullptr;
+        switch (tmp) {
+            case 4: arr = env->NewBooleanArray(length); break;
+            case 5: arr = env->NewCharArray(length); break;
+            case 6: arr = env->NewFloatArray(length); break;
+            case 7: arr = env->NewDoubleArray(length); break;
+            case 8: arr = env->NewByteArray(length); break;
+            case 9: arr = env->NewShortArray(length); break;
+            case 10: arr = env->NewIntArray(length); break;
+            case 11: arr = env->NewLongArray(length); break;
+            default: break;
+        }
+        stack[sp++] = reinterpret_cast<int64_t>(arr);
+    }
+    goto dispatch;
+
+do_multianewarray:
+    {
+        jint dims = static_cast<jint>(tmp & 0xFFFFFFFF);
+        const char* name = reinterpret_cast<const char*>(tmp >> 32);
+        std::vector<jint> sizes(dims);
+        for (int i = dims - 1; i >= 0 && sp > 0; --i) {
+            sizes[i] = static_cast<jint>(stack[--sp]);
+        }
+        jobjectArray arr = nullptr;
+        if (dims == 1) {
+            jclass clazz = env->FindClass(name);
+            if (clazz) {
+                arr = env->NewObjectArray(sizes[0], clazz, nullptr);
+                env->DeleteLocalRef(clazz);
+            }
+        } else if (dims > 1) {
+            jclass clazz = env->FindClass(name);
+            if (clazz) {
+                arr = env->NewObjectArray(sizes[0], clazz, nullptr);
+                env->DeleteLocalRef(clazz);
+            }
+        }
+        stack[sp++] = reinterpret_cast<int64_t>(arr);
+    }
+    goto dispatch;
+
+do_checkcast:
+    if (sp >= 1) {
+        jobject obj = reinterpret_cast<jobject>(stack[sp - 1]);
+        if (obj != nullptr) {
+            const char* name = reinterpret_cast<const char*>(tmp);
+            jclass clazz = env->FindClass(name);
+            if (clazz) {
+                if (!env->IsInstanceOf(obj, clazz)) {
+                    jclass ex = env->FindClass("java/lang/ClassCastException");
+                    if (ex) env->ThrowNew(ex, "checkcast failed");
+                }
+                env->DeleteLocalRef(clazz);
+            }
+        }
+    }
+    goto dispatch;
+
+do_instanceof:
+    if (sp >= 1) {
+        jobject obj = reinterpret_cast<jobject>(stack[--sp]);
+        const char* name = reinterpret_cast<const char*>(tmp);
+        jclass clazz = env->FindClass(name);
+        jboolean res = obj && clazz && env->IsInstanceOf(obj, clazz);
+        if (clazz) env->DeleteLocalRef(clazz);
+        stack[sp++] = res ? 1 : 0;
     }
     goto dispatch;
 

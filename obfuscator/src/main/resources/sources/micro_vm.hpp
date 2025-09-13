@@ -101,7 +101,13 @@ enum OpCode : uint8_t {
     OP_BASTORE = 88, // store into byte array
     OP_CASTORE = 89, // store into char array
     OP_SASTORE = 90, // store into short array
-    OP_COUNT = 91  // helper constant with number of opcodes
+    OP_NEW = 91, // allocate object
+    OP_ANEWARRAY = 92, // allocate object array
+    OP_NEWARRAY = 93, // allocate primitive array
+    OP_MULTIANEWARRAY = 94, // allocate multi-dimensional array
+    OP_CHECKCAST = 95, // perform checkcast
+    OP_INSTANCEOF = 96, // perform instanceof
+    OP_COUNT = 97  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
