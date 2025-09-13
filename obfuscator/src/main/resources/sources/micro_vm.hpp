@@ -132,7 +132,14 @@ enum OpCode : uint8_t {
     OP_IF_ICMPLE_W = 119,  // wide int compare le
     OP_IF_ICMPGT_W = 120,  // wide int compare gt
     OP_IF_ICMPGE_W = 121,  // wide int compare ge
-    OP_COUNT = 122         // helper constant with number of opcodes
+    OP_POP = 122,          // pop top stack value
+    OP_POP2 = 123,         // pop two top stack values
+    OP_DUP_X1 = 124,       // duplicate top and insert one below
+    OP_DUP_X2 = 125,       // duplicate top and insert two below
+    OP_DUP2 = 126,         // duplicate top two stack values
+    OP_DUP2_X1 = 127,      // duplicate top two and insert below third
+    OP_DUP2_X2 = 128,      // duplicate top two and insert below fourth
+    OP_COUNT = 129         // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
