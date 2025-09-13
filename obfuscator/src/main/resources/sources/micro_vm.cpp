@@ -179,6 +179,13 @@ dispatch:
         case OP_DCONST_1: goto do_dconst_1;
         case OP_LCONST_0: goto do_lconst_0;
         case OP_LCONST_1: goto do_lconst_1;
+        case OP_IINC: goto do_iinc;
+        case OP_LAND: goto do_and;
+        case OP_LOR: goto do_or;
+        case OP_LXOR: goto do_xor;
+        case OP_LSHL: goto do_shl;
+        case OP_LSHR: goto do_shr;
+        case OP_LUSHR: goto do_ushr;
         case OP_INVOKESTATIC: goto do_invokestatic;
         default:       goto halt;
     }
@@ -402,6 +409,18 @@ do_store:
     if (sp >= 1 && tmp >= 0 && static_cast<size_t>(tmp) < locals_length && locals != nullptr) {
         locals[tmp] = stack[sp - 1];
         --sp;
+    }
+    goto dispatch;
+
+do_iinc:
+    if (locals != nullptr) {
+        uint32_t idx = static_cast<uint32_t>(tmp & 0xFFFFFFFFULL);
+        int32_t inc = static_cast<int32_t>(tmp >> 32);
+        if (idx < locals_length) {
+            int32_t val = static_cast<int32_t>(locals[idx]);
+            val += inc;
+            locals[idx] = static_cast<int64_t>(val);
+        }
     }
     goto dispatch;
 

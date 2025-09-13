@@ -75,7 +75,14 @@ enum OpCode : uint8_t {
     OP_DCONST_1 = 62, // push double 1.0
     OP_LCONST_0 = 63, // push long 0
     OP_LCONST_1 = 64, // push long 1
-    OP_COUNT = 65  // helper constant with number of opcodes
+    OP_IINC = 65,  // increment int local by constant
+    OP_LAND = 66,  // long bitwise and
+    OP_LOR  = 67,  // long bitwise or
+    OP_LXOR = 68,  // long bitwise xor
+    OP_LSHL = 69,  // long shift left
+    OP_LSHR = 70,  // long arithmetic shift right
+    OP_LUSHR = 71, // long logical shift right
+    OP_COUNT = 72  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
