@@ -109,6 +109,13 @@ public class VmTranslator {
         public static final int OP_DCONST_1 = 62;
         public static final int OP_LCONST_0 = 63;
         public static final int OP_LCONST_1 = 64;
+        public static final int OP_IINC = 65;
+        public static final int OP_LAND = 66;
+        public static final int OP_LOR = 67;
+        public static final int OP_LXOR = 68;
+        public static final int OP_LSHL = 69;
+        public static final int OP_LSHR = 70;
+        public static final int OP_LUSHR = 71;
     }
 
     /**
@@ -234,6 +241,24 @@ public class VmTranslator {
                 case Opcodes.IUSHR:
                     result.add(new Instruction(VmOpcodes.OP_USHR, 0));
                     break;
+                case Opcodes.LAND:
+                    result.add(new Instruction(VmOpcodes.OP_LAND, 0));
+                    break;
+                case Opcodes.LOR:
+                    result.add(new Instruction(VmOpcodes.OP_LOR, 0));
+                    break;
+                case Opcodes.LXOR:
+                    result.add(new Instruction(VmOpcodes.OP_LXOR, 0));
+                    break;
+                case Opcodes.LSHL:
+                    result.add(new Instruction(VmOpcodes.OP_LSHL, 0));
+                    break;
+                case Opcodes.LSHR:
+                    result.add(new Instruction(VmOpcodes.OP_LSHR, 0));
+                    break;
+                case Opcodes.LUSHR:
+                    result.add(new Instruction(VmOpcodes.OP_LUSHR, 0));
+                    break;
                 case Opcodes.ALOAD:
                     result.add(new Instruction(VmOpcodes.OP_ALOAD, ((VarInsnNode) insn).var));
                     break;
@@ -344,6 +369,12 @@ public class VmTranslator {
                 case 74: // DSTORE_3
                     result.add(new Instruction(VmOpcodes.OP_DSTORE, opcode - 71));
                     break;
+                case Opcodes.IINC: {
+                    IincInsnNode ii = (IincInsnNode) insn;
+                    long operand = ((long) ii.incr << 32) | (ii.var & 0xFFFFFFFFL);
+                    result.add(new Instruction(VmOpcodes.OP_IINC, operand));
+                    break;
+                }
                 case Opcodes.GOTO:
                     result.add(new Instruction(VmOpcodes.OP_GOTO, labelIds.get(((JumpInsnNode) insn).label)));
                     break;
