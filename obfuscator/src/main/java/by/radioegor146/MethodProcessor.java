@@ -168,12 +168,37 @@ public class MethodProcessor {
         boolean useJit = Boolean.getBoolean("nativeobfuscator.jit");
         VmTranslator vmTranslator = new VmTranslator(useJit);
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
+        List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
         if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
                     VmTranslator.serialize(vmCode)));
             output.append(String.format("    jlong __ngen_vm_locals[%d] = {0};\n", Math.max(1, method.maxLocals)));
             for (int i = 0; i < argNames.size(); i++) {
                 output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, argNames.get(i)));
+            }
+            if (!fieldRefs.isEmpty()) {
+                output.append("    native_jvm::vm::FieldRef __ngen_vm_fields[] = {");
+                for (int i = 0; i < fieldRefs.size(); i++) {
+                    VmTranslator.FieldRefInfo fr = fieldRefs.get(i);
+                    output.append(String.format("{ %s, %s, %s }",
+                            context.getStringPool().get(fr.owner),
+                            context.getStringPool().get(fr.name),
+                            context.getStringPool().get(fr.desc)));
+                    if (i + 1 < fieldRefs.size()) {
+                        output.append(", ");
+                    }
+                }
+                output.append(" };\n");
+                output.append("    for (auto &ins : __ngen_vm_code) {\n");
+                output.append("        switch (ins.op) {\n");
+                output.append("            case native_jvm::vm::OP_GETSTATIC:\n");
+                output.append("            case native_jvm::vm::OP_PUTSTATIC:\n");
+                output.append("            case native_jvm::vm::OP_GETFIELD:\n");
+                output.append("            case native_jvm::vm::OP_PUTFIELD:\n");
+                output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_fields[ins.operand]);\n");
+                output.append("                break;\n");
+                output.append("        }\n");
+                output.append("    }\n");
             }
             output.append(String.format(
                     "    native_jvm::vm::encode_program(__ngen_vm_code, %d, %dLL);\n",

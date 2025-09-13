@@ -14,6 +14,7 @@ import java.util.*;
 public class VmTranslator {
 
     private boolean useJit;
+    private final List<FieldRefInfo> fieldRefs = new ArrayList<>();
 
     public VmTranslator() {
         this(false);
@@ -40,6 +41,23 @@ public class VmTranslator {
             this.opcode = opcode;
             this.operand = operand;
         }
+    }
+
+    /** Holds information about a referenced field. */
+    public static class FieldRefInfo {
+        public final String owner;
+        public final String name;
+        public final String desc;
+
+        public FieldRefInfo(String owner, String name, String desc) {
+            this.owner = owner;
+            this.name = name;
+            this.desc = desc;
+        }
+    }
+
+    public List<FieldRefInfo> getFieldRefs() {
+        return fieldRefs;
     }
 
     /** Constants mirroring native_jvm::vm::OpCode. */
@@ -153,6 +171,7 @@ public class VmTranslator {
      * so that the caller can provide a fallback implementation.
      */
     public Instruction[] translate(MethodNode method) {
+        fieldRefs.clear();
         Map<LabelNode, Integer> labelIds = new HashMap<>();
         int index = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -583,6 +602,7 @@ public class VmTranslator {
                     if (id == null) {
                         id = fieldIndex++;
                         fieldIds.put(key, id);
+                        fieldRefs.add(new FieldRefInfo(fi.owner, fi.name, fi.desc));
                     }
                     int op;
                     switch (opcode) {
