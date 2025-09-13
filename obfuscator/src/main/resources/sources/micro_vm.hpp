@@ -75,6 +75,11 @@ void init_key(uint64_t seed);
 int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
                 int64_t* locals, size_t locals_length, uint64_t seed);
 
+// JIT-enabled variant that caches translated machine code for hot sequences
+// and executes them directly. Falls back to the interpreter for cold code.
+int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
+                    int64_t* locals, size_t locals_length, uint64_t seed);
+
 // Encodes a program in-place using the internal key so that it can be
 // executed by the VM.  The seed should be the same value passed to
 // execute.

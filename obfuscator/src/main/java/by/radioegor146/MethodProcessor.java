@@ -165,7 +165,8 @@ public class MethodProcessor {
         long vmKeySeed = ThreadLocalRandom.current().nextLong();
         output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
 
-        VmTranslator vmTranslator = new VmTranslator();
+        boolean useJit = Boolean.getBoolean("nativeobfuscator.jit");
+        VmTranslator vmTranslator = new VmTranslator(useJit);
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
         if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
@@ -177,9 +178,15 @@ public class MethodProcessor {
             output.append(String.format(
                     "    native_jvm::vm::encode_program(__ngen_vm_code, %d, %dLL);\n",
                     vmCode.length, vmKeySeed));
-            output.append(String.format(
-                    "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
-                    CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+            if (vmTranslator.isUseJit()) {
+                output.append(String.format(
+                        "    return (%s)native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+            } else {
+                output.append(String.format(
+                        "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+            }
             output.append("}\n");
 
             method.localVariables.clear();
