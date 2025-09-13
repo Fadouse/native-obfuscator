@@ -7,26 +7,29 @@ import org.junit.jupiter.api.Test;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 
-import java.lang.reflect.Method;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests translation and execution of object/array/method call instructions.
+ * Tests translation and execution of object/array instructions.
  */
 public class VmTranslatorObjectTest {
 
     static class SampleObjects {
-        static Object helper(Object o) { return o; }
         static Object process(Object[] arr) {
             Object tmp = arr[0];
             arr[1] = tmp;
-            return helper(tmp);
+            return tmp;
         }
     }
 
-    private Object run(Instruction[] code, Object[] locals, List<Method> methods) throws Exception {
+    static class WithStaticCall {
+        static void helper() {}
+        static void caller() { helper(); }
+    }
+
+    private Object run(Instruction[] code, Object[] locals) {
         Object[] stack = new Object[256];
         int sp = 0;
         int pc = 0;
@@ -34,13 +37,16 @@ public class VmTranslatorObjectTest {
             Instruction ins = code[pc++];
             switch (ins.opcode) {
                 case VmOpcodes.OP_PUSH:
-                    stack[sp++] = (long) ins.operand;
+                case VmOpcodes.OP_LDC:
+                case VmOpcodes.OP_LDC_W:
+                case VmOpcodes.OP_LDC2_W:
+                    stack[sp++] = ins.operand;
                     break;
                 case VmOpcodes.OP_ALOAD:
-                    stack[sp++] = locals[ins.operand];
+                    stack[sp++] = locals[(int) ins.operand];
                     break;
                 case VmOpcodes.OP_ASTORE:
-                    locals[ins.operand] = stack[--sp];
+                    locals[(int) ins.operand] = stack[--sp];
                     break;
                 case VmOpcodes.OP_AALOAD:
                     int idx = (int) (long) stack[--sp];
@@ -53,12 +59,6 @@ public class VmTranslatorObjectTest {
                     Object[] arr2 = (Object[]) stack[--sp];
                     arr2[idx2] = val;
                     break;
-                case VmOpcodes.OP_INVOKESTATIC:
-                    Method m = methods.get(ins.operand);
-                    Object arg = stack[--sp];
-                    Object res = m.invoke(null, arg);
-                    stack[sp++] = res;
-                    break;
                 case VmOpcodes.OP_HALT:
                     return sp > 0 ? stack[sp - 1] : null;
                 default:
@@ -69,7 +69,7 @@ public class VmTranslatorObjectTest {
     }
 
     @Test
-    public void testObjectArrayAndMethod() throws Exception {
+    public void testObjectArray() throws Exception {
         ClassReader cr = new ClassReader(SampleObjects.class.getName());
         ClassNode cn = new ClassNode();
         cr.accept(cn, 0);
@@ -83,30 +83,12 @@ public class VmTranslatorObjectTest {
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_AALOAD));
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_AASTORE));
-        assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_INVOKESTATIC));
-
-        // Build method table in encounter order
-        List<Method> methods = new ArrayList<>();
-        for (AbstractInsnNode insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-            if (insn.getOpcode() == Opcodes.INVOKESTATIC) {
-                MethodInsnNode mi = (MethodInsnNode) insn;
-                Class<?> owner = Class.forName(mi.owner.replace('/', '.'));
-                Type[] argTypes = Type.getArgumentTypes(mi.desc);
-                Class<?>[] params = new Class<?>[argTypes.length];
-                for (int i = 0; i < argTypes.length; i++) {
-                    params[i] = Class.forName(argTypes[i].getClassName());
-                }
-                Method m = owner.getDeclaredMethod(mi.name, params);
-                m.setAccessible(true);
-                methods.add(m);
-            }
-        }
 
         Object[] arr = new Object[]{"x", null};
         Object[] locals = new Object[2];
         locals[0] = arr;
 
-        Object result = run(code, locals, methods);
+        Object result = run(code, locals);
 
         Object[] arrCopy = new Object[]{"x", null};
         Object expected = SampleObjects.process(arrCopy);
@@ -114,5 +96,19 @@ public class VmTranslatorObjectTest {
         assertEquals(expected, result);
         assertEquals(arr[0], arr[1]);
         assertEquals(arrCopy[0], arrCopy[1]);
+    }
+
+    @Test
+    public void testRejectsStaticCall() throws Exception {
+        ClassReader cr = new ClassReader(WithStaticCall.class.getName());
+        ClassNode cn = new ClassNode();
+        cr.accept(cn, 0);
+        MethodNode mn = cn.methods.stream()
+                .filter(m -> m.name.equals("caller"))
+                .findFirst()
+                .orElseThrow();
+        VmTranslator translator = new VmTranslator();
+        Instruction[] code = translator.translate(mn);
+        assertNull(code);
     }
 }

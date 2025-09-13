@@ -65,7 +65,17 @@ enum OpCode : uint8_t {
     OP_DSUB = 52, // double sub
     OP_DMUL = 53, // double mul
     OP_DDIV = 54, // double div
-    OP_COUNT = 55  // helper constant with number of opcodes
+    OP_LDC = 55, // load constant (int/float)
+    OP_LDC_W = 56, // load wide constant (int/float)
+    OP_LDC2_W = 57, // load long/double constant
+    OP_FCONST_0 = 58, // push float 0.0
+    OP_FCONST_1 = 59, // push float 1.0
+    OP_FCONST_2 = 60, // push float 2.0
+    OP_DCONST_0 = 61, // push double 0.0
+    OP_DCONST_1 = 62, // push double 1.0
+    OP_LCONST_0 = 63, // push long 0
+    OP_LCONST_1 = 64, // push long 1
+    OP_COUNT = 65  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
