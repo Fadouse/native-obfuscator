@@ -133,6 +133,78 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
             case OP_I2S:
                 if (sp >= 1) stack[sp-1] = (int16_t)stack[sp-1];
                 break;
+            case OP_I2F:
+                if (sp >= 1) {
+                    float f = (float)(int32_t)stack[sp-1];
+                    int32_t bits; std::memcpy(&bits, &f, sizeof(float));
+                    stack[sp-1] = bits;
+                }
+                break;
+            case OP_I2D:
+                if (sp >= 1) {
+                    double d = (double)(int32_t)stack[sp-1];
+                    int64_t bits; std::memcpy(&bits, &d, sizeof(double));
+                    stack[sp-1] = bits;
+                }
+                break;
+            case OP_L2I:
+                if (sp >= 1) stack[sp-1] = (int32_t)stack[sp-1];
+                break;
+            case OP_L2F:
+                if (sp >= 1) {
+                    float f = (float)stack[sp-1];
+                    int32_t bits; std::memcpy(&bits, &f, sizeof(float));
+                    stack[sp-1] = bits;
+                }
+                break;
+            case OP_L2D:
+                if (sp >= 1) {
+                    double d = (double)stack[sp-1];
+                    int64_t bits; std::memcpy(&bits, &d, sizeof(double));
+                    stack[sp-1] = bits;
+                }
+                break;
+            case OP_F2I:
+                if (sp >= 1) {
+                    float f; int32_t bits = (int32_t)stack[sp-1];
+                    std::memcpy(&f, &bits, sizeof(float));
+                    stack[sp-1] = (int32_t)f;
+                }
+                break;
+            case OP_F2L:
+                if (sp >= 1) {
+                    float f; int32_t bits = (int32_t)stack[sp-1];
+                    std::memcpy(&f, &bits, sizeof(float));
+                    stack[sp-1] = (int64_t)f;
+                }
+                break;
+            case OP_F2D:
+                if (sp >= 1) {
+                    float f; int32_t bits = (int32_t)stack[sp-1];
+                    std::memcpy(&f, &bits, sizeof(float));
+                    double d = (double)f; int64_t dbits; std::memcpy(&dbits, &d, sizeof(double));
+                    stack[sp-1] = dbits;
+                }
+                break;
+            case OP_D2I:
+                if (sp >= 1) {
+                    double d; std::memcpy(&d, &stack[sp-1], sizeof(double));
+                    stack[sp-1] = (int32_t)d;
+                }
+                break;
+            case OP_D2L:
+                if (sp >= 1) {
+                    double d; std::memcpy(&d, &stack[sp-1], sizeof(double));
+                    stack[sp-1] = (int64_t)d;
+                }
+                break;
+            case OP_D2F:
+                if (sp >= 1) {
+                    double d; std::memcpy(&d, &stack[sp-1], sizeof(double));
+                    float f = (float)d; int32_t fbits; std::memcpy(&fbits, &f, sizeof(float));
+                    stack[sp-1] = fbits;
+                }
+                break;
             case OP_NEG:
                 if (sp >= 1) stack[sp-1] = -stack[sp-1];
                 break;
