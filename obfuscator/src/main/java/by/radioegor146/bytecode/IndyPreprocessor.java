@@ -6,12 +6,19 @@ import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.commons.Remapper;
 import org.objectweb.asm.tree.*;
 
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
 public class IndyPreprocessor implements Preprocessor {
+
+    private static Handle remapHandle(Handle handle) {
+        Remapper remapper = PreprocessorRunner.getRemapper();
+        Object mapped = remapper.mapValue(handle);
+        return mapped instanceof Handle ? (Handle) mapped : handle;
+    }
 
     private static void processIndy(ClassNode classNode, MethodNode methodNode,
                                     InvokeDynamicInsnNode invokeDynamicInsnNode, Platform platform) {
@@ -127,7 +134,8 @@ public class IndyPreprocessor implements Preprocessor {
                     } else if (bsmArgument instanceof Double) {
                         bootstrapInstructions.add(new LdcInsnNode(bsmArgument)); // 6
                     } else if (bsmArgument instanceof Handle) {
-                        bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn((Handle) bsmArgument));
+                        Handle remapped = remapHandle((Handle) bsmArgument);
+                        bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn(remapped));
                     } else if (bsmArgument instanceof Object[]) {
                         Object[] objects = (Object[]) bsmArgument;
                         bootstrapInstructions.add(new LdcInsnNode(objects.length));
@@ -158,7 +166,8 @@ public class IndyPreprocessor implements Preprocessor {
                                 bootstrapInstructions.add(new LdcInsnNode(object));
                                 bootstrapInstructions.add(getBoxingInsnNode(Type.DOUBLE_TYPE));
                             } else if (object instanceof Handle) {
-                                bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn((Handle) object));
+                                Handle remappedInner = remapHandle((Handle) object);
+                                bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn(remappedInner));
                             } else {
                                 throw new RuntimeException("Wrong argument type: " + object.getClass());
                             }
@@ -184,7 +193,7 @@ public class IndyPreprocessor implements Preprocessor {
                 bootstrapInstructions.add(new InsnNode(Opcodes.DUP));
                 bootstrapInstructions.add(new LdcInsnNode(Type.getObjectType(classNode.name)));
                 bootstrapInstructions.add(new InsnNode(Opcodes.SWAP));
-                bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn(invokeDynamicInsnNode.bsm));
+                bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn(remapHandle(invokeDynamicInsnNode.bsm)));
                 bootstrapInstructions.add(new InsnNode(Opcodes.SWAP));
                 bootstrapInstructions.add(new LdcInsnNode(invokeDynamicInsnNode.name));
                 bootstrapInstructions.add(new InsnNode(Opcodes.SWAP));
@@ -217,7 +226,8 @@ public class IndyPreprocessor implements Preprocessor {
                         bootstrapInstructions.add(new LdcInsnNode(bsmArgument)); // 6
                         bootstrapInstructions.add(getBoxingInsnNode(Type.DOUBLE_TYPE));
                     } else if (bsmArgument instanceof Handle) {
-                        bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn((Handle) bsmArgument));
+                        Handle remapped = remapHandle((Handle) bsmArgument);
+                        bootstrapInstructions.add(MethodHandleUtils.generateMethodHandleLdcInsn(remapped));
                     } else {
                         throw new RuntimeException("Wrong argument type: " + bsmArgument.getClass());
                     }
