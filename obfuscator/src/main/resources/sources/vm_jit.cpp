@@ -54,7 +54,73 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 if (sp >= 2) std::swap(stack[sp-1], stack[sp-2]);
                 break;
             case OP_DUP:
-                if (sp >= 1 && sp < 256) stack[sp++] = stack[sp-1];
+                if (sp >= 1 && sp < 256) {
+                    int64_t v = stack[sp-1];
+                    stack[sp++] = v;
+                }
+                break;
+            case OP_POP:
+                if (sp >= 1) --sp;
+                break;
+            case OP_POP2:
+                if (sp >= 2) sp -= 2;
+                break;
+            case OP_DUP_X1:
+                if (sp >= 2 && sp < 256) {
+                    int64_t v1 = stack[sp-1];
+                    int64_t v2 = stack[sp-2];
+                    stack[sp] = v1;
+                    stack[sp-1] = v2;
+                    stack[sp-2] = v1;
+                    ++sp;
+                }
+                break;
+            case OP_DUP_X2:
+                if (sp >= 3 && sp < 256) {
+                    int64_t v1 = stack[sp-1];
+                    int64_t v2 = stack[sp-2];
+                    int64_t v3 = stack[sp-3];
+                    stack[sp] = v1;
+                    stack[sp-1] = v2;
+                    stack[sp-2] = v3;
+                    stack[sp-3] = v1;
+                    ++sp;
+                }
+                break;
+            case OP_DUP2:
+                if (sp >= 2 && sp < 255) {
+                    stack[sp] = stack[sp-2];
+                    stack[sp+1] = stack[sp-1];
+                    sp += 2;
+                }
+                break;
+            case OP_DUP2_X1:
+                if (sp >= 3 && sp < 255) {
+                    int64_t v1 = stack[sp-1];
+                    int64_t v2 = stack[sp-2];
+                    int64_t v3 = stack[sp-3];
+                    stack[sp+1] = v1;
+                    stack[sp] = v2;
+                    stack[sp-1] = v3;
+                    stack[sp-2] = v1;
+                    stack[sp-3] = v2;
+                    sp += 2;
+                }
+                break;
+            case OP_DUP2_X2:
+                if (sp >= 4 && sp < 255) {
+                    int64_t v1 = stack[sp-1];
+                    int64_t v2 = stack[sp-2];
+                    int64_t v3 = stack[sp-3];
+                    int64_t v4 = stack[sp-4];
+                    stack[sp+1] = v1;
+                    stack[sp] = v2;
+                    stack[sp-1] = v3;
+                    stack[sp-2] = v4;
+                    stack[sp-3] = v1;
+                    stack[sp-4] = v2;
+                    sp += 2;
+                }
                 break;
             case OP_LOAD:
                 if (sp < 256 && ins.operand >= 0 && static_cast<size_t>(ins.operand) < locals_len)

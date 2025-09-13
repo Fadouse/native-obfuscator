@@ -323,6 +323,13 @@ dispatch:
         case OP_JUNK2: goto do_junk2;
         case OP_SWAP:  goto do_swap;
         case OP_DUP:   goto do_dup;
+        case OP_POP:   goto do_pop;
+        case OP_POP2:  goto do_pop2;
+        case OP_DUP_X1: goto do_dup_x1;
+        case OP_DUP_X2: goto do_dup_x2;
+        case OP_DUP2:  goto do_dup2;
+        case OP_DUP2_X1: goto do_dup2_x1;
+        case OP_DUP2_X2: goto do_dup2_x2;
         case OP_LOAD:  goto do_load;
         case OP_LLOAD:
         case OP_FLOAD:
@@ -642,7 +649,80 @@ do_swap:
     goto dispatch;
 
 do_dup:
-    if (sp >= 1 && sp < 256) stack[sp++] = stack[sp - 1];
+    if (sp >= 1 && sp < 256) {
+        int64_t v = stack[sp - 1];
+        stack[sp++] = v;
+    }
+    goto dispatch;
+
+do_pop:
+    if (sp >= 1) --sp;
+    goto dispatch;
+
+do_pop2:
+    if (sp >= 2) sp -= 2;
+    goto dispatch;
+
+do_dup_x1:
+    if (sp >= 2 && sp < 256) {
+        int64_t v1 = stack[sp - 1];
+        int64_t v2 = stack[sp - 2];
+        stack[sp] = v1;
+        stack[sp - 1] = v2;
+        stack[sp - 2] = v1;
+        ++sp;
+    }
+    goto dispatch;
+
+do_dup_x2:
+    if (sp >= 3 && sp < 256) {
+        int64_t v1 = stack[sp - 1];
+        int64_t v2 = stack[sp - 2];
+        int64_t v3 = stack[sp - 3];
+        stack[sp] = v1;
+        stack[sp - 1] = v2;
+        stack[sp - 2] = v3;
+        stack[sp - 3] = v1;
+        ++sp;
+    }
+    goto dispatch;
+
+do_dup2:
+    if (sp >= 2 && sp < 255) {
+        stack[sp] = stack[sp - 2];
+        stack[sp + 1] = stack[sp - 1];
+        sp += 2;
+    }
+    goto dispatch;
+
+do_dup2_x1:
+    if (sp >= 3 && sp < 255) {
+        int64_t v1 = stack[sp - 1];
+        int64_t v2 = stack[sp - 2];
+        int64_t v3 = stack[sp - 3];
+        stack[sp + 1] = v1;
+        stack[sp] = v2;
+        stack[sp - 1] = v3;
+        stack[sp - 2] = v1;
+        stack[sp - 3] = v2;
+        sp += 2;
+    }
+    goto dispatch;
+
+do_dup2_x2:
+    if (sp >= 4 && sp < 255) {
+        int64_t v1 = stack[sp - 1];
+        int64_t v2 = stack[sp - 2];
+        int64_t v3 = stack[sp - 3];
+        int64_t v4 = stack[sp - 4];
+        stack[sp + 1] = v1;
+        stack[sp] = v2;
+        stack[sp - 1] = v3;
+        stack[sp - 2] = v4;
+        stack[sp - 3] = v1;
+        stack[sp - 4] = v2;
+        sp += 2;
+    }
     goto dispatch;
 
 do_load:
