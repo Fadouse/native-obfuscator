@@ -223,6 +223,13 @@ public class VmTranslator {
         public static final int OP_IF_ICMPLE_W = 119;
         public static final int OP_IF_ICMPGT_W = 120;
         public static final int OP_IF_ICMPGE_W = 121;
+        public static final int OP_POP = 122;
+        public static final int OP_POP2 = 123;
+        public static final int OP_DUP_X1 = 124;
+        public static final int OP_DUP_X2 = 125;
+        public static final int OP_DUP2 = 126;
+        public static final int OP_DUP2_X1 = 127;
+        public static final int OP_DUP2_X2 = 128;
     }
 
     /**
@@ -250,26 +257,31 @@ public class VmTranslator {
         int classIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
         int fieldIndex = 0;
+        Deque<Integer> typeStack = new ArrayDeque<>();
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             int opcode = insn.getOpcode();
             switch (opcode) {
                 case Opcodes.ILOAD:
                     result.add(new Instruction(VmOpcodes.OP_LOAD, ((VarInsnNode) insn).var));
+                    typeStack.push(1);
                     break;
                 case 26: // ILOAD_0
                 case 27: // ILOAD_1
                 case 28: // ILOAD_2
                 case 29: // ILOAD_3
                     result.add(new Instruction(VmOpcodes.OP_LOAD, opcode - 26));
+                    typeStack.push(1);
                     break;
                 case Opcodes.LLOAD:
                     result.add(new Instruction(VmOpcodes.OP_LLOAD, ((VarInsnNode) insn).var));
+                    typeStack.push(2);
                     break;
                 case 30: // LLOAD_0
                 case 31: // LLOAD_1
                 case 32: // LLOAD_2
                 case 33: // LLOAD_3
                     result.add(new Instruction(VmOpcodes.OP_LLOAD, opcode - 30));
+                    typeStack.push(2);
                     break;
                 case Opcodes.FLOAD:
                     result.add(new Instruction(VmOpcodes.OP_FLOAD, ((VarInsnNode) insn).var));
@@ -354,6 +366,156 @@ public class VmTranslator {
                     break;
                 case Opcodes.IUSHR:
                     result.add(new Instruction(VmOpcodes.OP_USHR, 0));
+                    break;
+                case Opcodes.POP:
+                    result.add(new Instruction(VmOpcodes.OP_POP, 0));
+                    if (!typeStack.isEmpty()) typeStack.pop();
+                    break;
+                case Opcodes.POP2:
+                    if (!typeStack.isEmpty() && typeStack.peek() == 2) {
+                        typeStack.pop();
+                        result.add(new Instruction(VmOpcodes.OP_POP, 0));
+                    } else {
+                        if (!typeStack.isEmpty()) typeStack.pop();
+                        if (!typeStack.isEmpty()) typeStack.pop();
+                        result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                    }
+                    break;
+                case Opcodes.DUP:
+                    result.add(new Instruction(VmOpcodes.OP_DUP, 0));
+                    if (!typeStack.isEmpty()) typeStack.push(typeStack.peek());
+                    break;
+                case Opcodes.DUP_X1:
+                    result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                    if (typeStack.size() >= 2) {
+                        int t1 = typeStack.pop();
+                        int t2 = typeStack.pop();
+                        typeStack.push(t1);
+                        typeStack.push(t2);
+                        typeStack.push(t1);
+                    }
+                    break;
+                case Opcodes.DUP_X2:
+                    if (typeStack.size() >= 2) {
+                        int t1 = typeStack.pop();
+                        int t2 = typeStack.pop();
+                        if (t1 == 1 && t2 == 2) {
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (typeStack.size() >= 1) {
+                            int t3 = typeStack.pop();
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t3);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else {
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                        }
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                    }
+                    break;
+                case Opcodes.DUP2:
+                    if (!typeStack.isEmpty() && typeStack.peek() == 2) {
+                        result.add(new Instruction(VmOpcodes.OP_DUP, 0));
+                        typeStack.push(2);
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP2, 0));
+                        if (typeStack.size() >= 2) {
+                            int t1 = typeStack.pop();
+                            int t2 = typeStack.pop();
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        }
+                    }
+                    break;
+                case Opcodes.DUP2_X1:
+                    if (typeStack.size() >= 2) {
+                        int t1 = typeStack.pop();
+                        int t2 = typeStack.pop();
+                        if (t1 == 2) {
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (typeStack.size() >= 1) {
+                            int t3 = typeStack.pop();
+                            result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            typeStack.push(t3);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else {
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                        }
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                    }
+                    break;
+                case Opcodes.DUP2_X2:
+                    if (typeStack.size() >= 2) {
+                        int t1 = typeStack.pop();
+                        int t2 = typeStack.pop();
+                        if (t1 == 2 && t2 == 2) {
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (t1 == 2 && typeStack.size() >= 2) {
+                            int t3 = typeStack.pop();
+                            int t4 = typeStack.pop();
+                            result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                            typeStack.push(t1);
+                            typeStack.push(t4);
+                            typeStack.push(t3);
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                        } else if (typeStack.size() >= 2) {
+                            int t3 = typeStack.pop();
+                            int t4 = typeStack.pop();
+                            if (t3 == 2) {
+                                result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                                typeStack.push(t3);
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                            } else {
+                                result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                                typeStack.push(t4);
+                                typeStack.push(t3);
+                                typeStack.push(t2);
+                                typeStack.push(t1);
+                            }
+                        } else {
+                            typeStack.push(t2);
+                            typeStack.push(t1);
+                            result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                        }
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                    }
+                    break;
+                case Opcodes.SWAP:
+                    result.add(new Instruction(VmOpcodes.OP_SWAP, 0));
+                    if (typeStack.size() >= 2) {
+                        int t1 = typeStack.pop();
+                        int t2 = typeStack.pop();
+                        typeStack.push(t1);
+                        typeStack.push(t2);
+                    }
                     break;
                 case Opcodes.LAND:
                     result.add(new Instruction(VmOpcodes.OP_LAND, 0));
@@ -492,12 +654,15 @@ public class VmTranslator {
                     int val = opcode - Opcodes.ICONST_0;
                     if (opcode == Opcodes.ICONST_M1) val = -1;
                     result.add(new Instruction(VmOpcodes.OP_PUSH, val));
+                    typeStack.push(1);
                     break;
                 case Opcodes.LCONST_0:
                     result.add(new Instruction(VmOpcodes.OP_LCONST_0, 0));
+                    typeStack.push(2);
                     break;
                 case Opcodes.LCONST_1:
                     result.add(new Instruction(VmOpcodes.OP_LCONST_1, 0));
+                    typeStack.push(2);
                     break;
                 case Opcodes.FCONST_0:
                     result.add(new Instruction(VmOpcodes.OP_FCONST_0, 0));
