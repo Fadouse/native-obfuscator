@@ -58,6 +58,9 @@ public class VmTranslator {
         public static final int OP_I2C = 29;
         public static final int OP_I2S = 30;
         public static final int OP_NEG = 31;
+        public static final int OP_IALOAD = 32;
+        public static final int OP_IASTORE = 33;
+        public static final int OP_CALL = 34;
     }
 
     /**
@@ -81,6 +84,7 @@ public class VmTranslator {
             int opcode = insn.getOpcode();
             switch (opcode) {
                 case Opcodes.ILOAD:
+                case Opcodes.ALOAD:
                     result.add(new Instruction(VmOpcodes.OP_LOAD, ((VarInsnNode) insn).var));
                     break;
                 case 26: // ILOAD_0
@@ -88,6 +92,12 @@ public class VmTranslator {
                 case 28: // ILOAD_2
                 case 29: // ILOAD_3
                     result.add(new Instruction(VmOpcodes.OP_LOAD, opcode - 26));
+                    break;
+                case 42: // ALOAD_0
+                case 43: // ALOAD_1
+                case 44: // ALOAD_2
+                case 45: // ALOAD_3
+                    result.add(new Instruction(VmOpcodes.OP_LOAD, opcode - 42));
                     break;
                 case Opcodes.IADD:
                     result.add(new Instruction(VmOpcodes.OP_ADD, 0));
@@ -135,6 +145,7 @@ public class VmTranslator {
                     result.add(new Instruction(VmOpcodes.OP_PUSH, val));
                     break;
                 case Opcodes.ISTORE:
+                case Opcodes.ASTORE:
                     result.add(new Instruction(VmOpcodes.OP_STORE, ((VarInsnNode) insn).var));
                     break;
                 case 59: // ISTORE_0
@@ -142,6 +153,12 @@ public class VmTranslator {
                 case 61: // ISTORE_2
                 case 62: // ISTORE_3
                     result.add(new Instruction(VmOpcodes.OP_STORE, opcode - 59));
+                    break;
+                case 75: // ASTORE_0
+                case 76: // ASTORE_1
+                case 77: // ASTORE_2
+                case 78: // ASTORE_3
+                    result.add(new Instruction(VmOpcodes.OP_STORE, opcode - 75));
                     break;
                 case Opcodes.GOTO:
                     result.add(new Instruction(VmOpcodes.OP_GOTO, labelIds.get(((JumpInsnNode) insn).label)));
@@ -163,6 +180,15 @@ public class VmTranslator {
                     break;
                 case Opcodes.IF_ICMPGE:
                     result.add(new Instruction(VmOpcodes.OP_IF_ICMPGE, labelIds.get(((JumpInsnNode) insn).label)));
+                    break;
+                case Opcodes.IALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_IALOAD, 0));
+                    break;
+                case Opcodes.IASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_IASTORE, 0));
+                    break;
+                case Opcodes.INVOKESTATIC:
+                    result.add(new Instruction(VmOpcodes.OP_CALL, 0));
                     break;
                 case Opcodes.IRETURN:
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));

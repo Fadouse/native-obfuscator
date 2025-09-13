@@ -42,7 +42,10 @@ enum OpCode : uint8_t {
     OP_I2C  = 29, // convert int to char
     OP_I2S  = 30, // convert int to short
     OP_NEG  = 31, // negate int
-    OP_COUNT = 32  // helper constant with number of opcodes
+    OP_IALOAD = 32, // load int from array
+    OP_IASTORE = 33, // store int into array
+    OP_CALL = 34, // invoke static int method with one int arg
+    OP_COUNT = 35  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

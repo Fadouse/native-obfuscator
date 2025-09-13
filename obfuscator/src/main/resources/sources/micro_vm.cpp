@@ -47,10 +47,10 @@ void ensure_init(uint64_t seed) {
 Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
     uint8_t mapped = op_map[static_cast<uint8_t>(op)];
     mapped = op_map2[mapped];
-    uint64_t mix = key ^ nonce;
+    uint64_t mix = key ^ nonce ^ mapped;
     return Instruction{
         static_cast<uint8_t>(mapped ^ static_cast<uint8_t>(mix)),
-        operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL),
+        operand ^ static_cast<int64_t>((mix + 0x9E3779B97F4A7C15ULL) * 0x9E3779B97F4A7C15ULL),
         nonce
     };
 }
@@ -121,6 +121,9 @@ dispatch:
         case OP_I2C: goto do_i2c;
         case OP_I2S: goto do_i2s;
         case OP_NEG: goto do_neg;
+        case OP_IALOAD: goto do_iaload;
+        case OP_IASTORE: goto do_iastore;
+        case OP_CALL: goto do_call;
         default:       goto halt;
     }
 
@@ -293,6 +296,39 @@ do_neg:
     if (sp >= 1) stack[sp - 1] = -stack[sp - 1];
     goto dispatch;
 
+do_iaload:
+    if (sp >= 2) {
+        jint index = static_cast<jint>(stack[sp - 1]);
+        jintArray array = reinterpret_cast<jintArray>(static_cast<uintptr_t>(stack[sp - 2]));
+        sp -= 2;
+        jint value = 0;
+        if (array != nullptr && index >= 0 && index < env->GetArrayLength(array)) {
+            env->GetIntArrayRegion(array, index, 1, &value);
+        }
+        stack[sp++] = static_cast<int64_t>(value);
+    }
+    goto dispatch;
+
+do_iastore:
+    if (sp >= 3) {
+        jint value = static_cast<jint>(stack[sp - 1]);
+        jint index = static_cast<jint>(stack[sp - 2]);
+        jintArray array = reinterpret_cast<jintArray>(static_cast<uintptr_t>(stack[sp - 3]));
+        sp -= 3;
+        if (array != nullptr && index >= 0 && index < env->GetArrayLength(array)) {
+            env->SetIntArrayRegion(array, index, 1, &value);
+        }
+    }
+    goto dispatch;
+
+do_call:
+    if (sp >= 1) {
+        jint arg = static_cast<jint>(stack[sp - 1]);
+        jint res = arg; // placeholder for real JNI call
+        stack[sp - 1] = res;
+    }
+    goto dispatch;
+
 // Dummy branch used only to confuse decompilers
 junk:
     // toggle and restore state so decoding stays in sync
@@ -339,11 +375,18 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
 
     auto emit_junk = [&]() {
         std::uniform_int_distribution<int> count_dist(0, 3);
-        std::uniform_int_distribution<int> choice_dist(0, 2);
+        std::uniform_int_distribution<int> choice_dist(0, 4);
         int count = count_dist(rng);
         for (int i = 0; i < count; ++i) {
             int choice = choice_dist(rng);
-            OpCode junk = choice == 0 ? OP_JUNK1 : (choice == 1 ? OP_JUNK2 : OP_NOP);
+            OpCode junk;
+            switch (choice) {
+                case 0: junk = OP_JUNK1; break;
+                case 1: junk = OP_JUNK2; break;
+                case 2: junk = OP_NOP; break;
+                case 3: junk = OP_SWAP; break;
+                default: junk = OP_DUP; break;
+            }
             emit(junk, 0);
         }
     };
@@ -378,10 +421,16 @@ int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed) {
 
     auto emit_junk = [&]() {
         std::uniform_int_distribution<int> count_dist(0, 2);
-        std::uniform_int_distribution<int> choice_dist(0, 1);
+        std::uniform_int_distribution<int> choice_dist(0, 3);
         int count = count_dist(rng);
         for (int i = 0; i < count; ++i) {
-            OpCode junk = choice_dist(rng) ? OP_JUNK1 : OP_JUNK2;
+            OpCode junk;
+            switch (choice_dist(rng)) {
+                case 0: junk = OP_JUNK1; break;
+                case 1: junk = OP_JUNK2; break;
+                case 2: junk = OP_NOP; break;
+                default: junk = OP_DUP; break;
+            }
             emit(junk, 0);
         }
     };
