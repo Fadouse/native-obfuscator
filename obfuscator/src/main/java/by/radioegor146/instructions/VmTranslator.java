@@ -127,6 +127,14 @@ public class VmTranslator {
         public static final int OP_D2I = 80;
         public static final int OP_D2L = 81;
         public static final int OP_D2F = 82;
+        public static final int OP_IALOAD = 83;
+        public static final int OP_BALOAD = 84;
+        public static final int OP_CALOAD = 85;
+        public static final int OP_SALOAD = 86;
+        public static final int OP_IASTORE = 87;
+        public static final int OP_BASTORE = 88;
+        public static final int OP_CASTORE = 89;
+        public static final int OP_SASTORE = 90;
     }
 
     /**
@@ -293,6 +301,30 @@ public class VmTranslator {
                     break;
                 case Opcodes.AASTORE:
                     result.add(new Instruction(VmOpcodes.OP_AASTORE, 0));
+                    break;
+                case Opcodes.IALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_IALOAD, 0));
+                    break;
+                case Opcodes.BALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_BALOAD, 0));
+                    break;
+                case Opcodes.CALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_CALOAD, 0));
+                    break;
+                case Opcodes.SALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_SALOAD, 0));
+                    break;
+                case Opcodes.IASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_IASTORE, 0));
+                    break;
+                case Opcodes.BASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_BASTORE, 0));
+                    break;
+                case Opcodes.CASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_CASTORE, 0));
+                    break;
+                case Opcodes.SASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_SASTORE, 0));
                     break;
                 case Opcodes.BIPUSH:
                 case Opcodes.SIPUSH:

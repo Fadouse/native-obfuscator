@@ -93,7 +93,15 @@ enum OpCode : uint8_t {
     OP_D2I = 80,   // convert double to int
     OP_D2L = 81,   // convert double to long
     OP_D2F = 82,   // convert double to float
-    OP_COUNT = 83  // helper constant with number of opcodes
+    OP_IALOAD = 83, // load from int array
+    OP_BALOAD = 84, // load from byte array
+    OP_CALOAD = 85, // load from char array
+    OP_SALOAD = 86, // load from short array
+    OP_IASTORE = 87, // store into int array
+    OP_BASTORE = 88, // store into byte array
+    OP_CASTORE = 89, // store into char array
+    OP_SASTORE = 90, // store into short array
+    OP_COUNT = 91  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
