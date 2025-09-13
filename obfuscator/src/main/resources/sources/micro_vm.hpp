@@ -115,7 +115,24 @@ enum OpCode : uint8_t {
     OP_INVOKESPECIAL = 102, // invoke special method
     OP_INVOKEINTERFACE = 103, // invoke interface method
     OP_INVOKEDYNAMIC = 104, // invoke dynamic call site
-    OP_COUNT = 105  // helper constant with number of opcodes
+    OP_IFNULL = 105,       // jump if reference is null
+    OP_IFNONNULL = 106,    // jump if reference not null
+    OP_IF_ACMPEQ = 107,    // compare refs and jump if equal
+    OP_IF_ACMPNE = 108,    // compare refs and jump if not equal
+    OP_TABLESWITCH = 109,  // jump using table switch
+    OP_LOOKUPSWITCH = 110, // jump using lookup switch
+    OP_GOTO_W = 111,       // wide unconditional jump
+    OP_IFNULL_W = 112,     // wide null check
+    OP_IFNONNULL_W = 113,  // wide non-null check
+    OP_IF_ACMPEQ_W = 114,  // wide reference compare eq
+    OP_IF_ACMPNE_W = 115,  // wide reference compare ne
+    OP_IF_ICMPEQ_W = 116,  // wide int compare eq
+    OP_IF_ICMPNE_W = 117,  // wide int compare ne
+    OP_IF_ICMPLT_W = 118,  // wide int compare lt
+    OP_IF_ICMPLE_W = 119,  // wide int compare le
+    OP_IF_ICMPGT_W = 120,  // wide int compare gt
+    OP_IF_ICMPGE_W = 121,  // wide int compare ge
+    OP_COUNT = 122         // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
@@ -137,6 +154,20 @@ struct MethodRef {
     const char* class_name;
     const char* method_name;
     const char* method_sig;
+};
+
+struct TableSwitch {
+    int32_t low;
+    int32_t high;
+    size_t default_target;
+    const size_t* targets;
+};
+
+struct LookupSwitch {
+    int32_t count;
+    const int32_t* keys;
+    const size_t* targets;
+    size_t default_target;
 };
 
 // Helper that produces an encoded instruction using the global key.
