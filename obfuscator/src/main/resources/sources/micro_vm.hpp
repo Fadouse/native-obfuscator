@@ -47,7 +47,25 @@ enum OpCode : uint8_t {
     OP_AALOAD = 34, // load from object array
     OP_AASTORE = 35, // store into object array
     OP_INVOKESTATIC = 36, // invoke static java method (simplified)
-    OP_COUNT = 37  // helper constant with number of opcodes
+    OP_LLOAD = 37, // load long local
+    OP_FLOAD = 38, // load float local
+    OP_DLOAD = 39, // load double local
+    OP_LSTORE = 40, // store long local
+    OP_FSTORE = 41, // store float local
+    OP_DSTORE = 42, // store double local
+    OP_LADD = 43, // long add
+    OP_LSUB = 44, // long sub
+    OP_LMUL = 45, // long mul
+    OP_LDIV = 46, // long div
+    OP_FADD = 47, // float add
+    OP_FSUB = 48, // float sub
+    OP_FMUL = 49, // float mul
+    OP_FDIV = 50, // float div
+    OP_DADD = 51, // double add
+    OP_DSUB = 52, // double sub
+    OP_DMUL = 53, // double mul
+    OP_DDIV = 54, // double div
+    OP_COUNT = 55  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

@@ -81,6 +81,24 @@ public class VmTranslator {
         public static final int OP_AALOAD = 34;
         public static final int OP_AASTORE = 35;
         public static final int OP_INVOKESTATIC = 36;
+        public static final int OP_LLOAD = 37;
+        public static final int OP_FLOAD = 38;
+        public static final int OP_DLOAD = 39;
+        public static final int OP_LSTORE = 40;
+        public static final int OP_FSTORE = 41;
+        public static final int OP_DSTORE = 42;
+        public static final int OP_LADD = 43;
+        public static final int OP_LSUB = 44;
+        public static final int OP_LMUL = 45;
+        public static final int OP_LDIV = 46;
+        public static final int OP_FADD = 47;
+        public static final int OP_FSUB = 48;
+        public static final int OP_FMUL = 49;
+        public static final int OP_FDIV = 50;
+        public static final int OP_DADD = 51;
+        public static final int OP_DSUB = 52;
+        public static final int OP_DMUL = 53;
+        public static final int OP_DDIV = 54;
     }
 
     /**
@@ -113,17 +131,80 @@ public class VmTranslator {
                 case 29: // ILOAD_3
                     result.add(new Instruction(VmOpcodes.OP_LOAD, opcode - 26));
                     break;
+                case Opcodes.LLOAD:
+                    result.add(new Instruction(VmOpcodes.OP_LLOAD, ((VarInsnNode) insn).var));
+                    break;
+                case 30: // LLOAD_0
+                case 31: // LLOAD_1
+                case 32: // LLOAD_2
+                case 33: // LLOAD_3
+                    result.add(new Instruction(VmOpcodes.OP_LLOAD, opcode - 30));
+                    break;
+                case Opcodes.FLOAD:
+                    result.add(new Instruction(VmOpcodes.OP_FLOAD, ((VarInsnNode) insn).var));
+                    break;
+                case 34: // FLOAD_0
+                case 35: // FLOAD_1
+                case 36: // FLOAD_2
+                case 37: // FLOAD_3
+                    result.add(new Instruction(VmOpcodes.OP_FLOAD, opcode - 34));
+                    break;
+                case Opcodes.DLOAD:
+                    result.add(new Instruction(VmOpcodes.OP_DLOAD, ((VarInsnNode) insn).var));
+                    break;
+                case 38: // DLOAD_0
+                case 39: // DLOAD_1
+                case 40: // DLOAD_2
+                case 41: // DLOAD_3
+                    result.add(new Instruction(VmOpcodes.OP_DLOAD, opcode - 38));
+                    break;
                 case Opcodes.IADD:
                     result.add(new Instruction(VmOpcodes.OP_ADD, 0));
+                    break;
+                case Opcodes.LADD:
+                    result.add(new Instruction(VmOpcodes.OP_LADD, 0));
+                    break;
+                case Opcodes.FADD:
+                    result.add(new Instruction(VmOpcodes.OP_FADD, 0));
+                    break;
+                case Opcodes.DADD:
+                    result.add(new Instruction(VmOpcodes.OP_DADD, 0));
                     break;
                 case Opcodes.ISUB:
                     result.add(new Instruction(VmOpcodes.OP_SUB, 0));
                     break;
+                case Opcodes.LSUB:
+                    result.add(new Instruction(VmOpcodes.OP_LSUB, 0));
+                    break;
+                case Opcodes.FSUB:
+                    result.add(new Instruction(VmOpcodes.OP_FSUB, 0));
+                    break;
+                case Opcodes.DSUB:
+                    result.add(new Instruction(VmOpcodes.OP_DSUB, 0));
+                    break;
                 case Opcodes.IMUL:
                     result.add(new Instruction(VmOpcodes.OP_MUL, 0));
                     break;
+                case Opcodes.LMUL:
+                    result.add(new Instruction(VmOpcodes.OP_LMUL, 0));
+                    break;
+                case Opcodes.FMUL:
+                    result.add(new Instruction(VmOpcodes.OP_FMUL, 0));
+                    break;
+                case Opcodes.DMUL:
+                    result.add(new Instruction(VmOpcodes.OP_DMUL, 0));
+                    break;
                 case Opcodes.IDIV:
                     result.add(new Instruction(VmOpcodes.OP_DIV, 0));
+                    break;
+                case Opcodes.LDIV:
+                    result.add(new Instruction(VmOpcodes.OP_LDIV, 0));
+                    break;
+                case Opcodes.FDIV:
+                    result.add(new Instruction(VmOpcodes.OP_FDIV, 0));
+                    break;
+                case Opcodes.DDIV:
+                    result.add(new Instruction(VmOpcodes.OP_DDIV, 0));
                     break;
                 case Opcodes.IAND:
                     result.add(new Instruction(VmOpcodes.OP_AND, 0));
@@ -191,6 +272,33 @@ public class VmTranslator {
                 case 62: // ISTORE_3
                     result.add(new Instruction(VmOpcodes.OP_STORE, opcode - 59));
                     break;
+                case Opcodes.LSTORE:
+                    result.add(new Instruction(VmOpcodes.OP_LSTORE, ((VarInsnNode) insn).var));
+                    break;
+                case 63: // LSTORE_0
+                case 64: // LSTORE_1
+                case 65: // LSTORE_2
+                case 66: // LSTORE_3
+                    result.add(new Instruction(VmOpcodes.OP_LSTORE, opcode - 63));
+                    break;
+                case Opcodes.FSTORE:
+                    result.add(new Instruction(VmOpcodes.OP_FSTORE, ((VarInsnNode) insn).var));
+                    break;
+                case 67: // FSTORE_0
+                case 68: // FSTORE_1
+                case 69: // FSTORE_2
+                case 70: // FSTORE_3
+                    result.add(new Instruction(VmOpcodes.OP_FSTORE, opcode - 67));
+                    break;
+                case Opcodes.DSTORE:
+                    result.add(new Instruction(VmOpcodes.OP_DSTORE, ((VarInsnNode) insn).var));
+                    break;
+                case 71: // DSTORE_0
+                case 72: // DSTORE_1
+                case 73: // DSTORE_2
+                case 74: // DSTORE_3
+                    result.add(new Instruction(VmOpcodes.OP_DSTORE, opcode - 71));
+                    break;
                 case Opcodes.GOTO:
                     result.add(new Instruction(VmOpcodes.OP_GOTO, labelIds.get(((JumpInsnNode) insn).label)));
                     break;
@@ -213,6 +321,9 @@ public class VmTranslator {
                     result.add(new Instruction(VmOpcodes.OP_IF_ICMPGE, labelIds.get(((JumpInsnNode) insn).label)));
                     break;
                 case Opcodes.IRETURN:
+                case Opcodes.LRETURN:
+                case Opcodes.FRETURN:
+                case Opcodes.DRETURN:
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));
                     break;
                 case Opcodes.ARETURN:
