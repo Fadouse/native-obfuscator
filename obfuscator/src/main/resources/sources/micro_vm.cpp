@@ -7,6 +7,7 @@
 #include <array>
 #include <vector>
 #include <unordered_map>
+#include <string>
 #include <cstring>
 
 // NOLINTBEGIN - obfuscated control flow by design
@@ -21,6 +22,40 @@ static thread_local bool vm_state_initialized = false;
 static thread_local std::unordered_map<const Instruction*, JitCompiled> jit_cache{};
 static thread_local std::unordered_map<const Instruction*, size_t> exec_counts{};
 static constexpr size_t HOT_THRESHOLD = 10;
+
+static thread_local std::unordered_map<std::string, jweak> class_cache{};
+static thread_local size_t class_lookup_calls = 0;
+
+static jclass get_cached_class(JNIEnv* env, const char* name) {
+    auto it = class_cache.find(name);
+    if (it != class_cache.end()) {
+        jclass clazz = reinterpret_cast<jclass>(env->NewLocalRef(it->second));
+        if (clazz) {
+            return clazz;
+        }
+        env->DeleteWeakGlobalRef(it->second);
+        class_cache.erase(it);
+    }
+    jclass clazz = env->FindClass(name);
+    ++class_lookup_calls;
+    if (clazz) {
+        jweak weak = env->NewWeakGlobalRef(clazz);
+        class_cache.emplace(name, weak);
+    }
+    return clazz;
+}
+
+void clear_class_cache(JNIEnv* env) {
+    for (auto& kv : class_cache) {
+        env->DeleteWeakGlobalRef(kv.second);
+    }
+    class_cache.clear();
+    class_lookup_calls = 0;
+}
+
+size_t get_class_cache_calls() {
+    return class_lookup_calls;
+}
 
 void init_key(uint64_t seed) {
     std::random_device rd;
@@ -862,7 +897,7 @@ do_instanceof:
 do_getstatic:
     if (sp < 256) {
         auto* ref = reinterpret_cast<FieldRef*>(tmp);
-        jclass clazz = env->FindClass(ref->class_name);
+        jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
             if (fid) {
@@ -906,7 +941,7 @@ do_getstatic:
 do_putstatic:
     if (sp >= 1) {
         auto* ref = reinterpret_cast<FieldRef*>(tmp);
-        jclass clazz = env->FindClass(ref->class_name);
+        jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
             if (fid) {
@@ -959,7 +994,7 @@ do_getfield:
             env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
             goto halt;
         }
-        jclass clazz = env->FindClass(ref->class_name);
+        jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
             if (fid) {
@@ -1009,7 +1044,7 @@ do_putfield:
             env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
             goto halt;
         }
-        jclass clazz = env->FindClass(ref->class_name);
+        jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
             if (fid) {

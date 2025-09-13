@@ -164,6 +164,9 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
 // Executes a unary operation (conversion or negation) through the VM.
 int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed);
 
+void clear_class_cache(JNIEnv* env);
+size_t get_class_cache_calls();
+
 } // namespace native_jvm::vm
 
 // NOLINTEND
