@@ -34,13 +34,16 @@ public class VmTranslatorObjectTest {
             Instruction ins = code[pc++];
             switch (ins.opcode) {
                 case VmOpcodes.OP_PUSH:
-                    stack[sp++] = (long) ins.operand;
+                case VmOpcodes.OP_LDC:
+                case VmOpcodes.OP_LDC_W:
+                case VmOpcodes.OP_LDC2_W:
+                    stack[sp++] = ins.operand;
                     break;
                 case VmOpcodes.OP_ALOAD:
-                    stack[sp++] = locals[ins.operand];
+                    stack[sp++] = locals[(int) ins.operand];
                     break;
                 case VmOpcodes.OP_ASTORE:
-                    locals[ins.operand] = stack[--sp];
+                    locals[(int) ins.operand] = stack[--sp];
                     break;
                 case VmOpcodes.OP_AALOAD:
                     int idx = (int) (long) stack[--sp];
@@ -54,7 +57,7 @@ public class VmTranslatorObjectTest {
                     arr2[idx2] = val;
                     break;
                 case VmOpcodes.OP_INVOKESTATIC:
-                    Method m = methods.get(ins.operand);
+                    Method m = methods.get((int) ins.operand);
                     Object arg = stack[--sp];
                     Object res = m.invoke(null, arg);
                     stack[sp++] = res;

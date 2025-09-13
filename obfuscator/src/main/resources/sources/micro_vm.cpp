@@ -169,6 +169,16 @@ dispatch:
         case OP_DSUB: goto do_dsub;
         case OP_DMUL: goto do_dmul;
         case OP_DDIV: goto do_ddiv;
+        case OP_LDC:
+        case OP_LDC_W:
+        case OP_LDC2_W: goto do_push;
+        case OP_FCONST_0: goto do_fconst_0;
+        case OP_FCONST_1: goto do_fconst_1;
+        case OP_FCONST_2: goto do_fconst_2;
+        case OP_DCONST_0: goto do_dconst_0;
+        case OP_DCONST_1: goto do_dconst_1;
+        case OP_LCONST_0: goto do_lconst_0;
+        case OP_LCONST_1: goto do_lconst_1;
         case OP_INVOKESTATIC: goto do_invokestatic;
         default:       goto halt;
     }
@@ -178,6 +188,49 @@ dispatch:
 // structured control-flow patterns from static analysis.
 do_push:
     if (sp < 256) stack[sp++] = tmp;
+    goto dispatch;
+
+do_fconst_0:
+    if (sp < 256) stack[sp++] = 0;
+    goto dispatch;
+
+do_fconst_1:
+    if (sp < 256) {
+        float v = 1.0f;
+        int32_t bits;
+        std::memcpy(&bits, &v, sizeof(float));
+        stack[sp++] = static_cast<int64_t>(bits);
+    }
+    goto dispatch;
+
+do_fconst_2:
+    if (sp < 256) {
+        float v = 2.0f;
+        int32_t bits;
+        std::memcpy(&bits, &v, sizeof(float));
+        stack[sp++] = static_cast<int64_t>(bits);
+    }
+    goto dispatch;
+
+do_dconst_0:
+    if (sp < 256) stack[sp++] = 0;
+    goto dispatch;
+
+do_dconst_1:
+    if (sp < 256) {
+        double v = 1.0;
+        int64_t bits;
+        std::memcpy(&bits, &v, sizeof(double));
+        stack[sp++] = bits;
+    }
+    goto dispatch;
+
+do_lconst_0:
+    if (sp < 256) stack[sp++] = 0;
+    goto dispatch;
+
+do_lconst_1:
+    if (sp < 256) stack[sp++] = 1;
     goto dispatch;
 
 do_add:

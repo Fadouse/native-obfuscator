@@ -54,13 +54,13 @@ public class VmTranslatorNumericTest {
                 case VmOpcodes.OP_LLOAD:
                 case VmOpcodes.OP_FLOAD:
                 case VmOpcodes.OP_DLOAD:
-                    stack[sp++] = locals[ins.operand];
+                    stack[sp++] = locals[(int) ins.operand];
                     break;
                 case VmOpcodes.OP_STORE:
                 case VmOpcodes.OP_LSTORE:
                 case VmOpcodes.OP_FSTORE:
                 case VmOpcodes.OP_DSTORE:
-                    locals[ins.operand] = stack[--sp];
+                    locals[(int) ins.operand] = stack[--sp];
                     break;
                 case VmOpcodes.OP_ADD:
                 case VmOpcodes.OP_LADD:

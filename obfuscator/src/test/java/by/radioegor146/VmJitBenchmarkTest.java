@@ -34,7 +34,7 @@ public class VmJitBenchmarkTest {
                     stack[sp++] = ins.operand;
                     break;
                 case VmOpcodes.OP_LOAD:
-                    stack[sp++] = locals[ins.operand];
+                    stack[sp++] = locals[(int) ins.operand];
                     break;
                 case VmOpcodes.OP_ADD:
                     stack[sp - 2] += stack[sp - 1];
