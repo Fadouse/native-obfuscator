@@ -116,6 +116,17 @@ public class VmTranslator {
         public static final int OP_LSHL = 69;
         public static final int OP_LSHR = 70;
         public static final int OP_LUSHR = 71;
+        public static final int OP_I2F = 72;
+        public static final int OP_I2D = 73;
+        public static final int OP_L2I = 74;
+        public static final int OP_L2F = 75;
+        public static final int OP_L2D = 76;
+        public static final int OP_F2I = 77;
+        public static final int OP_F2L = 78;
+        public static final int OP_F2D = 79;
+        public static final int OP_D2I = 80;
+        public static final int OP_D2L = 81;
+        public static final int OP_D2F = 82;
     }
 
     /**
@@ -416,6 +427,39 @@ public class VmTranslator {
                     break;
                 case Opcodes.I2L:
                     result.add(new Instruction(VmOpcodes.OP_I2L, 0));
+                    break;
+                case Opcodes.I2F:
+                    result.add(new Instruction(VmOpcodes.OP_I2F, 0));
+                    break;
+                case Opcodes.I2D:
+                    result.add(new Instruction(VmOpcodes.OP_I2D, 0));
+                    break;
+                case Opcodes.L2I:
+                    result.add(new Instruction(VmOpcodes.OP_L2I, 0));
+                    break;
+                case Opcodes.L2F:
+                    result.add(new Instruction(VmOpcodes.OP_L2F, 0));
+                    break;
+                case Opcodes.L2D:
+                    result.add(new Instruction(VmOpcodes.OP_L2D, 0));
+                    break;
+                case Opcodes.F2I:
+                    result.add(new Instruction(VmOpcodes.OP_F2I, 0));
+                    break;
+                case Opcodes.F2L:
+                    result.add(new Instruction(VmOpcodes.OP_F2L, 0));
+                    break;
+                case Opcodes.F2D:
+                    result.add(new Instruction(VmOpcodes.OP_F2D, 0));
+                    break;
+                case Opcodes.D2I:
+                    result.add(new Instruction(VmOpcodes.OP_D2I, 0));
+                    break;
+                case Opcodes.D2L:
+                    result.add(new Instruction(VmOpcodes.OP_D2L, 0));
+                    break;
+                case Opcodes.D2F:
+                    result.add(new Instruction(VmOpcodes.OP_D2F, 0));
                     break;
                 case Opcodes.INEG:
                     result.add(new Instruction(VmOpcodes.OP_NEG, 0));

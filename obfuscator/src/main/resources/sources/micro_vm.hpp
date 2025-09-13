@@ -82,7 +82,18 @@ enum OpCode : uint8_t {
     OP_LSHL = 69,  // long shift left
     OP_LSHR = 70,  // long arithmetic shift right
     OP_LUSHR = 71, // long logical shift right
-    OP_COUNT = 72  // helper constant with number of opcodes
+    OP_I2F = 72,   // convert int to float
+    OP_I2D = 73,   // convert int to double
+    OP_L2I = 74,   // convert long to int
+    OP_L2F = 75,   // convert long to float
+    OP_L2D = 76,   // convert long to double
+    OP_F2I = 77,   // convert float to int
+    OP_F2L = 78,   // convert float to long
+    OP_F2D = 79,   // convert float to double
+    OP_D2I = 80,   // convert double to int
+    OP_D2L = 81,   // convert double to long
+    OP_D2F = 82,   // convert double to float
+    OP_COUNT = 83  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

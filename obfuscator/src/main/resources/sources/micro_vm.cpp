@@ -152,6 +152,17 @@ dispatch:
         case OP_I2B: goto do_i2b;
         case OP_I2C: goto do_i2c;
         case OP_I2S: goto do_i2s;
+        case OP_I2F: goto do_i2f;
+        case OP_I2D: goto do_i2d;
+        case OP_L2I: goto do_l2i;
+        case OP_L2F: goto do_l2f;
+        case OP_L2D: goto do_l2d;
+        case OP_F2I: goto do_f2i;
+        case OP_F2L: goto do_f2l;
+        case OP_F2D: goto do_f2d;
+        case OP_D2I: goto do_d2i;
+        case OP_D2L: goto do_d2l;
+        case OP_D2F: goto do_d2f;
         case OP_NEG: goto do_neg;
         case OP_ALOAD: goto do_aload;
         case OP_ASTORE: goto do_astore;
@@ -520,6 +531,103 @@ do_i2c:
 
 do_i2s:
     if (sp >= 1) stack[sp - 1] = static_cast<int64_t>(static_cast<int16_t>(stack[sp - 1]));
+    goto dispatch;
+
+do_i2f:
+    if (sp >= 1) {
+        float f = static_cast<float>(static_cast<int32_t>(stack[sp - 1]));
+        int32_t bits;
+        std::memcpy(&bits, &f, sizeof(float));
+        stack[sp - 1] = static_cast<int64_t>(bits);
+    }
+    goto dispatch;
+
+do_i2d:
+    if (sp >= 1) {
+        double d = static_cast<double>(static_cast<int32_t>(stack[sp - 1]));
+        int64_t bits;
+        std::memcpy(&bits, &d, sizeof(double));
+        stack[sp - 1] = bits;
+    }
+    goto dispatch;
+
+do_l2i:
+    if (sp >= 1) stack[sp - 1] = static_cast<int64_t>(static_cast<int32_t>(stack[sp - 1]));
+    goto dispatch;
+
+do_l2f:
+    if (sp >= 1) {
+        float f = static_cast<float>(stack[sp - 1]);
+        int32_t bits;
+        std::memcpy(&bits, &f, sizeof(float));
+        stack[sp - 1] = static_cast<int64_t>(bits);
+    }
+    goto dispatch;
+
+do_l2d:
+    if (sp >= 1) {
+        double d = static_cast<double>(stack[sp - 1]);
+        int64_t bits;
+        std::memcpy(&bits, &d, sizeof(double));
+        stack[sp - 1] = bits;
+    }
+    goto dispatch;
+
+do_f2i:
+    if (sp >= 1) {
+        float f;
+        int32_t bits = static_cast<int32_t>(stack[sp - 1]);
+        std::memcpy(&f, &bits, sizeof(float));
+        stack[sp - 1] = static_cast<int64_t>(static_cast<int32_t>(f));
+    }
+    goto dispatch;
+
+do_f2l:
+    if (sp >= 1) {
+        float f;
+        int32_t bits = static_cast<int32_t>(stack[sp - 1]);
+        std::memcpy(&f, &bits, sizeof(float));
+        stack[sp - 1] = static_cast<int64_t>(static_cast<int64_t>(f));
+    }
+    goto dispatch;
+
+do_f2d:
+    if (sp >= 1) {
+        float f;
+        int32_t bits = static_cast<int32_t>(stack[sp - 1]);
+        std::memcpy(&f, &bits, sizeof(float));
+        double d = static_cast<double>(f);
+        int64_t dbits;
+        std::memcpy(&dbits, &d, sizeof(double));
+        stack[sp - 1] = dbits;
+    }
+    goto dispatch;
+
+do_d2i:
+    if (sp >= 1) {
+        double d;
+        std::memcpy(&d, &stack[sp - 1], sizeof(double));
+        stack[sp - 1] = static_cast<int64_t>(static_cast<int32_t>(d));
+    }
+    goto dispatch;
+
+do_d2l:
+    if (sp >= 1) {
+        double d;
+        std::memcpy(&d, &stack[sp - 1], sizeof(double));
+        stack[sp - 1] = static_cast<int64_t>(static_cast<int64_t>(d));
+    }
+    goto dispatch;
+
+do_d2f:
+    if (sp >= 1) {
+        double d;
+        std::memcpy(&d, &stack[sp - 1], sizeof(double));
+        float f = static_cast<float>(d);
+        int32_t fbits;
+        std::memcpy(&fbits, &f, sizeof(float));
+        stack[sp - 1] = static_cast<int64_t>(fbits);
+    }
     goto dispatch;
 
 do_neg:
