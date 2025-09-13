@@ -132,7 +132,10 @@ enum OpCode : uint8_t {
     OP_IF_ICMPLE_W = 119,  // wide int compare le
     OP_IF_ICMPGT_W = 120,  // wide int compare gt
     OP_IF_ICMPGE_W = 121,  // wide int compare ge
-    OP_COUNT = 122         // helper constant with number of opcodes
+    OP_ATHROW = 122,       // throw exception
+    OP_MONITORENTER = 123, // enter monitor
+    OP_MONITOREXIT = 124,  // exit monitor
+    OP_COUNT = 125         // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

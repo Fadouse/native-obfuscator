@@ -433,6 +433,9 @@ dispatch:
         case OP_INVOKESPECIAL: goto do_invokespecial;
         case OP_INVOKEINTERFACE: goto do_invokeinterface;
         case OP_INVOKEDYNAMIC: goto do_invokedynamic;
+        case OP_ATHROW: goto do_athrow;
+        case OP_MONITORENTER: goto do_monitorenter;
+        case OP_MONITOREXIT: goto do_monitorexit;
         default:       goto halt;
     }
 
@@ -1323,6 +1326,39 @@ do_putfield:
         sp = 0;
     }
     goto dispatch;
+
+do_monitorenter:
+    if (sp >= 1) {
+        jobject obj = reinterpret_cast<jobject>(stack[--sp]);
+        if (!obj) {
+            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            goto halt;
+        }
+        env->MonitorEnter(obj);
+    }
+    goto dispatch;
+
+do_monitorexit:
+    if (sp >= 1) {
+        jobject obj = reinterpret_cast<jobject>(stack[--sp]);
+        if (!obj) {
+            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            goto halt;
+        }
+        env->MonitorExit(obj);
+    }
+    goto dispatch;
+
+do_athrow:
+    if (sp >= 1) {
+        jthrowable ex = reinterpret_cast<jthrowable>(stack[--sp]);
+        if (ex) {
+            env->Throw(ex);
+        } else {
+            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+        }
+    }
+    goto halt;
 
 do_invokestatic:
     invoke_method(env, OP_INVOKESTATIC, reinterpret_cast<MethodRef*>(tmp), stack, sp);

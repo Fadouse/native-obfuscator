@@ -223,6 +223,9 @@ public class VmTranslator {
         public static final int OP_IF_ICMPLE_W = 119;
         public static final int OP_IF_ICMPGT_W = 120;
         public static final int OP_IF_ICMPGE_W = 121;
+        public static final int OP_ATHROW = 122;
+        public static final int OP_MONITORENTER = 123;
+        public static final int OP_MONITOREXIT = 124;
     }
 
     /**
@@ -390,6 +393,9 @@ public class VmTranslator {
                 case 77: // ASTORE_2
                 case 78: // ASTORE_3
                     result.add(new Instruction(VmOpcodes.OP_ASTORE, opcode - 75));
+                    break;
+                case Opcodes.DUP:
+                    result.add(new Instruction(VmOpcodes.OP_DUP, 0));
                     break;
                 case Opcodes.AALOAD:
                     result.add(new Instruction(VmOpcodes.OP_AALOAD, 0));
@@ -688,6 +694,15 @@ public class VmTranslator {
                     break;
                 case Opcodes.ACONST_NULL:
                     result.add(new Instruction(VmOpcodes.OP_PUSH, 0));
+                    break;
+                case Opcodes.ATHROW:
+                    result.add(new Instruction(VmOpcodes.OP_ATHROW, 0));
+                    break;
+                case Opcodes.MONITORENTER:
+                    result.add(new Instruction(VmOpcodes.OP_MONITORENTER, 0));
+                    break;
+                case Opcodes.MONITOREXIT:
+                    result.add(new Instruction(VmOpcodes.OP_MONITOREXIT, 0));
                     break;
                 case Opcodes.INVOKEVIRTUAL:
                     result.add(new Instruction(VmOpcodes.OP_INVOKEVIRTUAL, invokeIndex++));
