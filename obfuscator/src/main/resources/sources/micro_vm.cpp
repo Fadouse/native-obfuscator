@@ -183,6 +183,10 @@ dispatch:
         case OP_MULTIANEWARRAY: goto do_multianewarray;
         case OP_CHECKCAST: goto do_checkcast;
         case OP_INSTANCEOF: goto do_instanceof;
+        case OP_GETSTATIC: goto do_getstatic;
+        case OP_PUTSTATIC: goto do_putstatic;
+        case OP_GETFIELD: goto do_getfield;
+        case OP_PUTFIELD: goto do_putfield;
         case OP_LADD: goto do_add;
         case OP_LSUB: goto do_sub;
         case OP_LMUL: goto do_mul;
@@ -852,6 +856,197 @@ do_instanceof:
         jboolean res = obj && clazz && env->IsInstanceOf(obj, clazz);
         if (clazz) env->DeleteLocalRef(clazz);
         stack[sp++] = res ? 1 : 0;
+    }
+    goto dispatch;
+
+do_getstatic:
+    if (sp < 256) {
+        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        jclass clazz = env->FindClass(ref->class_name);
+        if (clazz) {
+            jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
+            if (fid) {
+                switch (ref->field_sig[0]) {
+                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                        jint v = env->GetStaticIntField(clazz, fid);
+                        stack[sp++] = static_cast<int64_t>(v);
+                        break;
+                    }
+                    case 'F': {
+                        jfloat v = env->GetStaticFloatField(clazz, fid);
+                        int32_t bits;
+                        std::memcpy(&bits, &v, sizeof(float));
+                        stack[sp++] = static_cast<int64_t>(bits);
+                        break;
+                    }
+                    case 'J': {
+                        jlong v = env->GetStaticLongField(clazz, fid);
+                        stack[sp++] = static_cast<int64_t>(v);
+                        break;
+                    }
+                    case 'D': {
+                        jdouble v = env->GetStaticDoubleField(clazz, fid);
+                        int64_t bits;
+                        std::memcpy(&bits, &v, sizeof(double));
+                        stack[sp++] = bits;
+                        break;
+                    }
+                    default: {
+                        jobject v = env->GetStaticObjectField(clazz, fid);
+                        stack[sp++] = reinterpret_cast<int64_t>(v);
+                        break;
+                    }
+                }
+            }
+            env->DeleteLocalRef(clazz);
+        }
+    }
+    goto dispatch;
+
+do_putstatic:
+    if (sp >= 1) {
+        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        jclass clazz = env->FindClass(ref->class_name);
+        if (clazz) {
+            jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
+            if (fid) {
+                switch (ref->field_sig[0]) {
+                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                        jint v = static_cast<jint>(stack[--sp]);
+                        env->SetStaticIntField(clazz, fid, v);
+                        break;
+                    }
+                    case 'F': {
+                        int32_t bits = static_cast<int32_t>(stack[--sp]);
+                        jfloat v;
+                        std::memcpy(&v, &bits, sizeof(float));
+                        env->SetStaticFloatField(clazz, fid, v);
+                        break;
+                    }
+                    case 'J': {
+                        jlong v = static_cast<jlong>(stack[--sp]);
+                        env->SetStaticLongField(clazz, fid, v);
+                        break;
+                    }
+                    case 'D': {
+                        int64_t bits = stack[--sp];
+                        jdouble v;
+                        std::memcpy(&v, &bits, sizeof(double));
+                        env->SetStaticDoubleField(clazz, fid, v);
+                        break;
+                    }
+                    default: {
+                        jobject v = reinterpret_cast<jobject>(stack[--sp]);
+                        env->SetStaticObjectField(clazz, fid, v);
+                        break;
+                    }
+                }
+            } else {
+                --sp; // consume value even if fid not found
+            }
+            env->DeleteLocalRef(clazz);
+        } else {
+            --sp;
+        }
+    }
+    goto dispatch;
+
+do_getfield:
+    if (sp >= 1 && sp < 256) {
+        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        jobject obj = reinterpret_cast<jobject>(stack[--sp]);
+        if (!obj) {
+            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            goto halt;
+        }
+        jclass clazz = env->FindClass(ref->class_name);
+        if (clazz) {
+            jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
+            if (fid) {
+                switch (ref->field_sig[0]) {
+                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                        jint v = env->GetIntField(obj, fid);
+                        stack[sp++] = static_cast<int64_t>(v);
+                        break;
+                    }
+                    case 'F': {
+                        jfloat v = env->GetFloatField(obj, fid);
+                        int32_t bits;
+                        std::memcpy(&bits, &v, sizeof(float));
+                        stack[sp++] = static_cast<int64_t>(bits);
+                        break;
+                    }
+                    case 'J': {
+                        jlong v = env->GetLongField(obj, fid);
+                        stack[sp++] = static_cast<int64_t>(v);
+                        break;
+                    }
+                    case 'D': {
+                        jdouble v = env->GetDoubleField(obj, fid);
+                        int64_t bits;
+                        std::memcpy(&bits, &v, sizeof(double));
+                        stack[sp++] = bits;
+                        break;
+                    }
+                    default: {
+                        jobject v = env->GetObjectField(obj, fid);
+                        stack[sp++] = reinterpret_cast<int64_t>(v);
+                        break;
+                    }
+                }
+            }
+            env->DeleteLocalRef(clazz);
+        }
+    }
+    goto dispatch;
+
+do_putfield:
+    if (sp >= 2) {
+        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        int64_t value = stack[--sp];
+        jobject obj = reinterpret_cast<jobject>(stack[--sp]);
+        if (!obj) {
+            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            goto halt;
+        }
+        jclass clazz = env->FindClass(ref->class_name);
+        if (clazz) {
+            jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
+            if (fid) {
+                switch (ref->field_sig[0]) {
+                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                        env->SetIntField(obj, fid, static_cast<jint>(value));
+                        break;
+                    }
+                    case 'F': {
+                        jfloat v;
+                        int32_t bits = static_cast<int32_t>(value);
+                        std::memcpy(&v, &bits, sizeof(float));
+                        env->SetFloatField(obj, fid, v);
+                        break;
+                    }
+                    case 'J': {
+                        env->SetLongField(obj, fid, static_cast<jlong>(value));
+                        break;
+                    }
+                    case 'D': {
+                        jdouble v;
+                        int64_t bits = value;
+                        std::memcpy(&v, &bits, sizeof(double));
+                        env->SetDoubleField(obj, fid, v);
+                        break;
+                    }
+                    default: {
+                        jobject v = reinterpret_cast<jobject>(value);
+                        env->SetObjectField(obj, fid, v);
+                        break;
+                    }
+                }
+            }
+            env->DeleteLocalRef(clazz);
+        }
+    } else {
+        sp = 0;
     }
     goto dispatch;
 

@@ -141,6 +141,10 @@ public class VmTranslator {
         public static final int OP_MULTIANEWARRAY = 94;
         public static final int OP_CHECKCAST = 95;
         public static final int OP_INSTANCEOF = 96;
+        public static final int OP_GETSTATIC = 97;
+        public static final int OP_PUTSTATIC = 98;
+        public static final int OP_GETFIELD = 99;
+        public static final int OP_PUTFIELD = 100;
     }
 
     /**
@@ -163,6 +167,8 @@ public class VmTranslator {
         int invokeIndex = 0;
         Map<String, Integer> classIds = new HashMap<>();
         int classIndex = 0;
+        Map<String, Integer> fieldIds = new HashMap<>();
+        int fieldIndex = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             int opcode = insn.getOpcode();
             switch (opcode) {
@@ -567,6 +573,27 @@ public class VmTranslator {
                 case Opcodes.INVOKESTATIC:
                     result.add(new Instruction(VmOpcodes.OP_INVOKESTATIC, invokeIndex++));
                     break;
+                case Opcodes.GETSTATIC:
+                case Opcodes.PUTSTATIC:
+                case Opcodes.GETFIELD:
+                case Opcodes.PUTFIELD: {
+                    FieldInsnNode fi = (FieldInsnNode) insn;
+                    String key = fi.owner + '.' + fi.name + ':' + fi.desc;
+                    Integer id = fieldIds.get(key);
+                    if (id == null) {
+                        id = fieldIndex++;
+                        fieldIds.put(key, id);
+                    }
+                    int op;
+                    switch (opcode) {
+                        case Opcodes.GETSTATIC: op = VmOpcodes.OP_GETSTATIC; break;
+                        case Opcodes.PUTSTATIC: op = VmOpcodes.OP_PUTSTATIC; break;
+                        case Opcodes.GETFIELD:  op = VmOpcodes.OP_GETFIELD;  break;
+                        default: op = VmOpcodes.OP_PUTFIELD; break;
+                    }
+                    result.add(new Instruction(op, id));
+                    break;
+                }
                 case -1: // labels/frames/lines
                     break;
                 default:

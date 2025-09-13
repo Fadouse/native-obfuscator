@@ -107,7 +107,11 @@ enum OpCode : uint8_t {
     OP_MULTIANEWARRAY = 94, // allocate multi-dimensional array
     OP_CHECKCAST = 95, // perform checkcast
     OP_INSTANCEOF = 96, // perform instanceof
-    OP_COUNT = 97  // helper constant with number of opcodes
+    OP_GETSTATIC = 97, // read static field
+    OP_PUTSTATIC = 98, // write static field
+    OP_GETFIELD = 99, // read instance field
+    OP_PUTFIELD = 100, // write instance field
+    OP_COUNT = 101  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
@@ -117,6 +121,12 @@ struct Instruction {
     uint8_t op;      // encrypted opcode
     int64_t operand; // encrypted operand
     uint64_t nonce;  // per-instruction random nonce
+};
+
+struct FieldRef {
+    const char* class_name;
+    const char* field_name;
+    const char* field_sig;
 };
 
 // Helper that produces an encoded instruction using the global key.
