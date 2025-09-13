@@ -47,6 +47,7 @@ void ensure_init(uint64_t seed) {
 Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
     uint8_t mapped = op_map[static_cast<uint8_t>(op)];
     mapped = op_map2[mapped];
+    mapped ^= static_cast<uint8_t>(nonce);
     uint64_t mix = key ^ nonce;
     return Instruction{
         static_cast<uint8_t>(mapped ^ static_cast<uint8_t>(mix)),
@@ -75,6 +76,7 @@ dispatch:
     {
         uint64_t mix = state ^ code[pc].nonce;
         uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
+        mapped ^= static_cast<uint8_t>(code[pc].nonce);
         mapped = inv_op_map2[mapped];
         op = inv_op_map[mapped];
         tmp = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
@@ -121,6 +123,11 @@ dispatch:
         case OP_I2C: goto do_i2c;
         case OP_I2S: goto do_i2s;
         case OP_NEG: goto do_neg;
+        case OP_ALOAD: goto do_aload;
+        case OP_ASTORE: goto do_astore;
+        case OP_AALOAD: goto do_aaload;
+        case OP_AASTORE: goto do_aastore;
+        case OP_INVOKESTATIC: goto do_invokestatic;
         default:       goto halt;
     }
 
@@ -293,6 +300,41 @@ do_neg:
     if (sp >= 1) stack[sp - 1] = -stack[sp - 1];
     goto dispatch;
 
+do_aload:
+    if (sp < 256 && tmp >= 0 && static_cast<size_t>(tmp) < locals_length) {
+        stack[sp++] = locals[tmp];
+    }
+    goto dispatch;
+
+do_astore:
+    if (sp >= 1 && tmp >= 0 && static_cast<size_t>(tmp) < locals_length && locals != nullptr) {
+        locals[tmp] = stack[--sp];
+    }
+    goto dispatch;
+
+do_aaload:
+    if (sp >= 2) {
+        int64_t index = stack[--sp];
+        jobjectArray arr = reinterpret_cast<jobjectArray>(stack[--sp]);
+        jobject val = env->GetObjectArrayElement(arr, static_cast<jsize>(index));
+        stack[sp++] = reinterpret_cast<int64_t>(val);
+        env->DeleteLocalRef(val);
+    }
+    goto dispatch;
+
+do_aastore:
+    if (sp >= 3) {
+        jobject value = reinterpret_cast<jobject>(stack[--sp]);
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jobjectArray arr = reinterpret_cast<jobjectArray>(stack[--sp]);
+        env->SetObjectArrayElement(arr, index, value);
+    }
+    goto dispatch;
+
+do_invokestatic:
+    // simplified: treat as identity function on top of stack
+    goto dispatch;
+
 // Dummy branch used only to confuse decompilers
 junk:
     // toggle and restore state so decoding stays in sync
@@ -311,7 +353,7 @@ void encode_program(Instruction* code, size_t length, uint64_t seed) {
     std::mt19937_64 rng(KEY ^ (seed << 1));
     for (size_t i = 0; i < length; ++i) {
         state = (state + KEY) ^ (KEY >> 3);
-        uint64_t nonce = rng();
+        uint64_t nonce = rng() ^ state;
         code[i] = encode(static_cast<OpCode>(code[i].op), code[i].operand, state, nonce);
     }
 }
@@ -333,7 +375,7 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
 
     auto emit = [&](OpCode opcode, int64_t operand) {
         state = (state + KEY) ^ (KEY >> 3);
-        uint64_t nonce = rng();
+        uint64_t nonce = rng() ^ state;
         program.push_back(encode(opcode, operand, state, nonce));
     };
 
@@ -372,7 +414,7 @@ int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed) {
 
     auto emit = [&](OpCode opcode, int64_t operand) {
         state = (state + KEY) ^ (KEY >> 3);
-        uint64_t nonce = rng();
+        uint64_t nonce = rng() ^ state;
         program.push_back(encode(opcode, operand, state, nonce));
     };
 

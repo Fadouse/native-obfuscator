@@ -42,7 +42,12 @@ enum OpCode : uint8_t {
     OP_I2C  = 29, // convert int to char
     OP_I2S  = 30, // convert int to short
     OP_NEG  = 31, // negate int
-    OP_COUNT = 32  // helper constant with number of opcodes
+    OP_ALOAD = 32, // load object local
+    OP_ASTORE = 33, // store object local
+    OP_AALOAD = 34, // load from object array
+    OP_AASTORE = 35, // store into object array
+    OP_INVOKESTATIC = 36, // invoke static java method (simplified)
+    OP_COUNT = 37  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

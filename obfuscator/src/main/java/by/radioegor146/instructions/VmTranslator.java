@@ -58,6 +58,11 @@ public class VmTranslator {
         public static final int OP_I2C = 29;
         public static final int OP_I2S = 30;
         public static final int OP_NEG = 31;
+        public static final int OP_ALOAD = 32;
+        public static final int OP_ASTORE = 33;
+        public static final int OP_AALOAD = 34;
+        public static final int OP_AASTORE = 35;
+        public static final int OP_INVOKESTATIC = 36;
     }
 
     /**
@@ -77,6 +82,7 @@ public class VmTranslator {
         }
 
         List<Instruction> result = new ArrayList<>();
+        int invokeIndex = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             int opcode = insn.getOpcode();
             switch (opcode) {
@@ -118,6 +124,30 @@ public class VmTranslator {
                     break;
                 case Opcodes.IUSHR:
                     result.add(new Instruction(VmOpcodes.OP_USHR, 0));
+                    break;
+                case Opcodes.ALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_ALOAD, ((VarInsnNode) insn).var));
+                    break;
+                case 42: // ALOAD_0
+                case 43: // ALOAD_1
+                case 44: // ALOAD_2
+                case 45: // ALOAD_3
+                    result.add(new Instruction(VmOpcodes.OP_ALOAD, opcode - 42));
+                    break;
+                case Opcodes.ASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_ASTORE, ((VarInsnNode) insn).var));
+                    break;
+                case 75: // ASTORE_0
+                case 76: // ASTORE_1
+                case 77: // ASTORE_2
+                case 78: // ASTORE_3
+                    result.add(new Instruction(VmOpcodes.OP_ASTORE, opcode - 75));
+                    break;
+                case Opcodes.AALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_AALOAD, 0));
+                    break;
+                case Opcodes.AASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_AASTORE, 0));
                     break;
                 case Opcodes.BIPUSH:
                 case Opcodes.SIPUSH:
@@ -167,6 +197,9 @@ public class VmTranslator {
                 case Opcodes.IRETURN:
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));
                     break;
+                case Opcodes.ARETURN:
+                    result.add(new Instruction(VmOpcodes.OP_HALT, 0));
+                    break;
                 case Opcodes.I2B:
                     result.add(new Instruction(VmOpcodes.OP_I2B, 0));
                     break;
@@ -181,6 +214,12 @@ public class VmTranslator {
                     break;
                 case Opcodes.INEG:
                     result.add(new Instruction(VmOpcodes.OP_NEG, 0));
+                    break;
+                case Opcodes.ACONST_NULL:
+                    result.add(new Instruction(VmOpcodes.OP_PUSH, 0));
+                    break;
+                case Opcodes.INVOKESTATIC:
+                    result.add(new Instruction(VmOpcodes.OP_INVOKESTATIC, invokeIndex++));
                     break;
                 case -1: // labels/frames/lines
                     break;
