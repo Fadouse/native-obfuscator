@@ -127,7 +127,15 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
     if (op != OP_INVOKESTATIC && op != OP_INVOKEDYNAMIC) {
         obj = reinterpret_cast<jobject>(stack[--sp]);
         if (!obj) {
-            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            jclass npe = env->FindClass("java/lang/NullPointerException");
+            if (npe) {
+                env->ThrowNew(npe, "null");
+                if (env->ExceptionCheck()) {
+                    env->DeleteLocalRef(npe);
+                    return;
+                }
+                env->DeleteLocalRef(npe);
+            }
             return;
         }
     }
@@ -141,7 +149,7 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
     } else {
         mid = env->GetMethodID(clazz, ref->method_name, ref->method_sig);
     }
-    if (!mid) {
+    if (env->ExceptionCheck() || !mid) {
         env->DeleteLocalRef(clazz);
         return;
     }
@@ -153,6 +161,10 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 env->CallNonvirtualVoidMethodA(obj, clazz, mid, jargs.data());
             else
                 env->CallVoidMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) {
+                env->DeleteLocalRef(clazz);
+                return;
+            }
             break;
         case 'Z': case 'B': case 'C': case 'S': case 'I': {
             jint r;
@@ -162,6 +174,10 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualIntMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallIntMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) {
+                env->DeleteLocalRef(clazz);
+                return;
+            }
             stack[sp++] = static_cast<int64_t>(r);
             break;
         }
@@ -173,6 +189,10 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualLongMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallLongMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) {
+                env->DeleteLocalRef(clazz);
+                return;
+            }
             stack[sp++] = static_cast<int64_t>(r);
             break;
         }
@@ -184,6 +204,10 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualFloatMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallFloatMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) {
+                env->DeleteLocalRef(clazz);
+                return;
+            }
             int32_t bits;
             std::memcpy(&bits, &r, sizeof(float));
             stack[sp++] = static_cast<int64_t>(bits);
@@ -197,6 +221,10 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualDoubleMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallDoubleMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) {
+                env->DeleteLocalRef(clazz);
+                return;
+            }
             int64_t bits;
             std::memcpy(&bits, &r, sizeof(double));
             stack[sp++] = bits;
@@ -210,6 +238,10 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualObjectMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallObjectMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) {
+                env->DeleteLocalRef(clazz);
+                return;
+            }
             stack[sp++] = reinterpret_cast<int64_t>(r);
             break;
         }
@@ -290,6 +322,7 @@ int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
 
 // Main dispatch loop
 dispatch:
+    if (env->ExceptionCheck()) goto halt;
     state = (state + KEY) ^ (KEY >> 3); // evolve state
     if (pc >= length) goto halt;
     // XOR promotes to int; cast back to uint8_t before converting to OpCode
@@ -509,7 +542,15 @@ do_div:
     if (sp >= 2) {
         int64_t b = stack[sp - 1];
         if (b == 0) {
-            env->ThrowNew(env->FindClass("java/lang/ArithmeticException"), "/ by zero");
+            jclass ex = env->FindClass("java/lang/ArithmeticException");
+            if (ex) {
+                env->ThrowNew(ex, "/ by zero");
+                if (env->ExceptionCheck()) {
+                    env->DeleteLocalRef(ex);
+                    goto halt;
+                }
+                env->DeleteLocalRef(ex);
+            }
             goto halt;
         }
         stack[sp - 2] /= b;
@@ -1305,7 +1346,15 @@ do_getfield:
         auto* ref = reinterpret_cast<FieldRef*>(tmp);
         jobject obj = reinterpret_cast<jobject>(stack[--sp]);
         if (!obj) {
-            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            jclass npe = env->FindClass("java/lang/NullPointerException");
+            if (npe) {
+                env->ThrowNew(npe, "null");
+                if (env->ExceptionCheck()) {
+                    env->DeleteLocalRef(npe);
+                    goto halt;
+                }
+                env->DeleteLocalRef(npe);
+            }
             goto halt;
         }
         jclass clazz = get_cached_class(env, ref->class_name);
@@ -1355,7 +1404,15 @@ do_putfield:
         int64_t value = stack[--sp];
         jobject obj = reinterpret_cast<jobject>(stack[--sp]);
         if (!obj) {
-            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            jclass npe = env->FindClass("java/lang/NullPointerException");
+            if (npe) {
+                env->ThrowNew(npe, "null");
+                if (env->ExceptionCheck()) {
+                    env->DeleteLocalRef(npe);
+                    goto halt;
+                }
+                env->DeleteLocalRef(npe);
+            }
             goto halt;
         }
         jclass clazz = get_cached_class(env, ref->class_name);
