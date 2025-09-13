@@ -2,6 +2,11 @@ package by.radioegor146.instructions;
 
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.BasicInterpreter;
+import org.objectweb.asm.tree.analysis.BasicValue;
+import org.objectweb.asm.tree.analysis.Frame;
 
 import java.util.*;
 
@@ -251,13 +256,27 @@ public class VmTranslator {
             }
         }
 
+        Frame<BasicValue>[] frames;
+        try {
+            Analyzer<BasicValue> analyzer = new Analyzer<>(new BasicInterpreter());
+            frames = analyzer.analyze("java/lang/Object", method);
+        } catch (AnalyzerException e) {
+            return null;
+        }
+        if (frames.length != method.instructions.size()) {
+            return null;
+        }
+
         List<Instruction> result = new ArrayList<>();
         int invokeIndex = 0;
         Map<String, Integer> classIds = new HashMap<>();
         int classIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
         int fieldIndex = 0;
+        int insnIndex = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            Frame<BasicValue> frame = insnIndex < frames.length ? frames[insnIndex] : null;
+            insnIndex++;
             int opcode = insn.getOpcode();
             switch (opcode) {
                 case Opcodes.ILOAD:
@@ -383,9 +402,14 @@ public class VmTranslator {
                 case Opcodes.POP:
                     result.add(new Instruction(VmOpcodes.OP_POP, 0));
                     break;
-                case Opcodes.POP2:
-                    result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                case Opcodes.POP2: {
+                    int topSize = 1;
+                    if (frame != null && frame.getStackSize() > 0) {
+                        topSize = frame.getStack(frame.getStackSize() - 1).getSize();
+                    }
+                    result.add(new Instruction(topSize == 2 ? VmOpcodes.OP_POP : VmOpcodes.OP_POP2, 0));
                     break;
+                }
                 case Opcodes.DUP:
                     result.add(new Instruction(VmOpcodes.OP_DUP, 0));
                     break;
@@ -395,15 +419,30 @@ public class VmTranslator {
                 case Opcodes.DUP_X2:
                     result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
                     break;
-                case Opcodes.DUP2:
-                    result.add(new Instruction(VmOpcodes.OP_DUP2, 0));
+                case Opcodes.DUP2: {
+                    int topSize = 1;
+                    if (frame != null && frame.getStackSize() > 0) {
+                        topSize = frame.getStack(frame.getStackSize() - 1).getSize();
+                    }
+                    result.add(new Instruction(topSize == 2 ? VmOpcodes.OP_DUP : VmOpcodes.OP_DUP2, 0));
                     break;
-                case Opcodes.DUP2_X1:
-                    result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                }
+                case Opcodes.DUP2_X1: {
+                    int topSize = 1;
+                    if (frame != null && frame.getStackSize() > 0) {
+                        topSize = frame.getStack(frame.getStackSize() - 1).getSize();
+                    }
+                    result.add(new Instruction(topSize == 2 ? VmOpcodes.OP_DUP_X1 : VmOpcodes.OP_DUP2_X1, 0));
                     break;
-                case Opcodes.DUP2_X2:
-                    result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                }
+                case Opcodes.DUP2_X2: {
+                    int topSize = 1;
+                    if (frame != null && frame.getStackSize() > 0) {
+                        topSize = frame.getStack(frame.getStackSize() - 1).getSize();
+                    }
+                    result.add(new Instruction(topSize == 2 ? VmOpcodes.OP_DUP_X2 : VmOpcodes.OP_DUP2_X2, 0));
                     break;
+                }
                 case Opcodes.SWAP:
                     result.add(new Instruction(VmOpcodes.OP_SWAP, 0));
                     break;
@@ -670,6 +709,9 @@ public class VmTranslator {
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));
                     break;
                 case Opcodes.ARETURN:
+                    result.add(new Instruction(VmOpcodes.OP_HALT, 0));
+                    break;
+                case Opcodes.RETURN:
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));
                     break;
                 case Opcodes.I2B:
