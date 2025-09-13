@@ -57,6 +57,166 @@ size_t get_class_cache_calls() {
     return class_lookup_calls;
 }
 
+static void parse_method_sig(const char* sig, std::vector<char>& args, char& ret) {
+    args.clear();
+    const char* p = sig;
+    if (*p == '(') ++p;
+    while (*p && *p != ')') {
+        char c = *p++;
+        if (c == 'L') {
+            while (*p && *p != ';') ++p;
+            if (*p == ';') ++p;
+            args.push_back('L');
+        } else if (c == '[') {
+            while (*p == '[') ++p;
+            if (*p == 'L') {
+                while (*p && *p != ';') ++p;
+                if (*p == ';') ++p;
+            } else {
+                ++p; // primitive array
+            }
+            args.push_back('L');
+        } else {
+            args.push_back(c);
+        }
+    }
+    if (*p == ')') ++p;
+    ret = *p;
+}
+
+static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
+                          int64_t* stack, size_t& sp) {
+    std::vector<char> arg_types;
+    char ret;
+    parse_method_sig(ref->method_sig, arg_types, ret);
+    size_t num = arg_types.size();
+    if (sp < num + ((op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC) ? 0 : 1)) {
+        sp = 0;
+        return;
+    }
+    std::vector<jvalue> jargs(num);
+    for (size_t i = 0; i < num; ++i) {
+        char t = arg_types[num - 1 - i];
+        switch (t) {
+            case 'Z': case 'B': case 'C': case 'S': case 'I':
+                jargs[num - 1 - i].i = static_cast<jint>(stack[--sp]);
+                break;
+            case 'J':
+                jargs[num - 1 - i].j = static_cast<jlong>(stack[--sp]);
+                break;
+            case 'F': {
+                int32_t bits = static_cast<int32_t>(stack[--sp]);
+                jfloat v;
+                std::memcpy(&v, &bits, sizeof(float));
+                jargs[num - 1 - i].f = v;
+                break;
+            }
+            case 'D': {
+                int64_t bits = stack[--sp];
+                jdouble v;
+                std::memcpy(&v, &bits, sizeof(double));
+                jargs[num - 1 - i].d = v;
+                break;
+            }
+            default:
+                jargs[num - 1 - i].l = reinterpret_cast<jobject>(stack[--sp]);
+                break;
+        }
+    }
+    jobject obj = nullptr;
+    if (op != OP_INVOKESTATIC && op != OP_INVOKEDYNAMIC) {
+        obj = reinterpret_cast<jobject>(stack[--sp]);
+        if (!obj) {
+            env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
+            return;
+        }
+    }
+    jclass clazz = get_cached_class(env, ref->class_name);
+    if (!clazz) {
+        return;
+    }
+    jmethodID mid;
+    if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC) {
+        mid = env->GetStaticMethodID(clazz, ref->method_name, ref->method_sig);
+    } else {
+        mid = env->GetMethodID(clazz, ref->method_name, ref->method_sig);
+    }
+    if (!mid) {
+        env->DeleteLocalRef(clazz);
+        return;
+    }
+    switch (ret) {
+        case 'V':
+            if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC)
+                env->CallStaticVoidMethodA(clazz, mid, jargs.data());
+            else if (op == OP_INVOKESPECIAL)
+                env->CallNonvirtualVoidMethodA(obj, clazz, mid, jargs.data());
+            else
+                env->CallVoidMethodA(obj, mid, jargs.data());
+            break;
+        case 'Z': case 'B': case 'C': case 'S': case 'I': {
+            jint r;
+            if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC)
+                r = env->CallStaticIntMethodA(clazz, mid, jargs.data());
+            else if (op == OP_INVOKESPECIAL)
+                r = env->CallNonvirtualIntMethodA(obj, clazz, mid, jargs.data());
+            else
+                r = env->CallIntMethodA(obj, mid, jargs.data());
+            stack[sp++] = static_cast<int64_t>(r);
+            break;
+        }
+        case 'J': {
+            jlong r;
+            if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC)
+                r = env->CallStaticLongMethodA(clazz, mid, jargs.data());
+            else if (op == OP_INVOKESPECIAL)
+                r = env->CallNonvirtualLongMethodA(obj, clazz, mid, jargs.data());
+            else
+                r = env->CallLongMethodA(obj, mid, jargs.data());
+            stack[sp++] = static_cast<int64_t>(r);
+            break;
+        }
+        case 'F': {
+            jfloat r;
+            if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC)
+                r = env->CallStaticFloatMethodA(clazz, mid, jargs.data());
+            else if (op == OP_INVOKESPECIAL)
+                r = env->CallNonvirtualFloatMethodA(obj, clazz, mid, jargs.data());
+            else
+                r = env->CallFloatMethodA(obj, mid, jargs.data());
+            int32_t bits;
+            std::memcpy(&bits, &r, sizeof(float));
+            stack[sp++] = static_cast<int64_t>(bits);
+            break;
+        }
+        case 'D': {
+            jdouble r;
+            if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC)
+                r = env->CallStaticDoubleMethodA(clazz, mid, jargs.data());
+            else if (op == OP_INVOKESPECIAL)
+                r = env->CallNonvirtualDoubleMethodA(obj, clazz, mid, jargs.data());
+            else
+                r = env->CallDoubleMethodA(obj, mid, jargs.data());
+            int64_t bits;
+            std::memcpy(&bits, &r, sizeof(double));
+            stack[sp++] = bits;
+            break;
+        }
+        default: {
+            jobject r;
+            if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC)
+                r = env->CallStaticObjectMethodA(clazz, mid, jargs.data());
+            else if (op == OP_INVOKESPECIAL)
+                r = env->CallNonvirtualObjectMethodA(obj, clazz, mid, jargs.data());
+            else
+                r = env->CallObjectMethodA(obj, mid, jargs.data());
+            stack[sp++] = reinterpret_cast<int64_t>(r);
+            break;
+        }
+    }
+    env->DeleteLocalRef(clazz);
+}
+
 void init_key(uint64_t seed) {
     std::random_device rd;
     std::mt19937_64 gen(rd() ^ seed);
@@ -252,6 +412,10 @@ dispatch:
         case OP_LSHR: goto do_shr;
         case OP_LUSHR: goto do_ushr;
         case OP_INVOKESTATIC: goto do_invokestatic;
+        case OP_INVOKEVIRTUAL: goto do_invokevirtual;
+        case OP_INVOKESPECIAL: goto do_invokespecial;
+        case OP_INVOKEINTERFACE: goto do_invokeinterface;
+        case OP_INVOKEDYNAMIC: goto do_invokedynamic;
         default:       goto halt;
     }
 
@@ -1086,7 +1250,23 @@ do_putfield:
     goto dispatch;
 
 do_invokestatic:
-    // simplified: treat as identity function on top of stack
+    invoke_method(env, OP_INVOKESTATIC, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    goto dispatch;
+
+do_invokevirtual:
+    invoke_method(env, OP_INVOKEVIRTUAL, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    goto dispatch;
+
+do_invokespecial:
+    invoke_method(env, OP_INVOKESPECIAL, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    goto dispatch;
+
+do_invokeinterface:
+    invoke_method(env, OP_INVOKEINTERFACE, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    goto dispatch;
+
+do_invokedynamic:
+    invoke_method(env, OP_INVOKEDYNAMIC, reinterpret_cast<MethodRef*>(tmp), stack, sp);
     goto dispatch;
 
 // Dummy branch used only to confuse decompilers

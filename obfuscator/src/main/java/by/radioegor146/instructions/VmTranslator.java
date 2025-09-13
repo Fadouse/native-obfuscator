@@ -163,6 +163,10 @@ public class VmTranslator {
         public static final int OP_PUTSTATIC = 98;
         public static final int OP_GETFIELD = 99;
         public static final int OP_PUTFIELD = 100;
+        public static final int OP_INVOKEVIRTUAL = 101;
+        public static final int OP_INVOKESPECIAL = 102;
+        public static final int OP_INVOKEINTERFACE = 103;
+        public static final int OP_INVOKEDYNAMIC = 104;
     }
 
     /**
@@ -588,6 +592,18 @@ public class VmTranslator {
                     break;
                 case Opcodes.ACONST_NULL:
                     result.add(new Instruction(VmOpcodes.OP_PUSH, 0));
+                    break;
+                case Opcodes.INVOKEVIRTUAL:
+                    result.add(new Instruction(VmOpcodes.OP_INVOKEVIRTUAL, invokeIndex++));
+                    break;
+                case Opcodes.INVOKESPECIAL:
+                    result.add(new Instruction(VmOpcodes.OP_INVOKESPECIAL, invokeIndex++));
+                    break;
+                case Opcodes.INVOKEINTERFACE:
+                    result.add(new Instruction(VmOpcodes.OP_INVOKEINTERFACE, invokeIndex++));
+                    break;
+                case Opcodes.INVOKEDYNAMIC:
+                    result.add(new Instruction(VmOpcodes.OP_INVOKEDYNAMIC, invokeIndex++));
                     break;
                 case Opcodes.INVOKESTATIC:
                     result.add(new Instruction(VmOpcodes.OP_INVOKESTATIC, invokeIndex++));
