@@ -168,6 +168,14 @@ dispatch:
         case OP_ASTORE: goto do_astore;
         case OP_AALOAD: goto do_aaload;
         case OP_AASTORE: goto do_aastore;
+        case OP_IALOAD: goto do_iaload;
+        case OP_BALOAD: goto do_baload;
+        case OP_CALOAD: goto do_caload;
+        case OP_SALOAD: goto do_saload;
+        case OP_IASTORE: goto do_iastore;
+        case OP_BASTORE: goto do_bastore;
+        case OP_CASTORE: goto do_castore;
+        case OP_SASTORE: goto do_sastore;
         case OP_LADD: goto do_add;
         case OP_LSUB: goto do_sub;
         case OP_LMUL: goto do_mul;
@@ -662,6 +670,82 @@ do_aastore:
         jsize index = static_cast<jsize>(stack[--sp]);
         jobjectArray arr = reinterpret_cast<jobjectArray>(stack[--sp]);
         env->SetObjectArrayElement(arr, index, value);
+    }
+    goto dispatch;
+
+do_iaload:
+    if (sp >= 2) {
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jintArray arr = reinterpret_cast<jintArray>(stack[--sp]);
+        jint val;
+        env->GetIntArrayRegion(arr, index, 1, &val);
+        stack[sp++] = val;
+    }
+    goto dispatch;
+
+do_baload:
+    if (sp >= 2) {
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jbyteArray arr = reinterpret_cast<jbyteArray>(stack[--sp]);
+        jbyte val;
+        env->GetByteArrayRegion(arr, index, 1, &val);
+        stack[sp++] = val;
+    }
+    goto dispatch;
+
+do_caload:
+    if (sp >= 2) {
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jcharArray arr = reinterpret_cast<jcharArray>(stack[--sp]);
+        jchar val;
+        env->GetCharArrayRegion(arr, index, 1, &val);
+        stack[sp++] = val;
+    }
+    goto dispatch;
+
+do_saload:
+    if (sp >= 2) {
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jshortArray arr = reinterpret_cast<jshortArray>(stack[--sp]);
+        jshort val;
+        env->GetShortArrayRegion(arr, index, 1, &val);
+        stack[sp++] = val;
+    }
+    goto dispatch;
+
+do_iastore:
+    if (sp >= 3) {
+        jint value = static_cast<jint>(stack[--sp]);
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jintArray arr = reinterpret_cast<jintArray>(stack[--sp]);
+        env->SetIntArrayRegion(arr, index, 1, &value);
+    }
+    goto dispatch;
+
+do_bastore:
+    if (sp >= 3) {
+        jbyte value = static_cast<jbyte>(stack[--sp]);
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jbyteArray arr = reinterpret_cast<jbyteArray>(stack[--sp]);
+        env->SetByteArrayRegion(arr, index, 1, &value);
+    }
+    goto dispatch;
+
+do_castore:
+    if (sp >= 3) {
+        jchar value = static_cast<jchar>(stack[--sp]);
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jcharArray arr = reinterpret_cast<jcharArray>(stack[--sp]);
+        env->SetCharArrayRegion(arr, index, 1, &value);
+    }
+    goto dispatch;
+
+do_sastore:
+    if (sp >= 3) {
+        jshort value = static_cast<jshort>(stack[--sp]);
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jshortArray arr = reinterpret_cast<jshortArray>(stack[--sp]);
+        env->SetShortArrayRegion(arr, index, 1, &value);
     }
     goto dispatch;
 

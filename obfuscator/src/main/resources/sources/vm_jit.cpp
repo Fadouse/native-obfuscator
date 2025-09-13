@@ -233,6 +233,74 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                     env->SetObjectArrayElement(arr, index, value);
                 }
                 break;
+            case OP_IALOAD:
+                if (sp >= 2) {
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jintArray arr = reinterpret_cast<jintArray>(stack[--sp]);
+                    jint val;
+                    env->GetIntArrayRegion(arr, index, 1, &val);
+                    stack[sp++] = val;
+                }
+                break;
+            case OP_BALOAD:
+                if (sp >= 2) {
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jbyteArray arr = reinterpret_cast<jbyteArray>(stack[--sp]);
+                    jbyte val;
+                    env->GetByteArrayRegion(arr, index, 1, &val);
+                    stack[sp++] = val;
+                }
+                break;
+            case OP_CALOAD:
+                if (sp >= 2) {
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jcharArray arr = reinterpret_cast<jcharArray>(stack[--sp]);
+                    jchar val;
+                    env->GetCharArrayRegion(arr, index, 1, &val);
+                    stack[sp++] = val;
+                }
+                break;
+            case OP_SALOAD:
+                if (sp >= 2) {
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jshortArray arr = reinterpret_cast<jshortArray>(stack[--sp]);
+                    jshort val;
+                    env->GetShortArrayRegion(arr, index, 1, &val);
+                    stack[sp++] = val;
+                }
+                break;
+            case OP_IASTORE:
+                if (sp >= 3) {
+                    jint value = static_cast<jint>(stack[--sp]);
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jintArray arr = reinterpret_cast<jintArray>(stack[--sp]);
+                    env->SetIntArrayRegion(arr, index, 1, &value);
+                }
+                break;
+            case OP_BASTORE:
+                if (sp >= 3) {
+                    jbyte value = static_cast<jbyte>(stack[--sp]);
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jbyteArray arr = reinterpret_cast<jbyteArray>(stack[--sp]);
+                    env->SetByteArrayRegion(arr, index, 1, &value);
+                }
+                break;
+            case OP_CASTORE:
+                if (sp >= 3) {
+                    jchar value = static_cast<jchar>(stack[--sp]);
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jcharArray arr = reinterpret_cast<jcharArray>(stack[--sp]);
+                    env->SetCharArrayRegion(arr, index, 1, &value);
+                }
+                break;
+            case OP_SASTORE:
+                if (sp >= 3) {
+                    jshort value = static_cast<jshort>(stack[--sp]);
+                    jsize index = static_cast<jsize>(stack[--sp]);
+                    jshortArray arr = reinterpret_cast<jshortArray>(stack[--sp]);
+                    env->SetShortArrayRegion(arr, index, 1, &value);
+                }
+                break;
             case OP_INVOKESTATIC:
                 // simplified: treat as no-op
                 break;
