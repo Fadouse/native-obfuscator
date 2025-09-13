@@ -111,7 +111,11 @@ enum OpCode : uint8_t {
     OP_PUTSTATIC = 98, // write static field
     OP_GETFIELD = 99, // read instance field
     OP_PUTFIELD = 100, // write instance field
-    OP_COUNT = 101  // helper constant with number of opcodes
+    OP_INVOKEVIRTUAL = 101, // invoke virtual method
+    OP_INVOKESPECIAL = 102, // invoke special method
+    OP_INVOKEINTERFACE = 103, // invoke interface method
+    OP_INVOKEDYNAMIC = 104, // invoke dynamic call site
+    OP_COUNT = 105  // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at
@@ -127,6 +131,12 @@ struct FieldRef {
     const char* class_name;
     const char* field_name;
     const char* field_sig;
+};
+
+struct MethodRef {
+    const char* class_name;
+    const char* method_name;
+    const char* method_sig;
 };
 
 // Helper that produces an encoded instruction using the global key.
