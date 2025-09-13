@@ -4,6 +4,9 @@ import by.radioegor146.instructions.VmTranslator;
 import by.radioegor146.instructions.VmTranslator.Instruction;
 import by.radioegor146.instructions.VmTranslator.VmOpcodes;
 import org.junit.jupiter.api.Test;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.MethodNode;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -194,5 +197,95 @@ public class VmTranslatorStackOpTest {
                 new Instruction(VmOpcodes.OP_SWAP, 0)
         };
         assertArrayEquals(new long[]{2, 1}, run(code));
+    }
+
+    private Instruction[] translate(MethodNode mn) {
+        return new VmTranslator().translate(mn);
+    }
+
+    private void assertPop2Category2(int constOpcode) {
+        MethodNode mn = new MethodNode(Opcodes.ASM9, Opcodes.ACC_STATIC, "m", "()V", null, null);
+        mn.maxStack = 4;
+        mn.maxLocals = 0;
+        mn.instructions.add(new InsnNode(constOpcode));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.RETURN));
+        Instruction[] code = translate(mn);
+        assertNotNull(code);
+        assertEquals(VmOpcodes.OP_POP, code[1].opcode);
+    }
+
+    @Test
+    public void translatePop2Category2() {
+        assertPop2Category2(Opcodes.LCONST_0);
+        assertPop2Category2(Opcodes.DCONST_0);
+    }
+
+    private void assertDup2Category2(int constOpcode) {
+        MethodNode mn = new MethodNode(Opcodes.ASM9, Opcodes.ACC_STATIC, "m", "()V", null, null);
+        mn.maxStack = 5;
+        mn.maxLocals = 0;
+        mn.instructions.add(new InsnNode(constOpcode));
+        mn.instructions.add(new InsnNode(Opcodes.DUP2));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.RETURN));
+        Instruction[] code = translate(mn);
+        assertNotNull(code);
+        assertEquals(VmOpcodes.OP_DUP, code[1].opcode);
+    }
+
+    @Test
+    public void translateDup2Category2() {
+        assertDup2Category2(Opcodes.LCONST_0);
+        assertDup2Category2(Opcodes.DCONST_0);
+    }
+
+    private void assertDup2X1Category2(int constOpcode) {
+        MethodNode mn = new MethodNode(Opcodes.ASM9, Opcodes.ACC_STATIC, "m", "()V", null, null);
+        mn.maxStack = 6;
+        mn.maxLocals = 0;
+        mn.instructions.add(new InsnNode(Opcodes.ICONST_0));
+        mn.instructions.add(new InsnNode(constOpcode));
+        mn.instructions.add(new InsnNode(Opcodes.DUP2_X1));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.POP));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.RETURN));
+        Instruction[] code = translate(mn);
+        assertNotNull(code);
+        assertEquals(VmOpcodes.OP_DUP_X1, code[2].opcode);
+        assertEquals(VmOpcodes.OP_POP, code[3].opcode);
+    }
+
+    @Test
+    public void translateDup2X1Category2() {
+        assertDup2X1Category2(Opcodes.LCONST_0);
+        assertDup2X1Category2(Opcodes.DCONST_0);
+    }
+
+    private void assertDup2X2Category2(int constOpcode) {
+        MethodNode mn = new MethodNode(Opcodes.ASM9, Opcodes.ACC_STATIC, "m", "()V", null, null);
+        mn.maxStack = 6;
+        mn.maxLocals = 0;
+        mn.instructions.add(new InsnNode(constOpcode));
+        mn.instructions.add(new InsnNode(constOpcode));
+        mn.instructions.add(new InsnNode(Opcodes.DUP2_X2));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.POP2));
+        mn.instructions.add(new InsnNode(Opcodes.RETURN));
+        Instruction[] code = translate(mn);
+        assertNotNull(code);
+        assertEquals(VmOpcodes.OP_DUP_X2, code[2].opcode);
+        assertEquals(VmOpcodes.OP_POP, code[3].opcode);
+        assertEquals(VmOpcodes.OP_POP, code[4].opcode);
+        assertEquals(VmOpcodes.OP_POP, code[5].opcode);
+    }
+
+    @Test
+    public void translateDup2X2Category2() {
+        assertDup2X2Category2(Opcodes.LCONST_0);
+        assertDup2X2Category2(Opcodes.DCONST_0);
     }
 }
