@@ -271,7 +271,6 @@ public class VmTranslator {
         try {
             frames = analyzer.analyze("java/lang/Object", method);
         } catch (AnalyzerException e) {
-            // Fallback to no frame information when analysis fails.
             frames = new Frame[method.instructions.size()];
         }
 
