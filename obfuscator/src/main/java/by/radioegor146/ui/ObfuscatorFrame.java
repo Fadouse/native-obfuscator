@@ -1,0 +1,399 @@
+package by.radioegor146.ui;
+
+import by.radioegor146.NativeObfuscator;
+import by.radioegor146.Platform;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitOption;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
+
+public class ObfuscatorFrame extends JFrame {
+    private final JTextField jarField = new JTextField();
+    private final JTextField outDirField = new JTextField();
+    private final JTextField libsDirField = new JTextField();
+    private final JTextField blacklistField = new JTextField();
+    private final JTextField whitelistField = new JTextField();
+    private final JTextField plainLibNameField = new JTextField();
+    private final JTextField customLibDirField = new JTextField();
+    private final JComboBox<Platform> platformCombo = new JComboBox<>(Platform.values());
+    private final JCheckBox useAnnotationsBox = new JCheckBox("Use annotations");
+    private final JCheckBox debugJarBox = new JCheckBox("Generate debug jar");
+    private final JCheckBox packageBox = new JCheckBox("Package native lib into JAR", true);
+    private final JButton runButton = new JButton("Run");
+    private final JTextArea logArea = new JTextArea();
+    private final JProgressBar progressBar = new JProgressBar();
+
+    public static void launch() {
+        SwingUtilities.invokeLater(() -> {
+            ObfuscatorFrame frame = new ObfuscatorFrame();
+            frame.setVisible(true);
+        });
+    }
+
+    public ObfuscatorFrame() {
+        super("Native Obfuscator – GUI");
+        setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        setMinimumSize(new Dimension(860, 560));
+        setLocationRelativeTo(null);
+
+        JPanel content = new JPanel(new BorderLayout());
+        content.setBorder(new EmptyBorder(12, 12, 12, 12));
+        setContentPane(content);
+
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(6, 6, 6, 6);
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 0;
+        int row = 0;
+
+        row = addPathRow(form, c, row, "Input JAR", jarField, this::browseFileJar);
+        row = addPathRow(form, c, row, "Output Directory", outDirField, this::browseDir);
+        row = addPathRow(form, c, row, "Libraries Directory", libsDirField, this::browseDirOptional);
+        row = addPathRow(form, c, row, "Whitelist File", whitelistField, () -> browseFileTxt(whitelistField));
+        row = addPathRow(form, c, row, "Blacklist File", blacklistField, () -> browseFileTxt(blacklistField));
+
+        row = addFieldRow(form, c, row, "Plain Library Name", plainLibNameField);
+        row = addFieldRow(form, c, row, "Custom Library Dir (in jar)", customLibDirField);
+
+        // Platform + flags
+        c.gridx = 0; c.gridy = row; c.weightx = 0; form.add(new JLabel("Platform"), c);
+        c.gridx = 1; c.gridy = row; c.weightx = 1; form.add(platformCombo, c);
+        JPanel flags = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        flags.add(useAnnotationsBox);
+        flags.add(debugJarBox);
+        flags.add(packageBox);
+        c.gridx = 2; c.gridy = row; c.weightx = 0; form.add(flags, c);
+        row++;
+
+        // Run button
+        c.gridx = 0; c.gridy = row; c.gridwidth = 3; c.weightx = 0;
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        actions.add(runButton);
+        form.add(actions, c);
+        row++;
+
+        content.add(form, BorderLayout.NORTH);
+
+        logArea.setEditable(false);
+        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        content.add(new JScrollPane(logArea), BorderLayout.CENTER);
+
+        progressBar.setIndeterminate(true);
+        progressBar.setString("Running...");
+        progressBar.setStringPainted(true);
+        progressBar.setVisible(false);
+        content.add(progressBar, BorderLayout.SOUTH);
+
+        platformCombo.setSelectedItem(Platform.HOTSPOT);
+        runButton.addActionListener(this::runObfuscation);
+
+        // Placeholders for better UX (requires FlatLaf)
+        jarField.putClientProperty("JTextComponent.placeholderText", "Select input .jar");
+        outDirField.putClientProperty("JTextComponent.placeholderText", "Choose output directory");
+        libsDirField.putClientProperty("JTextComponent.placeholderText", "Optional libraries directory");
+        whitelistField.putClientProperty("JTextComponent.placeholderText", "Optional whitelist.txt");
+        blacklistField.putClientProperty("JTextComponent.placeholderText", "Optional blacklist.txt");
+        plainLibNameField.putClientProperty("JTextComponent.placeholderText", "Plain lib name (optional)");
+        customLibDirField.putClientProperty("JTextComponent.placeholderText", "Custom lib dir inside jar (optional)");
+    }
+
+    private int addPathRow(JPanel form, GridBagConstraints c, int row, String label, JTextField field, Runnable browse) {
+        c.gridx = 0; c.gridy = row; c.weightx = 0; c.gridwidth = 1;
+        form.add(new JLabel(label), c);
+        c.gridx = 1; c.gridy = row; c.weightx = 1; form.add(field, c);
+        JButton btn = new JButton("Browse");
+        btn.addActionListener(e -> browse.run());
+        c.gridx = 2; c.gridy = row; c.weightx = 0; form.add(btn, c);
+        return row + 1;
+    }
+
+    private int addFieldRow(JPanel form, GridBagConstraints c, int row, String label, JTextField field) {
+        c.gridx = 0; c.gridy = row; c.weightx = 0; c.gridwidth = 1;
+        form.add(new JLabel(label), c);
+        c.gridx = 1; c.gridy = row; c.weightx = 1; c.gridwidth = 2; form.add(field, c);
+        c.gridwidth = 1;
+        return row + 1;
+    }
+
+    private void browseFileJar() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Select input JAR");
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File f = chooser.getSelectedFile();
+            jarField.setText(f.getAbsolutePath());
+            if (outDirField.getText().trim().isEmpty()) {
+                File parent = f.getParentFile();
+                if (parent != null) outDirField.setText(new File(parent, "native-output").getAbsolutePath());
+            }
+        }
+    }
+
+    private void browseDir() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            outDirField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void browseDirOptional() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            libsDirField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void browseFileTxt(JTextField targetField) {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            File f = chooser.getSelectedFile();
+            String path = f.getAbsolutePath();
+            targetField.setText(path);
+        }
+    }
+
+    private void runObfuscation(ActionEvent e) {
+        String jarPath = jarField.getText().trim();
+        String outDir = outDirField.getText().trim();
+        if (jarPath.isEmpty() || outDir.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please select input JAR and output directory.",
+                    "Missing inputs", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        File jarFile = new File(jarPath);
+        if (!jarFile.isFile()) {
+            JOptionPane.showMessageDialog(this, "Input JAR does not exist.",
+                    "Invalid input", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        setFormEnabled(false);
+        progressBar.setVisible(true);
+        appendLog("Starting obfuscation...\n");
+
+        SwingWorker<Integer, String> worker = new SwingWorker<Integer, String>() {
+            @Override
+            protected Integer doInBackground() throws Exception {
+                List<Path> libs = new ArrayList<>();
+                String libsDir = libsDirField.getText().trim();
+                if (!libsDir.isEmpty()) {
+                    Files.walk(Paths.get(libsDir), FileVisitOption.FOLLOW_LINKS)
+                            .filter(p -> p.toString().endsWith(".jar") || p.toString().endsWith(".zip"))
+                            .forEach(libs::add);
+                }
+
+                List<String> blackList = new ArrayList<>();
+                String blk = blacklistField.getText().trim();
+                if (!blk.isEmpty()) {
+                    blackList = Files.readAllLines(Paths.get(blk), StandardCharsets.UTF_8)
+                            .stream().filter(s -> !s.trim().isEmpty()).collect(Collectors.toList());
+                }
+
+                List<String> whiteList = null;
+                String wht = whitelistField.getText().trim();
+                if (!wht.isEmpty()) {
+                    whiteList = Files.readAllLines(Paths.get(wht), StandardCharsets.UTF_8)
+                            .stream().filter(s -> !s.trim().isEmpty()).collect(Collectors.toList());
+                }
+
+                String plainName = emptyToNull(plainLibNameField.getText());
+                String customDir = emptyToNull(customLibDirField.getText());
+                Platform platform = (Platform) platformCombo.getSelectedItem();
+                boolean useAnnotations = useAnnotationsBox.isSelected();
+                boolean debug = debugJarBox.isSelected();
+
+                NativeObfuscator obfuscator = new NativeObfuscator();
+                obfuscator.process(
+                        jarFile.toPath(),
+                        Paths.get(outDir),
+                        libs,
+                        blackList,
+                        whiteList,
+                        plainName,
+                        customDir,
+                        platform,
+                        useAnnotations,
+                        debug
+                );
+                // After obfuscation, automatically run cmake and package the built library into the jar
+                if (plainName == null && packageBox.isSelected()) {
+                    Path cppDir = Paths.get(outDir, "cpp");
+                    runCmakeAndPackage(cppDir, Paths.get(outDir), new File(outDir, jarFile.getName()).toPath(), obfuscator.getNativeDir());
+                } else if (plainName != null) {
+                    appendLog("Plain library mode selected; skipping jar packaging.\n");
+                } else if (!packageBox.isSelected()) {
+                    appendLog("Packaging disabled by user.\n");
+                }
+                return 0;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    appendLog("Done. Output at: " + outDir + "\n");
+                    JOptionPane.showMessageDialog(ObfuscatorFrame.this,
+                            "Obfuscation completed.", "Success", JOptionPane.INFORMATION_MESSAGE);
+                } catch (ExecutionException ex) {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    appendLogError(cause);
+                    JOptionPane.showMessageDialog(ObfuscatorFrame.this,
+                            cause.getMessage() == null ? cause.toString() : cause.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    setFormEnabled(true);
+                    progressBar.setVisible(false);
+                }
+            }
+        };
+
+        worker.execute();
+    }
+
+    private static String emptyToNull(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private void setFormEnabled(boolean enabled) {
+        jarField.setEnabled(enabled);
+        outDirField.setEnabled(enabled);
+        libsDirField.setEnabled(enabled);
+        blacklistField.setEnabled(enabled);
+        whitelistField.setEnabled(enabled);
+        plainLibNameField.setEnabled(enabled);
+        customLibDirField.setEnabled(enabled);
+        platformCombo.setEnabled(enabled);
+        useAnnotationsBox.setEnabled(enabled);
+        debugJarBox.setEnabled(enabled);
+        runButton.setEnabled(enabled);
+    }
+
+    private void appendLog(String text) {
+        SwingUtilities.invokeLater(() -> {
+            logArea.append(text);
+            logArea.setCaretPosition(logArea.getDocument().getLength());
+        });
+    }
+
+    private void appendLogError(Throwable t) {
+        String msg = (t.getMessage() == null) ? t.toString() : t.getMessage();
+        StringBuilder sb = new StringBuilder();
+        sb.append("ERROR: ").append(msg).append('\n');
+        for (StackTraceElement el : t.getStackTrace()) {
+            sb.append("    at ").append(el).append('\n');
+        }
+        appendLog(sb.toString());
+    }
+
+    private void runCmakeAndPackage(Path cppDir, Path outDir, Path outJar, String nativeDir) throws IOException, InterruptedException {
+        if (!Files.isDirectory(cppDir)) {
+            throw new IOException("C++ output directory not found: " + cppDir);
+        }
+
+        appendLog("\nConfiguring CMake...\n");
+        runProcess(new String[]{"cmake", "."}, cppDir.toFile());
+
+        appendLog("\nBuilding native library (Release)...\n");
+        runProcess(new String[]{"cmake", "--build", ".", "--config", "Release"}, cppDir.toFile());
+
+        Path libDir = cppDir.resolve("build").resolve("lib");
+        if (!Files.isDirectory(libDir)) {
+            throw new IOException("Native lib dir not found: " + libDir);
+        }
+
+        File libFile = Files.list(libDir)
+                .filter(p -> {
+                    String n = p.getFileName().toString().toLowerCase();
+                    return n.endsWith(".dll") || n.endsWith(".so") || n.endsWith(".dylib");
+                })
+                .map(Path::toFile)
+                .findFirst()
+                .orElse(null);
+        if (libFile == null) {
+            throw new IOException("No native library (.dll/.so/.dylib) found in " + libDir);
+        }
+
+        if (!Files.exists(outJar)) {
+            throw new IOException("Output JAR not found: " + outJar);
+        }
+
+        String arch = System.getProperty("os.arch").toLowerCase();
+        String os = System.getProperty("os.name").toLowerCase();
+        String platformTypeName;
+        switch (arch) {
+            case "x86_64":
+            case "amd64":
+                platformTypeName = "x64";
+                break;
+            case "aarch64":
+                platformTypeName = "arm64";
+                break;
+            case "x86":
+                platformTypeName = "x86";
+                break;
+            default:
+                platformTypeName = arch.startsWith("arm") ? "arm32" : ("raw" + arch);
+        }
+        String osTypeName = (os.contains("win")) ? "windows.dll" : (os.contains("mac") ? "macos.dylib" : "linux.so");
+        String entryPath = nativeDir + "/" + platformTypeName + "-" + osTypeName;
+
+        appendLog("\nPackaging native lib into jar at /" + entryPath + "...\n");
+        packageIntoJar(outJar, libFile.toPath(), entryPath);
+        appendLog("Packaging completed.\n");
+    }
+
+    private void runProcess(String[] cmd, File workDir) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.directory(workDir);
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        Thread t = new Thread(() -> {
+            try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    appendLog(line + "\n");
+                }
+            } catch (IOException ignored) { }
+        });
+        t.setDaemon(true);
+        t.start();
+        int code = p.waitFor();
+        if (code != 0) {
+            throw new IOException("Command failed (" + String.join(" ", cmd) + ") with exit code " + code);
+        }
+    }
+
+    private void packageIntoJar(Path jarPath, Path fileToAdd, String entryPath) throws IOException {
+        java.net.URI uri = java.net.URI.create("jar:" + jarPath.toUri().toString());
+        java.util.Map<String, String> env = new java.util.HashMap<>();
+        env.put("create", "false");
+        try (java.nio.file.FileSystem fs = java.nio.file.FileSystems.newFileSystem(uri, env)) {
+            Path inside = fs.getPath("/" + entryPath);
+            if (inside.getParent() != null) {
+                Files.createDirectories(inside.getParent());
+            }
+            Files.copy(fileToAdd, inside, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+}

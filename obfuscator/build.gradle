@@ -35,6 +35,10 @@ dependencies {
 
     implementation 'info.picocli:picocli:4.6.3'
 
+    // Modern Swing look & feel with dark mode support
+    implementation 'com.formdev:flatlaf:1.6.5'
+    implementation 'com.formdev:flatlaf-extras:1.6.5'
+
     implementation 'org.slf4j:slf4j-api:1.7.25'
     implementation 'org.apache.logging.log4j:log4j-core:2.12.4'
     implementation 'org.apache.logging.log4j:log4j-slf4j-impl:2.12.4'
@@ -112,3 +116,125 @@ if (hasProperty('ide.eclipse'))
     processTestResources {
         from 'test_data'
     }
+
+// =============================
+// Extra build utilities & tasks
+// =============================
+
+// Secondary Shadow jar for GUI launcher
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
+tasks.register('shadowJarUi', ShadowJar) {
+    group = 'build'
+    description = 'Builds UI fat-jar with UiLauncher as the entrypoint.'
+    archiveClassifier.set('ui')
+    from sourceSets.main.output
+    configurations = [project.configurations.runtimeClasspath]
+    manifest { attributes 'Main-Class': 'by.radioegor146.ui.UiLauncher' }
+}
+
+// Native pipeline: obfuscate -> cmake -> package
+ext {
+    obfInputJar      = project.findProperty('obfInputJar')
+    obfOutputDir     = project.findProperty('obfOutputDir') ?: "$buildDir/native-out"
+    obfLibrariesDir  = project.findProperty('obfLibrariesDir')
+    obfWhiteList     = project.findProperty('obfWhiteList')
+    obfBlackList     = project.findProperty('obfBlackList')
+    obfPlatform      = project.findProperty('obfPlatform') ?: 'hotspot'
+    obfPlainLibName  = project.findProperty('obfPlainLibName')
+    obfCustomLibDir  = project.findProperty('obfCustomLibDir') ?: 'native0'
+    obfUseAnnotations= (project.findProperty('obfUseAnnotations')?.toString()?.toBoolean() ?: false)
+    obfDebugJar      = (project.findProperty('obfDebugJar')?.toString()?.toBoolean() ?: false)
+}
+
+def optArg = { String flag, String value -> value ? [flag, value] : [] }
+def boolFlag = { String flag, boolean cond -> cond ? [flag] : [] }
+
+tasks.register('obfuscateJar', JavaExec) { t ->
+    group = 'native'
+    description = 'Transpile input JAR to C++ and emit output JAR + CMake project.'
+    enabled = project.hasProperty('obfInputJar')
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'by.radioegor146.Main'
+    doFirst {
+        if (!project.hasProperty('obfInputJar')) {
+            throw new GradleException("Please pass -PobfInputJar=/path/to/input.jar (and optionally -PobfOutputDir=/path/to/out)")
+        }
+        new File(obfOutputDir).mkdirs()
+        def argsList = []
+        argsList += optArg('-l', obfLibrariesDir)
+        argsList += optArg('-b', obfBlackList)
+        argsList += optArg('-w', obfWhiteList)
+        argsList += optArg('--plain-lib-name', obfPlainLibName)
+        argsList += optArg('--custom-lib-dir', obfCustomLibDir)
+        argsList += ['-p', obfPlatform]
+        argsList += boolFlag('--annotations', obfUseAnnotations)
+        argsList += boolFlag('--debug', obfDebugJar)
+        argsList += [obfInputJar, obfOutputDir]
+        args = argsList
+        logger.lifecycle("Obfuscating: {} -> {}", obfInputJar, obfOutputDir)
+    }
+}
+
+tasks.register('cmakeConfigure', Exec) {
+    group = 'native'
+    description = 'Run cmake configuration in generated cpp directory.'
+    dependsOn 'obfuscateJar'
+    workingDir = file("${obfOutputDir}/cpp")
+    commandLine 'cmake', '.'
+    doFirst {
+        if (!file("${obfOutputDir}/cpp/CMakeLists.txt").exists()) {
+            throw new GradleException("CMakeLists.txt not found. Did obfuscation succeed? Expected at ${obfOutputDir}/cpp")
+        }
+    }
+}
+
+tasks.register('cmakeBuild', Exec) {
+    group = 'native'
+    description = 'Build native library via cmake.'
+    dependsOn 'cmakeConfigure'
+    workingDir = file("${obfOutputDir}/cpp")
+    commandLine 'cmake', '--build', '.', '--config', 'Release'
+}
+
+tasks.register('packageNativeIntoJar') {
+    group = 'native'
+    description = 'Package the built native library into the resulting JAR under custom lib dir.'
+    dependsOn 'cmakeBuild'
+    doLast {
+        if (!project.hasProperty('obfInputJar')) {
+            throw new GradleException("Please pass -PobfInputJar=/path/to/input.jar")
+        }
+        def jarName = new File(obfInputJar as String).name
+        def jarPath = file("${obfOutputDir}/${jarName}")
+        if (!jarPath.exists()) {
+            throw new GradleException("Output JAR not found: ${jarPath}")
+        }
+        def libDir = file("${obfOutputDir}/cpp/build/lib")
+        if (!libDir.exists()) {
+            throw new GradleException("Native lib directory not found: ${libDir}")
+        }
+        File libFile = libDir.listFiles()?.find { it.name.endsWith('.dll') || it.name.endsWith('.so') || it.name.endsWith('.dylib') }
+        if (!libFile) {
+            throw new GradleException("No compiled native library found in ${libDir}")
+        }
+
+        def os = System.getProperty('os.name').toLowerCase()
+        def arch = System.getProperty('os.arch').toLowerCase()
+        def platformTypeName = (arch == 'x86_64' || arch == 'amd64') ? 'x64' :
+                (arch == 'aarch64') ? 'arm64' : (arch == 'x86') ? 'x86' : (arch.startsWith('arm') ? 'arm32' : 'raw' + arch)
+        def osTypeName = os.contains('win') ? 'windows.dll' : (os.contains('mac') ? 'macos.dylib' : 'linux.so')
+        def entryPath = "${obfCustomLibDir}/${platformTypeName}-${osTypeName}"
+
+        ant.zip(update: true, destfile: jarPath) {
+            zipfileset(file: libFile, fullpath: entryPath)
+        }
+        logger.lifecycle("Packaged ${libFile.name} into ${jarPath.name} at ${entryPath}")
+    }
+}
+
+tasks.register('buildNativeAndPackage') {
+    group = 'native'
+    description = 'Obfuscate, build native via cmake, and package into jar.'
+    dependsOn 'packageNativeIntoJar'
+}
