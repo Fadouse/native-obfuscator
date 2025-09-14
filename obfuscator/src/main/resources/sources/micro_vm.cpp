@@ -141,7 +141,7 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
     } else {
         mid = env->GetMethodID(clazz, ref->method_name, ref->method_sig);
     }
-    if (!mid) {
+    if (env->ExceptionCheck() || !mid) {
         env->DeleteLocalRef(clazz);
         return;
     }
@@ -162,6 +162,7 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualIntMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallIntMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); return; }
             stack[sp++] = static_cast<int64_t>(r);
             break;
         }
@@ -173,6 +174,7 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualLongMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallLongMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); return; }
             stack[sp++] = static_cast<int64_t>(r);
             break;
         }
@@ -184,6 +186,7 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualFloatMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallFloatMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); return; }
             int32_t bits;
             std::memcpy(&bits, &r, sizeof(float));
             stack[sp++] = static_cast<int64_t>(bits);
@@ -197,6 +200,7 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualDoubleMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallDoubleMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); return; }
             int64_t bits;
             std::memcpy(&bits, &r, sizeof(double));
             stack[sp++] = bits;
@@ -210,6 +214,7 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                 r = env->CallNonvirtualObjectMethodA(obj, clazz, mid, jargs.data());
             else
                 r = env->CallObjectMethodA(obj, mid, jargs.data());
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); return; }
             stack[sp++] = reinterpret_cast<int64_t>(r);
             break;
         }
@@ -1218,6 +1223,10 @@ do_getstatic:
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
+            if (env->ExceptionCheck() || !fid) {
+                env->DeleteLocalRef(clazz);
+                goto halt;
+            }
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
@@ -1251,6 +1260,7 @@ do_getstatic:
                     }
                 }
             }
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); goto halt; }
             env->DeleteLocalRef(clazz);
         }
     }
@@ -1262,6 +1272,10 @@ do_putstatic:
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
+            if (env->ExceptionCheck() || !fid) {
+                env->DeleteLocalRef(clazz);
+                goto halt;
+            }
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
@@ -1294,9 +1308,8 @@ do_putstatic:
                         break;
                     }
                 }
-            } else {
-                --sp; // consume value even if fid not found
             }
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); goto halt; }
             env->DeleteLocalRef(clazz);
         } else {
             --sp;
@@ -1315,6 +1328,10 @@ do_getfield:
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
+            if (env->ExceptionCheck() || !fid) {
+                env->DeleteLocalRef(clazz);
+                goto halt;
+            }
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
@@ -1348,6 +1365,7 @@ do_getfield:
                     }
                 }
             }
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); goto halt; }
             env->DeleteLocalRef(clazz);
         }
     }
@@ -1365,6 +1383,10 @@ do_putfield:
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
+            if (env->ExceptionCheck() || !fid) {
+                env->DeleteLocalRef(clazz);
+                goto halt;
+            }
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
@@ -1396,6 +1418,7 @@ do_putfield:
                     }
                 }
             }
+            if (env->ExceptionCheck()) { env->DeleteLocalRef(clazz); goto halt; }
             env->DeleteLocalRef(clazz);
         }
     } else {
