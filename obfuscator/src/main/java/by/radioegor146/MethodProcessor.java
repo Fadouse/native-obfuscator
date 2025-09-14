@@ -169,6 +169,7 @@ public class MethodProcessor {
         VmTranslator vmTranslator = new VmTranslator(useJit);
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
         List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
+        List<VmTranslator.ConstantPoolEntry> constantPool = vmTranslator.getConstantPool();
         if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
                     VmTranslator.serialize(vmCode)));
@@ -189,6 +190,49 @@ public class MethodProcessor {
                     }
                 }
                 output.append(" };\n");
+            }
+            // Generate constant pool array
+            if (!constantPool.isEmpty()) {
+                output.append("    native_jvm::vm::ConstantPoolEntry __ngen_vm_constants[").append(constantPool.size()).append("];\n");
+                for (int i = 0; i < constantPool.size(); i++) {
+                    VmTranslator.ConstantPoolEntry cp = constantPool.get(i);
+                    output.append(String.format("    __ngen_vm_constants[%d].type = native_jvm::vm::ConstantPoolEntry::", i));
+                    switch (cp.type) {
+                        case INTEGER:
+                            output.append(String.format("TYPE_INTEGER;\n"));
+                            output.append(String.format("    __ngen_vm_constants[%d].i_value = %d;\n", i, (Integer)cp.value));
+                            break;
+                        case FLOAT:
+                            output.append(String.format("TYPE_FLOAT;\n"));
+                            output.append(String.format("    __ngen_vm_constants[%d].f_value = %ff;\n", i, (Float)cp.value));
+                            break;
+                        case LONG:
+                            output.append(String.format("TYPE_LONG;\n"));
+                            output.append(String.format("    __ngen_vm_constants[%d].l_value = %dLL;\n", i, (Long)cp.value));
+                            break;
+                        case DOUBLE:
+                            output.append(String.format("TYPE_DOUBLE;\n"));
+                            output.append(String.format("    __ngen_vm_constants[%d].d_value = %f;\n", i, (Double)cp.value));
+                            break;
+                        case STRING:
+                            output.append(String.format("TYPE_STRING;\n"));
+                            output.append(String.format("    __ngen_vm_constants[%d].str_value = %s;\n", i,
+                                    context.getStringPool().get((String)cp.value)));
+                            break;
+                        case CLASS:
+                            output.append(String.format("TYPE_CLASS;\n"));
+                            output.append(String.format("    __ngen_vm_constants[%d].class_name = %s;\n", i,
+                                    context.getStringPool().get((String)cp.value)));
+                            break;
+                        default:
+                            // Unsupported types - should not reach here
+                            output.append(String.format("TYPE_INTEGER;\n"));
+                            output.append(String.format("    __ngen_vm_constants[%d].i_value = 0;\n", i));
+                            break;
+                    }
+                }
+            }
+            if (!fieldRefs.isEmpty()) {
                 output.append("    for (auto &ins : __ngen_vm_code) {\n");
                 output.append("        switch (ins.op) {\n");
                 output.append("            case native_jvm::vm::OP_GETSTATIC:\n");
@@ -203,14 +247,18 @@ public class MethodProcessor {
             output.append(String.format(
                     "    native_jvm::vm::encode_program(__ngen_vm_code, %d, %dLL);\n",
                     vmCode.length, vmKeySeed));
+            // Determine constant pool parameters
+            String constantPoolPtr = constantPool.isEmpty() ? "nullptr" : "__ngen_vm_constants";
+            int constantPoolSize = constantPool.size();
+
             if (vmTranslator.isUseJit()) {
                 output.append(String.format(
-                        "    return (%s)native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+                        "    return (%s)native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d);\n",
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize));
             } else {
                 output.append(String.format(
-                        "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+                        "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d);\n",
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize));
             }
             output.append("}\n");
 

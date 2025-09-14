@@ -60,6 +60,27 @@ public class VmTranslator {
         return fieldRefs;
     }
 
+    /** Holds information about a constant pool entry. */
+    public static class ConstantPoolEntry {
+        public enum Type {
+            INTEGER, FLOAT, LONG, DOUBLE, STRING, CLASS, METHOD_HANDLE, METHOD_TYPE
+        }
+
+        public final Type type;
+        public final Object value;
+
+        public ConstantPoolEntry(Type type, Object value) {
+            this.type = type;
+            this.value = value;
+        }
+    }
+
+    private final List<ConstantPoolEntry> constantPool = new ArrayList<>();
+
+    public List<ConstantPoolEntry> getConstantPool() {
+        return constantPool;
+    }
+
     /** Describes a TABLESWITCH instruction's jump table. */
     public static class TableSwitchInfo {
         public final int defaultLabel;
@@ -113,116 +134,129 @@ public class VmTranslator {
         public static final int OP_JUNK2 = 9;
         public static final int OP_SWAP = 10;
         public static final int OP_DUP = 11;
-        public static final int OP_LOAD = 12;
-        public static final int OP_IF_ICMPEQ = 13;
-        public static final int OP_IF_ICMPNE = 14;
-        public static final int OP_GOTO = 15;
-        public static final int OP_STORE = 16;
-        public static final int OP_AND = 17;
-        public static final int OP_OR = 18;
-        public static final int OP_XOR = 19;
-        public static final int OP_SHL = 20;
-        public static final int OP_SHR = 21;
-        public static final int OP_USHR = 22;
-        public static final int OP_IF_ICMPLT = 23;
-        public static final int OP_IF_ICMPLE = 24;
-        public static final int OP_IF_ICMPGT = 25;
-        public static final int OP_IF_ICMPGE = 26;
-        public static final int OP_I2L = 27;
-        public static final int OP_I2B = 28;
-        public static final int OP_I2C = 29;
-        public static final int OP_I2S = 30;
-        public static final int OP_NEG = 31;
-        public static final int OP_ALOAD = 32;
-        public static final int OP_ASTORE = 33;
-        public static final int OP_AALOAD = 34;
-        public static final int OP_AASTORE = 35;
-        public static final int OP_INVOKESTATIC = 36;
-        public static final int OP_LLOAD = 37;
-        public static final int OP_FLOAD = 38;
-        public static final int OP_DLOAD = 39;
-        public static final int OP_LSTORE = 40;
-        public static final int OP_FSTORE = 41;
-        public static final int OP_DSTORE = 42;
-        public static final int OP_LADD = 43;
-        public static final int OP_LSUB = 44;
-        public static final int OP_LMUL = 45;
-        public static final int OP_LDIV = 46;
-        public static final int OP_FADD = 47;
-        public static final int OP_FSUB = 48;
-        public static final int OP_FMUL = 49;
-        public static final int OP_FDIV = 50;
-        public static final int OP_DADD = 51;
-        public static final int OP_DSUB = 52;
-        public static final int OP_DMUL = 53;
-        public static final int OP_DDIV = 54;
-        public static final int OP_LDC = 55;
-        public static final int OP_LDC_W = 56;
-        public static final int OP_LDC2_W = 57;
-        public static final int OP_FCONST_0 = 58;
-        public static final int OP_FCONST_1 = 59;
-        public static final int OP_FCONST_2 = 60;
-        public static final int OP_DCONST_0 = 61;
-        public static final int OP_DCONST_1 = 62;
-        public static final int OP_LCONST_0 = 63;
-        public static final int OP_LCONST_1 = 64;
-        public static final int OP_IINC = 65;
-        public static final int OP_LAND = 66;
-        public static final int OP_LOR = 67;
-        public static final int OP_LXOR = 68;
-        public static final int OP_LSHL = 69;
-        public static final int OP_LSHR = 70;
-        public static final int OP_LUSHR = 71;
-        public static final int OP_I2F = 72;
-        public static final int OP_I2D = 73;
-        public static final int OP_L2I = 74;
-        public static final int OP_L2F = 75;
-        public static final int OP_L2D = 76;
-        public static final int OP_F2I = 77;
-        public static final int OP_F2L = 78;
-        public static final int OP_F2D = 79;
-        public static final int OP_D2I = 80;
-        public static final int OP_D2L = 81;
-        public static final int OP_D2F = 82;
-        public static final int OP_IALOAD = 83;
-        public static final int OP_BALOAD = 84;
-        public static final int OP_CALOAD = 85;
-        public static final int OP_SALOAD = 86;
-        public static final int OP_IASTORE = 87;
-        public static final int OP_BASTORE = 88;
-        public static final int OP_CASTORE = 89;
-        public static final int OP_SASTORE = 90;
-        public static final int OP_NEW = 91;
-        public static final int OP_ANEWARRAY = 92;
-        public static final int OP_NEWARRAY = 93;
-        public static final int OP_MULTIANEWARRAY = 94;
-        public static final int OP_CHECKCAST = 95;
-        public static final int OP_INSTANCEOF = 96;
-        public static final int OP_GETSTATIC = 97;
-        public static final int OP_PUTSTATIC = 98;
-        public static final int OP_GETFIELD = 99;
-        public static final int OP_PUTFIELD = 100;
-        public static final int OP_INVOKEVIRTUAL = 101;
-        public static final int OP_INVOKESPECIAL = 102;
-        public static final int OP_INVOKEINTERFACE = 103;
-        public static final int OP_INVOKEDYNAMIC = 104;
-        public static final int OP_IFNULL = 105;
-        public static final int OP_IFNONNULL = 106;
-        public static final int OP_IF_ACMPEQ = 107;
-        public static final int OP_IF_ACMPNE = 108;
-        public static final int OP_TABLESWITCH = 109;
-        public static final int OP_LOOKUPSWITCH = 110;
-        public static final int OP_GOTO_W = 111;
-        public static final int OP_IFNULL_W = 112;
-        public static final int OP_IFNONNULL_W = 113;
-        public static final int OP_IF_ACMPEQ_W = 114;
-        public static final int OP_IF_ACMPNE_W = 115;
-        public static final int OP_IF_ICMPEQ_W = 116;
-        public static final int OP_IF_ICMPNE_W = 117;
-        public static final int OP_IF_ICMPLT_W = 118;
-        public static final int OP_IF_ICMPLE_W = 119;
-        public static final int OP_IF_ICMPGT_W = 120;
-        public static final int OP_IF_ICMPGE_W = 121;
+        public static final int OP_POP = 12;
+        public static final int OP_POP2 = 13;
+        public static final int OP_LOAD = 14;
+        public static final int OP_IF_ICMPEQ = 15;
+        public static final int OP_IF_ICMPNE = 16;
+        public static final int OP_GOTO = 17;
+        public static final int OP_STORE = 18;
+        public static final int OP_AND = 19;
+        public static final int OP_OR = 20;
+        public static final int OP_XOR = 21;
+        public static final int OP_SHL = 22;
+        public static final int OP_SHR = 23;
+        public static final int OP_USHR = 24;
+        public static final int OP_IF_ICMPLT = 25;
+        public static final int OP_IF_ICMPLE = 26;
+        public static final int OP_IF_ICMPGT = 27;
+        public static final int OP_IF_ICMPGE = 28;
+        public static final int OP_I2L = 29;
+        public static final int OP_I2B = 30;
+        public static final int OP_I2C = 31;
+        public static final int OP_I2S = 32;
+        public static final int OP_NEG = 33;
+        public static final int OP_ALOAD = 34;
+        public static final int OP_ASTORE = 35;
+        public static final int OP_AALOAD = 36;
+        public static final int OP_AASTORE = 37;
+        public static final int OP_INVOKESTATIC = 38;
+        public static final int OP_LLOAD = 39;
+        public static final int OP_FLOAD = 40;
+        public static final int OP_DLOAD = 41;
+        public static final int OP_LSTORE = 42;
+        public static final int OP_FSTORE = 43;
+        public static final int OP_DSTORE = 44;
+        public static final int OP_LADD = 45;
+        public static final int OP_LSUB = 46;
+        public static final int OP_LMUL = 47;
+        public static final int OP_LDIV = 48;
+        public static final int OP_FADD = 49;
+        public static final int OP_FSUB = 50;
+        public static final int OP_FMUL = 51;
+        public static final int OP_FDIV = 52;
+        public static final int OP_DADD = 53;
+        public static final int OP_DSUB = 54;
+        public static final int OP_DMUL = 55;
+        public static final int OP_DDIV = 56;
+        public static final int OP_LDC = 57;
+        public static final int OP_LDC_W = 58;
+        public static final int OP_LDC2_W = 59;
+        public static final int OP_FCONST_0 = 60;
+        public static final int OP_FCONST_1 = 61;
+        public static final int OP_FCONST_2 = 62;
+        public static final int OP_DCONST_0 = 63;
+        public static final int OP_DCONST_1 = 64;
+        public static final int OP_LCONST_0 = 65;
+        public static final int OP_LCONST_1 = 66;
+        public static final int OP_IINC = 67;
+        public static final int OP_LAND = 68;
+        public static final int OP_LOR = 69;
+        public static final int OP_LXOR = 70;
+        public static final int OP_LSHL = 71;
+        public static final int OP_LSHR = 72;
+        public static final int OP_LUSHR = 73;
+        public static final int OP_I2F = 74;
+        public static final int OP_I2D = 75;
+        public static final int OP_L2I = 76;
+        public static final int OP_L2F = 77;
+        public static final int OP_L2D = 78;
+        public static final int OP_F2I = 79;
+        public static final int OP_F2L = 80;
+        public static final int OP_F2D = 81;
+        public static final int OP_D2I = 82;
+        public static final int OP_D2L = 83;
+        public static final int OP_D2F = 84;
+        public static final int OP_IALOAD = 85;
+        public static final int OP_LALOAD = 86;
+        public static final int OP_FALOAD = 87;
+        public static final int OP_DALOAD = 88;
+        public static final int OP_BALOAD = 89;
+        public static final int OP_CALOAD = 90;
+        public static final int OP_SALOAD = 91;
+        public static final int OP_IASTORE = 92;
+        public static final int OP_LASTORE = 93;
+        public static final int OP_FASTORE = 94;
+        public static final int OP_DASTORE = 95;
+        public static final int OP_BASTORE = 96;
+        public static final int OP_CASTORE = 97;
+        public static final int OP_SASTORE = 98;
+        public static final int OP_NEW = 99;
+        public static final int OP_ANEWARRAY = 100;
+        public static final int OP_NEWARRAY = 101;
+        public static final int OP_MULTIANEWARRAY = 102;
+        public static final int OP_CHECKCAST = 103;
+        public static final int OP_INSTANCEOF = 104;
+        public static final int OP_GETSTATIC = 105;
+        public static final int OP_PUTSTATIC = 106;
+        public static final int OP_GETFIELD = 107;
+        public static final int OP_PUTFIELD = 108;
+        public static final int OP_INVOKEVIRTUAL = 109;
+        public static final int OP_INVOKESPECIAL = 110;
+        public static final int OP_INVOKEINTERFACE = 111;
+        public static final int OP_INVOKEDYNAMIC = 112;
+        public static final int OP_IFNULL = 113;
+        public static final int OP_IFNONNULL = 114;
+        public static final int OP_IF_ACMPEQ = 115;
+        public static final int OP_IF_ACMPNE = 116;
+        public static final int OP_TABLESWITCH = 117;
+        public static final int OP_LOOKUPSWITCH = 118;
+        public static final int OP_GOTO_W = 119;
+        public static final int OP_IFNULL_W = 120;
+        public static final int OP_IFNONNULL_W = 121;
+        public static final int OP_IF_ACMPEQ_W = 122;
+        public static final int OP_IF_ACMPNE_W = 123;
+        public static final int OP_IF_ICMPEQ_W = 124;
+        public static final int OP_IF_ICMPNE_W = 125;
+        public static final int OP_IF_ICMPLT_W = 126;
+        public static final int OP_IF_ICMPLE_W = 127;
+        public static final int OP_IF_ICMPGT_W = 128;
+        public static final int OP_IF_ICMPGE_W = 129;
+        public static final int OP_DUP_X1 = 130;
+        public static final int OP_DUP_X2 = 131;
+        public static final int OP_DUP2 = 132;
+        public static final int OP_DUP2_X1 = 133;
+        public static final int OP_DUP2_X2 = 134;
     }
 
     /**
@@ -234,6 +268,7 @@ public class VmTranslator {
         fieldRefs.clear();
         tableSwitches.clear();
         lookupSwitches.clear();
+        constantPool.clear();
         Map<LabelNode, Integer> labelIds = new HashMap<>();
         int index = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -400,6 +435,15 @@ public class VmTranslator {
                 case Opcodes.IALOAD:
                     result.add(new Instruction(VmOpcodes.OP_IALOAD, 0));
                     break;
+                case Opcodes.LALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_LALOAD, 0));
+                    break;
+                case Opcodes.FALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_FALOAD, 0));
+                    break;
+                case Opcodes.DALOAD:
+                    result.add(new Instruction(VmOpcodes.OP_DALOAD, 0));
+                    break;
                 case Opcodes.BALOAD:
                     result.add(new Instruction(VmOpcodes.OP_BALOAD, 0));
                     break;
@@ -411,6 +455,15 @@ public class VmTranslator {
                     break;
                 case Opcodes.IASTORE:
                     result.add(new Instruction(VmOpcodes.OP_IASTORE, 0));
+                    break;
+                case Opcodes.LASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_LASTORE, 0));
+                    break;
+                case Opcodes.FASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_FASTORE, 0));
+                    break;
+                case Opcodes.DASTORE:
+                    result.add(new Instruction(VmOpcodes.OP_DASTORE, 0));
                     break;
                 case Opcodes.BASTORE:
                     result.add(new Instruction(VmOpcodes.OP_BASTORE, 0));
@@ -516,16 +569,15 @@ public class VmTranslator {
                     break;
                 case Opcodes.LDC:
                     Object cst = ((LdcInsnNode) insn).cst;
-                    if (cst instanceof Integer) {
-                        result.add(new Instruction(VmOpcodes.OP_LDC, (Integer) cst));
-                    } else if (cst instanceof Float) {
-                        result.add(new Instruction(VmOpcodes.OP_LDC, Float.floatToIntBits((Float) cst)));
-                    } else if (cst instanceof Long) {
-                        result.add(new Instruction(VmOpcodes.OP_LDC2_W, (Long) cst));
-                    } else if (cst instanceof Double) {
-                        result.add(new Instruction(VmOpcodes.OP_LDC2_W, Double.doubleToLongBits((Double) cst)));
-                    } else {
+                    int constantIndex = addToConstantPool(cst);
+                    if (constantIndex == -1) {
                         return null; // unsupported constant
+                    }
+
+                    if (cst instanceof Long || cst instanceof Double) {
+                        result.add(new Instruction(VmOpcodes.OP_LDC2_W, constantIndex));
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_LDC, constantIndex));
                     }
                     break;
                 case Opcodes.ISTORE:
@@ -726,6 +778,12 @@ public class VmTranslator {
                     result.add(new Instruction(op, id));
                     break;
                 }
+                case Opcodes.POP:
+                    result.add(new Instruction(VmOpcodes.OP_POP, 0));
+                    break;
+                case Opcodes.POP2:
+                    result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                    break;
                 case -1: // labels/frames/lines
                     break;
                 default:
@@ -749,6 +807,47 @@ public class VmTranslator {
         }
         sb.append('}');
         return sb.toString();
+    }
+
+    /** Add a constant to the constant pool and return its index. Returns -1 if unsupported. */
+    public int addToConstantPool(Object constant) {
+        ConstantPoolEntry.Type type;
+        Object value;
+
+        if (constant instanceof Integer) {
+            type = ConstantPoolEntry.Type.INTEGER;
+            value = constant;
+        } else if (constant instanceof Float) {
+            type = ConstantPoolEntry.Type.FLOAT;
+            value = constant;
+        } else if (constant instanceof Long) {
+            type = ConstantPoolEntry.Type.LONG;
+            value = constant;
+        } else if (constant instanceof Double) {
+            type = ConstantPoolEntry.Type.DOUBLE;
+            value = constant;
+        } else if (constant instanceof String) {
+            type = ConstantPoolEntry.Type.STRING;
+            value = constant;
+        } else if (constant instanceof org.objectweb.asm.Type) {
+            type = ConstantPoolEntry.Type.CLASS;
+            value = ((org.objectweb.asm.Type) constant).getInternalName();
+        } else {
+            // Unsupported constant type (MethodHandle, MethodType, etc.)
+            return -1;
+        }
+
+        // Check if constant already exists in pool
+        for (int i = 0; i < constantPool.size(); i++) {
+            ConstantPoolEntry entry = constantPool.get(i);
+            if (entry.type == type && entry.value.equals(value)) {
+                return i;
+            }
+        }
+
+        // Add new constant to pool
+        constantPool.add(new ConstantPoolEntry(type, value));
+        return constantPool.size() - 1;
     }
 }
 

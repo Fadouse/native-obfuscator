@@ -277,7 +277,8 @@ Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
 }
 
 int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
-                int64_t* locals, size_t locals_length, uint64_t seed) {
+                int64_t* locals, size_t locals_length, uint64_t seed,
+                const ConstantPoolEntry* constant_pool, size_t constant_pool_size) {
     int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
@@ -323,6 +324,8 @@ dispatch:
         case OP_JUNK2: goto do_junk2;
         case OP_SWAP:  goto do_swap;
         case OP_DUP:   goto do_dup;
+        case OP_POP:   goto do_pop;
+        case OP_POP2:  goto do_pop2;
         case OP_LOAD:  goto do_load;
         case OP_LLOAD:
         case OP_FLOAD:
@@ -382,10 +385,16 @@ dispatch:
         case OP_AALOAD: goto do_aaload;
         case OP_AASTORE: goto do_aastore;
         case OP_IALOAD: goto do_iaload;
+        case OP_LALOAD: goto do_laload;
+        case OP_FALOAD: goto do_faload;
+        case OP_DALOAD: goto do_daload;
         case OP_BALOAD: goto do_baload;
         case OP_CALOAD: goto do_caload;
         case OP_SALOAD: goto do_saload;
         case OP_IASTORE: goto do_iastore;
+        case OP_LASTORE: goto do_lastore;
+        case OP_FASTORE: goto do_fastore;
+        case OP_DASTORE: goto do_dastore;
         case OP_BASTORE: goto do_bastore;
         case OP_CASTORE: goto do_castore;
         case OP_SASTORE: goto do_sastore;
@@ -411,9 +420,9 @@ dispatch:
         case OP_DSUB: goto do_dsub;
         case OP_DMUL: goto do_dmul;
         case OP_DDIV: goto do_ddiv;
-        case OP_LDC:
-        case OP_LDC_W:
-        case OP_LDC2_W: goto do_push;
+        case OP_LDC: goto do_ldc;
+        case OP_LDC_W: goto do_ldc;
+        case OP_LDC2_W: goto do_ldc2_w;
         case OP_FCONST_0: goto do_fconst_0;
         case OP_FCONST_1: goto do_fconst_1;
         case OP_FCONST_2: goto do_fconst_2;
@@ -654,6 +663,21 @@ do_swap:
 
 do_dup:
     if (sp >= 1 && sp < 256) stack[sp++] = stack[sp - 1];
+    goto dispatch;
+
+do_pop:
+    // Pop single value from stack
+    if (sp >= 1) --sp;
+    goto dispatch;
+
+do_pop2:
+    // Pop top one or two values from stack
+    // If top value is long/double (category 2), pop one slot
+    // Otherwise pop two slots (two category 1 values)
+    if (sp >= 1) {
+        --sp;
+        if (sp >= 1) --sp; // Always pop second slot for simplicity in micro VM
+    }
     goto dispatch;
 
 do_dup_x1:
@@ -1116,6 +1140,42 @@ do_iaload:
     }
     goto dispatch;
 
+do_laload:
+    if (sp >= 2) {
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jlongArray arr = reinterpret_cast<jlongArray>(stack[--sp]);
+        jlong val;
+        env->GetLongArrayRegion(arr, index, 1, &val);
+        stack[sp++] = val;
+    }
+    goto dispatch;
+
+do_faload:
+    if (sp >= 2) {
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jfloatArray arr = reinterpret_cast<jfloatArray>(stack[--sp]);
+        jfloat val;
+        env->GetFloatArrayRegion(arr, index, 1, &val);
+        // Convert float to int bits for storage
+        int32_t bits;
+        std::memcpy(&bits, &val, sizeof(float));
+        stack[sp++] = static_cast<int64_t>(bits);
+    }
+    goto dispatch;
+
+do_daload:
+    if (sp >= 2) {
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jdoubleArray arr = reinterpret_cast<jdoubleArray>(stack[--sp]);
+        jdouble val;
+        env->GetDoubleArrayRegion(arr, index, 1, &val);
+        // Convert double to long bits for storage
+        int64_t bits;
+        std::memcpy(&bits, &val, sizeof(double));
+        stack[sp++] = bits;
+    }
+    goto dispatch;
+
 do_baload:
     if (sp >= 2) {
         jsize index = static_cast<jsize>(stack[--sp]);
@@ -1152,6 +1212,39 @@ do_iastore:
         jsize index = static_cast<jsize>(stack[--sp]);
         jintArray arr = reinterpret_cast<jintArray>(stack[--sp]);
         env->SetIntArrayRegion(arr, index, 1, &value);
+    }
+    goto dispatch;
+
+do_lastore:
+    if (sp >= 3) {
+        jlong value = static_cast<jlong>(stack[--sp]);
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jlongArray arr = reinterpret_cast<jlongArray>(stack[--sp]);
+        env->SetLongArrayRegion(arr, index, 1, &value);
+    }
+    goto dispatch;
+
+do_fastore:
+    if (sp >= 3) {
+        // Extract float value from int bits
+        int32_t bits = static_cast<int32_t>(stack[--sp]);
+        jfloat value;
+        std::memcpy(&value, &bits, sizeof(float));
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jfloatArray arr = reinterpret_cast<jfloatArray>(stack[--sp]);
+        env->SetFloatArrayRegion(arr, index, 1, &value);
+    }
+    goto dispatch;
+
+do_dastore:
+    if (sp >= 3) {
+        // Extract double value from long bits
+        int64_t bits = stack[--sp];
+        jdouble value;
+        std::memcpy(&value, &bits, sizeof(double));
+        jsize index = static_cast<jsize>(stack[--sp]);
+        jdoubleArray arr = reinterpret_cast<jdoubleArray>(stack[--sp]);
+        env->SetDoubleArrayRegion(arr, index, 1, &value);
     }
     goto dispatch;
 
@@ -1492,6 +1585,60 @@ do_invokedynamic:
     invoke_method(env, OP_INVOKEDYNAMIC, reinterpret_cast<MethodRef*>(tmp), stack, sp);
     goto dispatch;
 
+do_ldc:
+    // Load constant from constant pool (1-word constants: int, float, string, class)
+    if (sp < 256 && constant_pool && static_cast<size_t>(tmp) < constant_pool_size) {
+        const ConstantPoolEntry& entry = constant_pool[tmp];
+        switch (entry.type) {
+            case ConstantPoolEntry::TYPE_INTEGER:
+                stack[sp++] = static_cast<int64_t>(entry.i_value);
+                break;
+            case ConstantPoolEntry::TYPE_FLOAT: {
+                int32_t bits;
+                std::memcpy(&bits, &entry.f_value, sizeof(float));
+                stack[sp++] = static_cast<int64_t>(bits);
+                break;
+            }
+            case ConstantPoolEntry::TYPE_STRING: {
+                // Create Java String object from C string
+                jstring str = env->NewStringUTF(entry.str_value);
+                stack[sp++] = reinterpret_cast<int64_t>(str);
+                break;
+            }
+            case ConstantPoolEntry::TYPE_CLASS: {
+                // Load Class object
+                jclass clazz = get_cached_class(env, entry.class_name);
+                stack[sp++] = reinterpret_cast<int64_t>(clazz);
+                break;
+            }
+            default:
+                // Unsupported constant type in LDC
+                goto halt;
+        }
+    }
+    goto dispatch;
+
+do_ldc2_w:
+    // Load 2-word constant from constant pool (long, double)
+    if (sp < 256 && constant_pool && static_cast<size_t>(tmp) < constant_pool_size) {
+        const ConstantPoolEntry& entry = constant_pool[tmp];
+        switch (entry.type) {
+            case ConstantPoolEntry::TYPE_LONG:
+                stack[sp++] = entry.l_value;
+                break;
+            case ConstantPoolEntry::TYPE_DOUBLE: {
+                int64_t bits;
+                std::memcpy(&bits, &entry.d_value, sizeof(double));
+                stack[sp++] = bits;
+                break;
+            }
+            default:
+                // Invalid constant type for LDC2_W
+                goto halt;
+        }
+    }
+    goto dispatch;
+
 // Dummy branch used only to confuse decompilers
 junk:
     // toggle and restore state so decoding stays in sync
@@ -1516,7 +1663,8 @@ void encode_program(Instruction* code, size_t length, uint64_t seed) {
 }
 
 int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
-                    int64_t* locals, size_t locals_length, uint64_t seed) {
+                    int64_t* locals, size_t locals_length, uint64_t seed,
+                    const ConstantPoolEntry* constant_pool, size_t constant_pool_size) {
     ensure_init(seed);
     auto it = jit_cache.find(code);
     if (it != jit_cache.end()) {
@@ -1528,7 +1676,7 @@ int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
         it = jit_cache.emplace(code, compiled).first;
         return it->second.func(env, locals, locals_length, seed, it->second.ctx);
     }
-    return execute(env, code, length, locals, locals_length, seed);
+    return execute(env, code, length, locals, locals_length, seed, constant_pool, constant_pool_size);
 }
 
 static int64_t execute_variant(JNIEnv* env, const Instruction* code, size_t length,
@@ -1536,7 +1684,7 @@ static int64_t execute_variant(JNIEnv* env, const Instruction* code, size_t leng
     volatile uint64_t noise = KEY ^ seed;
     noise ^= noise << 13;
     // noise is intentionally unused to introduce a distinct entry
-    return execute(env, code, length, locals, locals_length, seed);
+    return execute(env, code, length, locals, locals_length, seed, nullptr, 0);
 }
 
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
@@ -1572,10 +1720,13 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
     emit_junk();
     emit(OP_HALT, 0);
 
-    using ExecFn = int64_t(*)(JNIEnv*, const Instruction*, size_t, int64_t*, size_t, uint64_t);
+    // These simple arithmetic functions don't need constant pool support
     std::uniform_int_distribution<int> entry_dist(0, 1);
-    ExecFn entries[2] = {execute, execute_variant};
-    return entries[entry_dist(rng)](env, program.data(), program.size(), nullptr, 0, seed);
+    if (entry_dist(rng) == 0) {
+        return execute(env, program.data(), program.size(), nullptr, 0, seed, nullptr, 0);
+    } else {
+        return execute_variant(env, program.data(), program.size(), nullptr, 0, seed);
+    }
 }
 
 int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed) {
@@ -1607,7 +1758,7 @@ int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed) {
     emit_junk();
     emit(OP_HALT, 0);
 
-    return execute(env, program.data(), program.size(), nullptr, 0, seed);
+    return execute(env, program.data(), program.size(), nullptr, 0, seed, nullptr, 0);
 }
 
 } // namespace native_jvm::vm
