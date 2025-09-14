@@ -20,6 +20,8 @@ public class VmTranslatorConstLoadTest {
         static float floatLdc() { return 3.5f; }
         static double doubleConst() { return 1.0; }
         static double doubleLdc() { return 6.5; }
+        static String stringConst() { return "hello"; }
+        static Class<?> classConst() { return String.class; }
     }
 
     private Instruction[] translate(String name) throws Exception {
@@ -110,5 +112,31 @@ public class VmTranslatorConstLoadTest {
         Instruction[] code2 = translate("doubleLdc");
         assertEquals(VmOpcodes.OP_LDC2_W, code2[0].opcode);
         assertEquals(Double.doubleToLongBits(6.5), run(code2));
+    }
+
+    @Test
+    public void testStringConstant() throws Exception {
+        ClassReader cr = new ClassReader(ConstSamples.class.getName());
+        ClassNode cn = new ClassNode();
+        cr.accept(cn, 0);
+        MethodNode mn = cn.methods.stream().filter(m -> m.name.equals("stringConst")).findFirst().orElseThrow();
+        VmTranslator translator = new VmTranslator();
+        Instruction[] code = translator.translate(mn);
+        assertNotNull(code);
+        assertEquals(VmOpcodes.OP_LDC, code[0].opcode);
+        assertEquals("hello", translator.getStringRefs().get(0));
+    }
+
+    @Test
+    public void testClassConstant() throws Exception {
+        ClassReader cr = new ClassReader(ConstSamples.class.getName());
+        ClassNode cn = new ClassNode();
+        cr.accept(cn, 0);
+        MethodNode mn = cn.methods.stream().filter(m -> m.name.equals("classConst")).findFirst().orElseThrow();
+        VmTranslator translator = new VmTranslator();
+        Instruction[] code = translator.translate(mn);
+        assertNotNull(code);
+        assertEquals(VmOpcodes.OP_LDC, code[0].opcode);
+        assertEquals("Ljava/lang/String;", translator.getLdcClassRefs().get(0));
     }
 }
