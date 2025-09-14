@@ -137,7 +137,13 @@ enum OpCode : uint8_t {
     OP_DUP2 = 124,         // duplicate top two values
     OP_DUP2_X1 = 125,      // duplicate top two values and insert below third value
     OP_DUP2_X2 = 126,      // duplicate top two values and insert below fourth/fifth value
-    OP_COUNT = 127         // helper constant with number of opcodes
+    OP_ATHROW = 127,       // throw exception from stack top
+    OP_TRY_START = 128,    // start try block and setup exception handling
+    OP_CATCH_HANDLER = 129,// exception catch handler jump
+    OP_FINALLY_HANDLER = 130, // finally block handler
+    OP_EXCEPTION_CHECK = 131, // check if exception occurred and handle
+    OP_EXCEPTION_CLEAR = 132, // clear pending exception
+    OP_COUNT = 133         // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

@@ -438,6 +438,12 @@ dispatch:
         case OP_DUP2: goto do_dup2;
         case OP_DUP2_X1: goto do_dup2_x1;
         case OP_DUP2_X2: goto do_dup2_x2;
+        case OP_ATHROW: goto do_athrow;
+        case OP_TRY_START: goto do_try_start;
+        case OP_CATCH_HANDLER: goto do_catch_handler;
+        case OP_FINALLY_HANDLER: goto do_finally_handler;
+        case OP_EXCEPTION_CHECK: goto do_exception_check;
+        case OP_EXCEPTION_CLEAR: goto do_exception_clear;
         default:       goto halt;
     }
 
@@ -716,6 +722,74 @@ do_dup2_x2:
         stack[sp - 1] = value3;
         stack[sp++] = value2;
         stack[sp++] = value1;
+    }
+    goto dispatch;
+
+do_athrow:
+    // Throw exception - get exception object from stack top
+    if (sp >= 1) {
+        jobject exception = reinterpret_cast<jobject>(stack[sp - 1]);
+        if (exception == nullptr) {
+            // Null exception - throw NullPointerException
+            if (env != nullptr) {
+                jclass npeClass = env->FindClass("java/lang/NullPointerException");
+                if (npeClass) {
+                    env->ThrowNew(npeClass, "Cannot throw null exception");
+                }
+            }
+        } else {
+            // Throw the actual exception
+            if (env != nullptr) {
+                env->Throw(static_cast<jthrowable>(exception));
+            }
+        }
+        --sp; // Pop exception object from stack
+    }
+    goto halt; // Exception throwing terminates execution
+
+do_try_start:
+    // Setup exception handling context
+    // This would typically save current state for exception handling
+    // For simplicity, we just continue execution
+    goto dispatch;
+
+do_catch_handler:
+    // Exception catch handler - jump to catch block
+    // The operand contains the catch block target
+    if (tmp >= 0 && static_cast<size_t>(tmp) < 256) {
+        pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_finally_handler:
+    // Finally block handler - always executed
+    // The operand contains the finally block target
+    if (tmp >= 0 && static_cast<size_t>(tmp) < 256) {
+        pc = static_cast<size_t>(tmp);
+    }
+    goto dispatch;
+
+do_exception_check:
+    // Check if JNI exception occurred and handle it
+    if (env != nullptr && env->ExceptionCheck()) {
+        jthrowable exception = env->ExceptionOccurred();
+        if (exception && sp < 256) {
+            // Push exception onto stack
+            stack[sp++] = reinterpret_cast<int64_t>(exception);
+            env->ExceptionClear(); // Clear the JNI exception
+
+            // Jump to exception handler (operand contains handler target)
+            if (tmp >= 0 && static_cast<size_t>(tmp) < 256) {
+                pc = static_cast<size_t>(tmp);
+            }
+        }
+    }
+    goto dispatch;
+
+do_exception_clear:
+    // Clear pending JNI exception
+    if (env != nullptr && env->ExceptionCheck()) {
+        env->ExceptionClear();
     }
     goto dispatch;
 

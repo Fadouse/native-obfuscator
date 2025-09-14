@@ -230,6 +230,14 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
                         seed, props.get("trycatchhandler")));
                 break;
             }
+            case Opcodes.ATHROW: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_ATHROW, 0, %dLL);%s",
+                        seed, props.get("trycatchhandler")));
+                break;
+            }
             default:
                 // handled via snippets
                 break;

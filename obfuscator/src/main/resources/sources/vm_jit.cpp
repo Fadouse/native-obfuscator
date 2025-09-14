@@ -110,6 +110,59 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                     stack[sp++] = value1;
                 }
                 break;
+            case OP_ATHROW:
+                if (sp >= 1) {
+                    jobject exception = reinterpret_cast<jobject>(stack[sp - 1]);
+                    if (exception == nullptr) {
+                        if (env != nullptr) {
+                            jclass npeClass = env->FindClass("java/lang/NullPointerException");
+                            if (npeClass) {
+                                env->ThrowNew(npeClass, "Cannot throw null exception");
+                            }
+                        }
+                    } else {
+                        if (env != nullptr) {
+                            env->Throw(static_cast<jthrowable>(exception));
+                        }
+                    }
+                    --sp;
+                    return 0; // Exception terminates execution
+                }
+                break;
+            case OP_TRY_START:
+                // Setup exception handling context
+                break;
+            case OP_CATCH_HANDLER:
+                // Jump to catch block
+                if (ins.operand >= 0 && static_cast<size_t>(ins.operand) < prog->ins.size()) {
+                    pc = static_cast<size_t>(ins.operand); // Set PC to handler location
+                }
+                break;
+            case OP_FINALLY_HANDLER:
+                // Jump to finally block
+                if (ins.operand >= 0 && static_cast<size_t>(ins.operand) < prog->ins.size()) {
+                    pc = static_cast<size_t>(ins.operand); // Set PC to handler location
+                }
+                break;
+            case OP_EXCEPTION_CHECK:
+                // Check and handle JNI exception
+                if (env != nullptr && env->ExceptionCheck()) {
+                    jthrowable exception = env->ExceptionOccurred();
+                    if (exception && sp < 256) {
+                        stack[sp++] = reinterpret_cast<int64_t>(exception);
+                        env->ExceptionClear();
+                        if (ins.operand >= 0 && static_cast<size_t>(ins.operand) < prog->ins.size()) {
+                            pc = static_cast<size_t>(ins.operand); // Jump to handler
+                        }
+                    }
+                }
+                break;
+            case OP_EXCEPTION_CLEAR:
+                // Clear JNI exception
+                if (env != nullptr && env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                }
+                break;
             case OP_LOAD:
                 if (sp < 256 && ins.operand >= 0 && static_cast<size_t>(ins.operand) < locals_len)
                     stack[sp++] = locals[static_cast<size_t>(ins.operand)];
