@@ -130,6 +130,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.POP));
         il.add(new InsnNode(Opcodes.ICONST_2));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 4; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_POP));
@@ -145,6 +146,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.POP2));
         il.add(new InsnNode(Opcodes.ICONST_3));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 4; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_POP2));
@@ -159,6 +161,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.DUP));
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 4; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP));
@@ -175,6 +178,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 4; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP_X1));
@@ -193,6 +197,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 6; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP_X2));
@@ -209,6 +214,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 4; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP2));
@@ -228,6 +234,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 6; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP2_X1));
@@ -249,6 +256,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 8; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_DUP2_X2));
@@ -264,6 +272,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.SWAP));
         il.add(new InsnNode(Opcodes.IADD));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 4; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         assertTrue(Arrays.stream(code).anyMatch(i -> i.opcode == VmOpcodes.OP_SWAP));
@@ -285,6 +294,7 @@ public class VmTranslatorStackOpsTest {
         il.add(new InsnNode(Opcodes.SWAP));
         il.add(new InsnNode(Opcodes.ICONST_1));
         il.add(new InsnNode(Opcodes.IRETURN));
+        mn.maxStack = 4; mn.maxLocals = 0;
         Instruction[] code = translate(mn);
         assertNotNull(code);
         // ensure all opcodes are present

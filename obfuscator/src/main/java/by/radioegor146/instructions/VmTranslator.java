@@ -252,7 +252,7 @@ public class VmTranslator {
         try {
             frames = analyzer.analyze("java/lang/Object", method);
         } catch (AnalyzerException e) {
-            return null;
+            frames = new Frame[method.instructions.size()];
         }
 
         Map<LabelNode, Integer> labelIds = new HashMap<>();
