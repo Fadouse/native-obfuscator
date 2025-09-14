@@ -747,6 +747,9 @@ public class VmTranslator {
                 case Opcodes.ARETURN:
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));
                     break;
+                case Opcodes.RETURN:
+                    result.add(new Instruction(VmOpcodes.OP_HALT, 0));
+                    break;
                 case Opcodes.I2B:
                     result.add(new Instruction(VmOpcodes.OP_I2B, 0));
                     break;
