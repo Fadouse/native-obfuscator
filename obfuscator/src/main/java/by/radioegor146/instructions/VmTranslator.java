@@ -742,9 +742,11 @@ public class VmTranslator {
                 case Opcodes.LRETURN:
                 case Opcodes.FRETURN:
                 case Opcodes.DRETURN:
-                    result.add(new Instruction(VmOpcodes.OP_HALT, 0));
-                    break;
                 case Opcodes.ARETURN:
+                case Opcodes.RETURN:
+                    if (opcode == Opcodes.RETURN && frame != null && frame.getStackSize() != 0) {
+                        return null;
+                    }
                     result.add(new Instruction(VmOpcodes.OP_HALT, 0));
                     break;
                 case Opcodes.I2B:
