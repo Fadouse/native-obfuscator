@@ -29,6 +29,8 @@ public class VmTranslator {
     private final List<FieldRefInfo> fieldRefs = new ArrayList<>();
     private final List<MethodRefInfo> methodRefs = new ArrayList<>();
     private final List<String> classRefs = new ArrayList<>();
+    private final List<String> stringRefs = new ArrayList<>();
+    private final List<String> classLdcRefs = new ArrayList<>();
 
     public VmTranslator() {
         this(false);
@@ -95,9 +97,29 @@ public class VmTranslator {
         return classRefs;
     }
 
+    public List<String> getStringRefs() {
+        return stringRefs;
+    }
+
+    public List<String> getLdcClassRefs() {
+        return classLdcRefs;
+    }
+
     private void ensureClassRefCapacity(int index) {
         while (classRefs.size() <= index) {
             classRefs.add(null);
+        }
+    }
+
+    private void ensureStringRefCapacity(int index) {
+        while (stringRefs.size() <= index) {
+            stringRefs.add(null);
+        }
+    }
+
+    private void ensureLdcClassRefCapacity(int index) {
+        while (classLdcRefs.size() <= index) {
+            classLdcRefs.add(null);
         }
     }
 
@@ -282,6 +304,8 @@ public class VmTranslator {
         fieldRefs.clear();
         methodRefs.clear();
         classRefs.clear();
+        stringRefs.clear();
+        classLdcRefs.clear();
         tableSwitches.clear();
         lookupSwitches.clear();
 
@@ -306,6 +330,10 @@ public class VmTranslator {
         List<Instruction> result = new ArrayList<>();
         Map<String, Integer> classIds = new HashMap<>();
         int classIndex = 0;
+        Map<String, Integer> stringIds = new HashMap<>();
+        int stringIndex = 0;
+        Map<String, Integer> ldcClassIds = new HashMap<>();
+        int ldcClassIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
         int fieldIndex = 0;
         Map<String, Integer> methodIds = new HashMap<>();
@@ -633,6 +661,29 @@ public class VmTranslator {
                         result.add(new Instruction(VmOpcodes.OP_LDC2_W, (Long) cst));
                     } else if (cst instanceof Double) {
                         result.add(new Instruction(VmOpcodes.OP_LDC2_W, Double.doubleToLongBits((Double) cst)));
+                    } else if (cst instanceof String) {
+                        String s = (String) cst;
+                        Integer idObj = stringIds.get(s);
+                        if (idObj == null) {
+                            idObj = stringIndex++;
+                            stringIds.put(s, idObj);
+                            ensureStringRefCapacity(idObj);
+                            stringRefs.set(idObj, s);
+                        }
+                        long operand = ((long) idObj & 0xFFFFFFFFL) | (1L << 32);
+                        result.add(new Instruction(VmOpcodes.OP_LDC, operand));
+                    } else if (cst instanceof Type) {
+                        Type t = (Type) cst;
+                        String desc = t.getDescriptor();
+                        Integer idObj = ldcClassIds.get(desc);
+                        if (idObj == null) {
+                            idObj = ldcClassIndex++;
+                            ldcClassIds.put(desc, idObj);
+                            ensureLdcClassRefCapacity(idObj);
+                            classLdcRefs.set(idObj, desc);
+                        }
+                        long operand = ((long) idObj & 0xFFFFFFFFL) | (2L << 32);
+                        result.add(new Instruction(VmOpcodes.OP_LDC, operand));
                     } else {
                         return null; // unsupported constant
                     }
