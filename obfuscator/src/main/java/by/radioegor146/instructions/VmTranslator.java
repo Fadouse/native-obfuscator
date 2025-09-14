@@ -1,6 +1,8 @@
 package by.radioegor146.instructions;
 
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.AnalyzerException;
@@ -8,6 +10,11 @@ import org.objectweb.asm.tree.analysis.BasicInterpreter;
 import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
 
+import java.lang.invoke.CallSite;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Method;
 import java.util.*;
 
 /**
@@ -791,8 +798,36 @@ public class VmTranslator {
                     result.add(new Instruction(op, id));
                     break;
                 }
-                case Opcodes.INVOKEDYNAMIC:
-                    return null;
+                case Opcodes.INVOKEDYNAMIC: {
+                    InvokeDynamicInsnNode indy = (InvokeDynamicInsnNode) insn;
+                    try {
+                        Handle bsm = indy.bsm;
+                        Class<?> bsmOwner = Class.forName(bsm.getOwner().replace('/', '.'));
+                        MethodType bsmType = MethodType.fromMethodDescriptorString(bsm.getDesc(), bsmOwner.getClassLoader());
+                        MethodHandle bsmHandle = MethodHandles.lookup().findStatic(bsmOwner, bsm.getName(), bsmType);
+                        Object[] args = new Object[3 + indy.bsmArgs.length];
+                        args[0] = MethodHandles.lookup();
+                        args[1] = indy.name;
+                        args[2] = MethodType.fromMethodDescriptorString(indy.desc, bsmOwner.getClassLoader());
+                        System.arraycopy(indy.bsmArgs, 0, args, 3, indy.bsmArgs.length);
+                        CallSite cs = (CallSite) bsmHandle.invokeWithArguments(args);
+                        MethodHandle targetHandle = cs.getTarget();
+                        Method target = MethodHandles.reflectAs(Method.class, targetHandle);
+                        String owner = Type.getInternalName(target.getDeclaringClass());
+                        String desc = Type.getMethodDescriptor(target);
+                        String key = owner + '.' + target.getName() + desc;
+                        Integer id = methodIds.get(key);
+                        if (id == null) {
+                            id = methodIndex++;
+                            methodIds.put(key, id);
+                            methodRefs.add(new MethodRefInfo(owner, target.getName(), desc));
+                        }
+                        result.add(new Instruction(VmOpcodes.OP_INVOKEDYNAMIC, id));
+                    } catch (Throwable t) {
+                        return null;
+                    }
+                    break;
+                }
                 case Opcodes.GETSTATIC:
                 case Opcodes.PUTSTATIC:
                 case Opcodes.GETFIELD:
