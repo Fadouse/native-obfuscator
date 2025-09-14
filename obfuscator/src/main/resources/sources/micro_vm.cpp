@@ -433,6 +433,11 @@ dispatch:
         case OP_INVOKESPECIAL: goto do_invokespecial;
         case OP_INVOKEINTERFACE: goto do_invokeinterface;
         case OP_INVOKEDYNAMIC: goto do_invokedynamic;
+        case OP_DUP_X1: goto do_dup_x1;
+        case OP_DUP_X2: goto do_dup_x2;
+        case OP_DUP2: goto do_dup2;
+        case OP_DUP2_X1: goto do_dup2_x1;
+        case OP_DUP2_X2: goto do_dup2_x2;
         default:       goto halt;
     }
 
@@ -643,6 +648,75 @@ do_swap:
 
 do_dup:
     if (sp >= 1 && sp < 256) stack[sp++] = stack[sp - 1];
+    goto dispatch;
+
+do_dup_x1:
+    // Duplicate top value and insert below second value
+    // Stack: ..., value2, value1 -> ..., value1, value2, value1
+    if (sp >= 2 && sp < 256) {
+        int64_t value1 = stack[sp - 1];
+        int64_t value2 = stack[sp - 2];
+        stack[sp - 2] = value1;
+        stack[sp - 1] = value2;
+        stack[sp++] = value1;
+    }
+    goto dispatch;
+
+do_dup_x2:
+    // Duplicate top value and insert below third value
+    // Stack: ..., value3, value2, value1 -> ..., value1, value3, value2, value1
+    if (sp >= 3 && sp < 256) {
+        int64_t value1 = stack[sp - 1];
+        int64_t value2 = stack[sp - 2];
+        int64_t value3 = stack[sp - 3];
+        stack[sp - 3] = value1;
+        stack[sp - 2] = value3;
+        stack[sp - 1] = value2;
+        stack[sp++] = value1;
+    }
+    goto dispatch;
+
+do_dup2:
+    // Duplicate top two values
+    // Stack: ..., value2, value1 -> ..., value2, value1, value2, value1
+    if (sp >= 2 && sp + 1 < 256) {
+        int64_t value1 = stack[sp - 1];
+        int64_t value2 = stack[sp - 2];
+        stack[sp++] = value2;
+        stack[sp++] = value1;
+    }
+    goto dispatch;
+
+do_dup2_x1:
+    // Duplicate top two values and insert below third value
+    // Stack: ..., value3, value2, value1 -> ..., value2, value1, value3, value2, value1
+    if (sp >= 3 && sp + 1 < 256) {
+        int64_t value1 = stack[sp - 1];
+        int64_t value2 = stack[sp - 2];
+        int64_t value3 = stack[sp - 3];
+        stack[sp - 3] = value2;
+        stack[sp - 2] = value1;
+        stack[sp - 1] = value3;
+        stack[sp++] = value2;
+        stack[sp++] = value1;
+    }
+    goto dispatch;
+
+do_dup2_x2:
+    // Duplicate top two values and insert below fourth/fifth value
+    // Stack: ..., value4, value3, value2, value1 -> ..., value2, value1, value4, value3, value2, value1
+    if (sp >= 4 && sp + 1 < 256) {
+        int64_t value1 = stack[sp - 1];
+        int64_t value2 = stack[sp - 2];
+        int64_t value3 = stack[sp - 3];
+        int64_t value4 = stack[sp - 4];
+        stack[sp - 4] = value2;
+        stack[sp - 3] = value1;
+        stack[sp - 2] = value4;
+        stack[sp - 1] = value3;
+        stack[sp++] = value2;
+        stack[sp++] = value1;
+    }
     goto dispatch;
 
 do_load:

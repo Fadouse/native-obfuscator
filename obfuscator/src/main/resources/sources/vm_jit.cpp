@@ -56,6 +56,60 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
             case OP_DUP:
                 if (sp >= 1 && sp < 256) stack[sp++] = stack[sp-1];
                 break;
+            case OP_DUP_X1:
+                if (sp >= 2 && sp < 256) {
+                    int64_t value1 = stack[sp - 1];
+                    int64_t value2 = stack[sp - 2];
+                    stack[sp - 2] = value1;
+                    stack[sp - 1] = value2;
+                    stack[sp++] = value1;
+                }
+                break;
+            case OP_DUP_X2:
+                if (sp >= 3 && sp < 256) {
+                    int64_t value1 = stack[sp - 1];
+                    int64_t value2 = stack[sp - 2];
+                    int64_t value3 = stack[sp - 3];
+                    stack[sp - 3] = value1;
+                    stack[sp - 2] = value3;
+                    stack[sp - 1] = value2;
+                    stack[sp++] = value1;
+                }
+                break;
+            case OP_DUP2:
+                if (sp >= 2 && sp + 1 < 256) {
+                    int64_t value1 = stack[sp - 1];
+                    int64_t value2 = stack[sp - 2];
+                    stack[sp++] = value2;
+                    stack[sp++] = value1;
+                }
+                break;
+            case OP_DUP2_X1:
+                if (sp >= 3 && sp + 1 < 256) {
+                    int64_t value1 = stack[sp - 1];
+                    int64_t value2 = stack[sp - 2];
+                    int64_t value3 = stack[sp - 3];
+                    stack[sp - 3] = value2;
+                    stack[sp - 2] = value1;
+                    stack[sp - 1] = value3;
+                    stack[sp++] = value2;
+                    stack[sp++] = value1;
+                }
+                break;
+            case OP_DUP2_X2:
+                if (sp >= 4 && sp + 1 < 256) {
+                    int64_t value1 = stack[sp - 1];
+                    int64_t value2 = stack[sp - 2];
+                    int64_t value3 = stack[sp - 3];
+                    int64_t value4 = stack[sp - 4];
+                    stack[sp - 4] = value2;
+                    stack[sp - 3] = value1;
+                    stack[sp - 2] = value4;
+                    stack[sp - 1] = value3;
+                    stack[sp++] = value2;
+                    stack[sp++] = value1;
+                }
+                break;
             case OP_LOAD:
                 if (sp < 256 && ins.operand >= 0 && static_cast<size_t>(ins.operand) < locals_len)
                     stack[sp++] = locals[static_cast<size_t>(ins.operand)];

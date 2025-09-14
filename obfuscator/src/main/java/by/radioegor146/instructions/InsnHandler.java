@@ -190,6 +190,46 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
                         props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
                 break;
             }
+            case Opcodes.DUP_X1: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP_X1, 0, %dLL);%s",
+                        seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.DUP_X2: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP_X2, 0, %dLL);%s",
+                        seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.DUP2: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP2, 0, %dLL);%s",
+                        seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.DUP2_X1: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP2_X1, 0, %dLL);%s",
+                        seed, props.get("trycatchhandler")));
+                break;
+            }
+            case Opcodes.DUP2_X2: {
+                instructionName = null;
+                long seed = ThreadLocalRandom.current().nextLong();
+                context.output.append(String.format(
+                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP2_X2, 0, %dLL);%s",
+                        seed, props.get("trycatchhandler")));
+                break;
+            }
             default:
                 // handled via snippets
                 break;
@@ -227,8 +267,8 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.F2L:
             case Opcodes.I2D:
             case Opcodes.I2L:
-            case Opcodes.DUP_X2:
             case Opcodes.DUP_X1:
+            case Opcodes.DUP_X2:
             case Opcodes.DUP:
             case Opcodes.FCONST_2:
             case Opcodes.FCONST_1:
@@ -242,8 +282,8 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.ICONST_M1:
                 return currentStackPointer + 1;
             case Opcodes.LCONST_0:
-            case Opcodes.DUP2_X2:
             case Opcodes.DUP2_X1:
+            case Opcodes.DUP2_X2:
             case Opcodes.DUP2:
             case Opcodes.DCONST_1:
             case Opcodes.DCONST_0:
