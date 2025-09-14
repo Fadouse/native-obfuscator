@@ -151,7 +151,19 @@ enum OpCode : uint8_t {
     OP_FINALLY_HANDLER = 138, // finally block handler
     OP_EXCEPTION_CHECK = 139, // check if exception occurred and handle
     OP_EXCEPTION_CLEAR = 140, // clear pending exception
-    OP_COUNT = 141         // helper constant with number of opcodes
+    OP_IREM = 141,         // int remainder
+    OP_LREM = 142,         // long remainder
+    OP_FREM = 143,         // float remainder
+    OP_DREM = 144,         // double remainder
+    OP_LNEG = 145,         // long negate
+    OP_FNEG = 146,         // float negate
+    OP_DNEG = 147,         // double negate
+    OP_LCMP = 148,         // long compare
+    OP_FCMPL = 149,        // float compare (NaN -> -1)
+    OP_FCMPG = 150,        // float compare (NaN -> 1)
+    OP_DCMPL = 151,        // double compare (NaN -> -1)
+    OP_DCMPG = 152,        // double compare (NaN -> 1)
+    OP_COUNT = 153         // helper constant with number of opcodes
 };
 
 // Every field of an instruction is lightly encrypted and decoded at

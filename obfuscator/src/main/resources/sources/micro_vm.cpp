@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <string>
 #include <cstring>
+#include <cmath>
 
 // NOLINTBEGIN - obfuscated control flow by design
 namespace native_jvm::vm {
@@ -453,6 +454,18 @@ dispatch:
         case OP_FINALLY_HANDLER: goto do_finally_handler;
         case OP_EXCEPTION_CHECK: goto do_exception_check;
         case OP_EXCEPTION_CLEAR: goto do_exception_clear;
+        case OP_IREM: goto do_irem;
+        case OP_LREM: goto do_lrem;
+        case OP_FREM: goto do_frem;
+        case OP_DREM: goto do_drem;
+        case OP_LNEG: goto do_lneg;
+        case OP_FNEG: goto do_fneg;
+        case OP_DNEG: goto do_dneg;
+        case OP_LCMP: goto do_lcmp;
+        case OP_FCMPL: goto do_fcmpl;
+        case OP_FCMPG: goto do_fcmpg;
+        case OP_DCMPL: goto do_dcmpl;
+        case OP_DCMPG: goto do_dcmpg;
         default:       goto halt;
     }
 
@@ -814,6 +827,189 @@ do_exception_clear:
     // Clear pending JNI exception
     if (env != nullptr && env->ExceptionCheck()) {
         env->ExceptionClear();
+    }
+    goto dispatch;
+
+do_irem:
+    // Integer remainder (modulo)
+    if (sp >= 2) {
+        int64_t b = stack[--sp];
+        int64_t a = stack[--sp];
+        if (b != 0) {
+            stack[sp++] = static_cast<int32_t>(a) % static_cast<int32_t>(b);
+        } else {
+            // Division by zero - Java would throw ArithmeticException
+            stack[sp++] = 0; // Simplified handling
+        }
+    }
+    goto dispatch;
+
+do_lrem:
+    // Long remainder (modulo)
+    if (sp >= 2) {
+        int64_t b = stack[--sp];
+        int64_t a = stack[--sp];
+        if (b != 0) {
+            stack[sp++] = a % b;
+        } else {
+            // Division by zero - Java would throw ArithmeticException
+            stack[sp++] = 0; // Simplified handling
+        }
+    }
+    goto dispatch;
+
+do_frem:
+    // Float remainder (modulo)
+    if (sp >= 2) {
+        int64_t b_bits = stack[--sp];
+        int64_t a_bits = stack[--sp];
+        float b, a;
+        std::memcpy(&b, &b_bits, sizeof(float));
+        std::memcpy(&a, &a_bits, sizeof(float));
+        float result = fmodf(a, b);
+        int32_t result_bits;
+        std::memcpy(&result_bits, &result, sizeof(float));
+        stack[sp++] = static_cast<int64_t>(result_bits);
+    }
+    goto dispatch;
+
+do_drem:
+    // Double remainder (modulo)
+    if (sp >= 2) {
+        int64_t b_bits = stack[--sp];
+        int64_t a_bits = stack[--sp];
+        double b, a;
+        std::memcpy(&b, &b_bits, sizeof(double));
+        std::memcpy(&a, &a_bits, sizeof(double));
+        double result = fmod(a, b);
+        int64_t result_bits;
+        std::memcpy(&result_bits, &result, sizeof(double));
+        stack[sp++] = result_bits;
+    }
+    goto dispatch;
+
+do_lneg:
+    // Long negate
+    if (sp >= 1) {
+        int64_t a = stack[--sp];
+        stack[sp++] = -a;
+    }
+    goto dispatch;
+
+do_fneg:
+    // Float negate
+    if (sp >= 1) {
+        int64_t a_bits = stack[--sp];
+        float a;
+        std::memcpy(&a, &a_bits, sizeof(float));
+        float result = -a;
+        int32_t result_bits;
+        std::memcpy(&result_bits, &result, sizeof(float));
+        stack[sp++] = static_cast<int64_t>(result_bits);
+    }
+    goto dispatch;
+
+do_dneg:
+    // Double negate
+    if (sp >= 1) {
+        int64_t a_bits = stack[--sp];
+        double a;
+        std::memcpy(&a, &a_bits, sizeof(double));
+        double result = -a;
+        int64_t result_bits;
+        std::memcpy(&result_bits, &result, sizeof(double));
+        stack[sp++] = result_bits;
+    }
+    goto dispatch;
+
+do_lcmp:
+    // Long compare: returns -1, 0, or 1
+    if (sp >= 2) {
+        int64_t b = stack[--sp];
+        int64_t a = stack[--sp];
+        if (a > b) stack[sp++] = 1;
+        else if (a < b) stack[sp++] = -1;
+        else stack[sp++] = 0;
+    }
+    goto dispatch;
+
+do_fcmpl:
+    // Float compare with NaN -> -1
+    if (sp >= 2) {
+        int64_t b_bits = stack[--sp];
+        int64_t a_bits = stack[--sp];
+        float b, a;
+        std::memcpy(&b, &b_bits, sizeof(float));
+        std::memcpy(&a, &a_bits, sizeof(float));
+        if (std::isnan(a) || std::isnan(b)) {
+            stack[sp++] = -1; // NaN handling for FCMPL
+        } else if (a > b) {
+            stack[sp++] = 1;
+        } else if (a < b) {
+            stack[sp++] = -1;
+        } else {
+            stack[sp++] = 0;
+        }
+    }
+    goto dispatch;
+
+do_fcmpg:
+    // Float compare with NaN -> 1
+    if (sp >= 2) {
+        int64_t b_bits = stack[--sp];
+        int64_t a_bits = stack[--sp];
+        float b, a;
+        std::memcpy(&b, &b_bits, sizeof(float));
+        std::memcpy(&a, &a_bits, sizeof(float));
+        if (std::isnan(a) || std::isnan(b)) {
+            stack[sp++] = 1; // NaN handling for FCMPG
+        } else if (a > b) {
+            stack[sp++] = 1;
+        } else if (a < b) {
+            stack[sp++] = -1;
+        } else {
+            stack[sp++] = 0;
+        }
+    }
+    goto dispatch;
+
+do_dcmpl:
+    // Double compare with NaN -> -1
+    if (sp >= 2) {
+        int64_t b_bits = stack[--sp];
+        int64_t a_bits = stack[--sp];
+        double b, a;
+        std::memcpy(&b, &b_bits, sizeof(double));
+        std::memcpy(&a, &a_bits, sizeof(double));
+        if (std::isnan(a) || std::isnan(b)) {
+            stack[sp++] = -1; // NaN handling for DCMPL
+        } else if (a > b) {
+            stack[sp++] = 1;
+        } else if (a < b) {
+            stack[sp++] = -1;
+        } else {
+            stack[sp++] = 0;
+        }
+    }
+    goto dispatch;
+
+do_dcmpg:
+    // Double compare with NaN -> 1
+    if (sp >= 2) {
+        int64_t b_bits = stack[--sp];
+        int64_t a_bits = stack[--sp];
+        double b, a;
+        std::memcpy(&b, &b_bits, sizeof(double));
+        std::memcpy(&a, &a_bits, sizeof(double));
+        if (std::isnan(a) || std::isnan(b)) {
+            stack[sp++] = 1; // NaN handling for DCMPG
+        } else if (a > b) {
+            stack[sp++] = 1;
+        } else if (a < b) {
+            stack[sp++] = -1;
+        } else {
+            stack[sp++] = 0;
+        }
     }
     goto dispatch;
 

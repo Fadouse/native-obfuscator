@@ -257,6 +257,18 @@ public class VmTranslator {
         public static final int OP_DUP2 = 132;
         public static final int OP_DUP2_X1 = 133;
         public static final int OP_DUP2_X2 = 134;
+        public static final int OP_IREM = 141;
+        public static final int OP_LREM = 142;
+        public static final int OP_FREM = 143;
+        public static final int OP_DREM = 144;
+        public static final int OP_LNEG = 145;
+        public static final int OP_FNEG = 146;
+        public static final int OP_DNEG = 147;
+        public static final int OP_LCMP = 148;
+        public static final int OP_FCMPL = 149;
+        public static final int OP_FCMPG = 150;
+        public static final int OP_DCMPL = 151;
+        public static final int OP_DCMPG = 152;
     }
 
     /**
@@ -783,6 +795,42 @@ public class VmTranslator {
                     break;
                 case Opcodes.POP2:
                     result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                    break;
+                case Opcodes.IREM:
+                    result.add(new Instruction(VmOpcodes.OP_IREM, 0));
+                    break;
+                case Opcodes.LREM:
+                    result.add(new Instruction(VmOpcodes.OP_LREM, 0));
+                    break;
+                case Opcodes.FREM:
+                    result.add(new Instruction(VmOpcodes.OP_FREM, 0));
+                    break;
+                case Opcodes.DREM:
+                    result.add(new Instruction(VmOpcodes.OP_DREM, 0));
+                    break;
+                case Opcodes.LNEG:
+                    result.add(new Instruction(VmOpcodes.OP_LNEG, 0));
+                    break;
+                case Opcodes.FNEG:
+                    result.add(new Instruction(VmOpcodes.OP_FNEG, 0));
+                    break;
+                case Opcodes.DNEG:
+                    result.add(new Instruction(VmOpcodes.OP_DNEG, 0));
+                    break;
+                case Opcodes.LCMP:
+                    result.add(new Instruction(VmOpcodes.OP_LCMP, 0));
+                    break;
+                case Opcodes.FCMPL:
+                    result.add(new Instruction(VmOpcodes.OP_FCMPL, 0));
+                    break;
+                case Opcodes.FCMPG:
+                    result.add(new Instruction(VmOpcodes.OP_FCMPG, 0));
+                    break;
+                case Opcodes.DCMPL:
+                    result.add(new Instruction(VmOpcodes.OP_DCMPL, 0));
+                    break;
+                case Opcodes.DCMPG:
+                    result.add(new Instruction(VmOpcodes.OP_DCMPG, 0));
                     break;
                 case -1: // labels/frames/lines
                     break;
