@@ -171,6 +171,8 @@ public class MethodProcessor {
           List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
           List<VmTranslator.MethodRefInfo> methodRefs = vmTranslator.getMethodRefs();
           List<String> classRefs = vmTranslator.getClassRefs();
+          List<String> stringRefs = vmTranslator.getStringRefs();
+          List<String> ldcClassRefs = vmTranslator.getLdcClassRefs();
         if (vmCode != null && vmCode.length > 0) {
               output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
                       VmTranslator.serialize(vmCode)));
@@ -197,6 +199,47 @@ public class MethodProcessor {
                   output.append("                break;\n");
                   output.append("            case native_jvm::vm::OP_MULTIANEWARRAY:\n");
                   output.append("                ins.operand = (static_cast<jlong>(reinterpret_cast<intptr_t>(__ngen_vm_classes[ins.operand >> 32])) << 32) | (ins.operand & 0xFFFFFFFFLL);\n");
+                  output.append("                break;\n");
+                  output.append("        }\n");
+                  output.append("    }\n");
+              }
+              if (!stringRefs.isEmpty()) {
+                  output.append("    jstring __ngen_vm_strings[] = {");
+                  for (int i = 0; i < stringRefs.size(); i++) {
+                      output.append("env->NewStringUTF(").append(context.getStringPool().get(stringRefs.get(i))).append(")");
+                      if (i + 1 < stringRefs.size()) {
+                          output.append(", ");
+                      }
+                  }
+                  output.append(" };\n");
+              }
+              if (!ldcClassRefs.isEmpty()) {
+                  output.append("    jclass __ngen_vm_ldc_classes[] = {");
+                  for (int i = 0; i < ldcClassRefs.size(); i++) {
+                      output.append("env->FindClass(").append(context.getStringPool().get(ldcClassRefs.get(i))).append(")");
+                      if (i + 1 < ldcClassRefs.size()) {
+                          output.append(", ");
+                      }
+                  }
+                  output.append(" };\n");
+              }
+              if (!stringRefs.isEmpty() || !ldcClassRefs.isEmpty()) {
+                  output.append("    for (auto &ins : __ngen_vm_code) {\n");
+                  output.append("        switch (ins.op) {\n");
+                  output.append("            case native_jvm::vm::OP_LDC:\n");
+                  output.append("            case native_jvm::vm::OP_LDC_W:\n");
+                  output.append("                switch (ins.operand >> 32) {\n");
+                  if (!stringRefs.isEmpty()) {
+                      output.append("                    case 1:\n");
+                      output.append("                        ins.operand = reinterpret_cast<jlong>(__ngen_vm_strings[ins.operand & 0xFFFFFFFFLL]);\n");
+                      output.append("                        break;\n");
+                  }
+                  if (!ldcClassRefs.isEmpty()) {
+                      output.append("                    case 2:\n");
+                      output.append("                        ins.operand = reinterpret_cast<jlong>(__ngen_vm_ldc_classes[ins.operand & 0xFFFFFFFFLL]);\n");
+                      output.append("                        break;\n");
+                  }
+                  output.append("                }\n");
                   output.append("                break;\n");
                   output.append("        }\n");
                   output.append("    }\n");
