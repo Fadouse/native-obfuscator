@@ -2,6 +2,11 @@ package by.radioegor146.instructions;
 
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.BasicInterpreter;
+import org.objectweb.asm.tree.analysis.BasicValue;
+import org.objectweb.asm.tree.analysis.Frame;
 
 import java.util.*;
 
@@ -241,6 +246,15 @@ public class VmTranslator {
         fieldRefs.clear();
         tableSwitches.clear();
         lookupSwitches.clear();
+
+        Analyzer<BasicValue> analyzer = new Analyzer<>(new BasicInterpreter());
+        Frame<BasicValue>[] frames;
+        try {
+            frames = analyzer.analyze("java/lang/Object", method);
+        } catch (AnalyzerException e) {
+            return null;
+        }
+
         Map<LabelNode, Integer> labelIds = new HashMap<>();
         int index = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -257,14 +271,21 @@ public class VmTranslator {
         int classIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
         int fieldIndex = 0;
-        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+        int insnIndex = 0;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext(), insnIndex++) {
             int opcode = insn.getOpcode();
+            Frame<BasicValue> frame = insnIndex < frames.length ? frames[insnIndex] : null;
             switch (opcode) {
                 case Opcodes.POP:
                     result.add(new Instruction(VmOpcodes.OP_POP, 0));
                     break;
                 case Opcodes.POP2:
-                    result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                    if (frame != null && frame.getStackSize() > 0 &&
+                            frame.getStack(frame.getStackSize() - 1).getSize() == 2) {
+                        result.add(new Instruction(VmOpcodes.OP_POP, 0));
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                    }
                     break;
                 case Opcodes.DUP:
                     result.add(new Instruction(VmOpcodes.OP_DUP, 0));
@@ -276,7 +297,12 @@ public class VmTranslator {
                     result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
                     break;
                 case Opcodes.DUP2:
-                    result.add(new Instruction(VmOpcodes.OP_DUP2, 0));
+                    if (frame != null && frame.getStackSize() > 0 &&
+                            frame.getStack(frame.getStackSize() - 1).getSize() == 2) {
+                        result.add(new Instruction(VmOpcodes.OP_DUP, 0));
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP2, 0));
+                    }
                     break;
                 case Opcodes.DUP2_X1:
                     result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
