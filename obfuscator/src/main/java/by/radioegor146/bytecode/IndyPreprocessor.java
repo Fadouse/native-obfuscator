@@ -32,8 +32,7 @@ public class IndyPreprocessor implements Preprocessor {
 
 
         switch (platform) {
-            case ANDROID:
-            case STD_JAVA: {
+            case ANDROID: {
                 Type[] bsmArguments = Type.getArgumentTypes(invokeDynamicInsnNode.bsm.getDesc());
                 int targetArgLength = bsmArguments.length - 3;
                 int originArgLength = invokeDynamicInsnNode.bsmArgs.length;
@@ -185,8 +184,9 @@ public class IndyPreprocessor implements Preprocessor {
                 bootstrapInstructions.add(new MethodInsnNode(Opcodes.INVOKEINTERFACE, "java/lang/invoke/CallSite",
                         "getTarget", "()Ljava/lang/invoke/MethodHandle;")); // 2
                 bootstrapInstructions.add(new JumpInsnNode(Opcodes.GOTO, invokeStart)); // 2
+                break;
             }
-            break;
+            case STD_JAVA:
             case HOTSPOT: {
                 bootstrapInstructions.add(new InsnNode(Opcodes.ICONST_1));
                 bootstrapInstructions.add(new TypeInsnNode(Opcodes.ANEWARRAY, "java/lang/Object"));

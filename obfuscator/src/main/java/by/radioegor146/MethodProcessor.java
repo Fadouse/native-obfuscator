@@ -92,9 +92,12 @@ public class MethodProcessor {
     }
 
     public static boolean shouldProcess(MethodNode method) {
-        return !Util.getFlag(method.access, Opcodes.ACC_ABSTRACT) &&
-                !Util.getFlag(method.access, Opcodes.ACC_NATIVE) &&
-                !method.name.equals("<init>");
+        if (Util.getFlag(method.access, Opcodes.ACC_ABSTRACT)) return false;
+        if (Util.getFlag(method.access, Opcodes.ACC_NATIVE)) return false;
+        if (method.name.equals("<init>")) return false;
+        // Skip lambda body methods to avoid subtle JVM/linkage issues in JDK8/21
+        if (method.name.startsWith("lambda$")) return false;
+        return true;
     }
 
     public static String getClassGetter(MethodContext context, String desc) {
@@ -111,6 +114,14 @@ public class MethodProcessor {
         MethodNode method = context.method;
         StringBuilder output = context.output;
 
+        // Do not native-redirect methods of enum classes. Their initialization
+        // and intrinsic methods (values/valueOf) are sensitive to init order
+        // and lead to linkage errors if RegisterNatives is not invoked.
+        if ((context.clazz.access & Opcodes.ACC_ENUM) != 0) {
+            context.skipNative = true;
+            return;
+        }
+
         SpecialMethodProcessor specialMethodProcessor = getSpecialMethodProcessor(method.name);
 
         if (specialMethodProcessor == null) {
@@ -120,6 +131,11 @@ public class MethodProcessor {
         output.append("// ").append(Util.escapeCommentString(method.name)).append(Util.escapeCommentString(method.desc)).append("\n");
 
         String methodName = specialMethodProcessor.preProcess(context);
+        // Some special processors may decide to keep the method as-is (no native redirection)
+        // to preserve JVM semantics (e.g., certain <clinit> cases). In that case, bail out early.
+        if (context.skipNative) {
+            return;
+        }
         methodName = "__ngen_" + methodName.replace('/', '_');
         methodName = Util.escapeCppNameString(methodName);
         context.cppNativeMethodName = methodName;
@@ -168,6 +184,11 @@ public class MethodProcessor {
         boolean useJit = Boolean.getBoolean("nativeobfuscator.jit");
         VmTranslator vmTranslator = new VmTranslator(useJit);
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
+        // Avoid VM translation for interface methods to reduce risk of mismatched
+        // dispatch (default/interface semantics) across JVM versions.
+        if ((context.clazz.access & Opcodes.ACC_INTERFACE) != 0) {
+            vmCode = null;
+        }
         List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
         List<VmTranslator.ConstantPoolEntry> constantPool = vmTranslator.getConstantPool();
         if (vmCode != null && vmCode.length > 0) {
@@ -273,6 +294,13 @@ public class MethodProcessor {
             output.append("    jclass clazz = utils::get_class_from_object(env, obj);\n");
             output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
                     CPP_TYPES[context.ret.getSort()])).append(" }\n");
+        } else {
+            // Be robust: some JVMs/paths may pass null clazz unexpectedly; try to resolve by name
+            output.append("    if (env->IsSameObject(clazz, NULL)) { clazz = env->FindClass(")
+                    .append(context.getStringPool().get(context.clazz.name))
+                    .append("); if (env->ExceptionCheck()) { ")
+                    .append(String.format("return (%s) 0;", CPP_TYPES[context.ret.getSort()]))
+                    .append(" } }\n");
         }
         output.append("    jobject classloader = utils::get_classloader_from_class(env, clazz);\n");
         output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",

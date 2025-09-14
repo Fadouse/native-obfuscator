@@ -359,6 +359,10 @@ namespace native_jvm::utils {
     }
 
     jobject get_classloader_from_class(JNIEnv *env, jclass clazz) {
+        if (clazz == nullptr) {
+            env->FatalError("clazz == null in get_classloader_from_class");
+            return nullptr;
+        }
         jobject result_classloader = env->CallObjectMethod(clazz, get_classloader_method);
         if (env->ExceptionCheck()) {
             return nullptr;

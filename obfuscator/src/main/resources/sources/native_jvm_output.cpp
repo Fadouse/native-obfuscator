@@ -11,6 +11,14 @@ namespace native_jvm {
     reg_method reg_methods[$class_count];
 
     void register_for_class(JNIEnv *env, jclass, jint id, jclass clazz) {
+        // Guard against out-of-range indexes or missing registration entries.
+        // This avoids calling through a null/garbage function pointer and crashing the JVM.
+        if (id < 0 || id >= $class_count) {
+            return;
+        }
+        if (!reg_methods[id]) {
+            return;
+        }
         reg_methods[id](env, clazz);
     }
 

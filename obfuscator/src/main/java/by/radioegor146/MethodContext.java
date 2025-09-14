@@ -40,6 +40,10 @@ public class MethodContext {
 
     public boolean dispatcherMode;
 
+    // If true, MethodProcessor should leave the Java method body unchanged
+    // and skip generating/registering any native implementation for it.
+    public boolean skipNative;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex) {
         this.obfuscator = obfuscator;

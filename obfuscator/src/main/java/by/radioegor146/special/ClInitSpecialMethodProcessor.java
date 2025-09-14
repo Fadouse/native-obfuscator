@@ -11,6 +11,12 @@ public class ClInitSpecialMethodProcessor implements SpecialMethodProcessor {
 
     @Override
     public String preProcess(MethodContext context) {
+        // Avoid transforming <clinit> for classes that are known to be fragile under
+        // redirection on newer JVMs (e.g., enum classes and synthetic switch-map holders).
+        if (shouldKeepOriginalClinit(context)) {
+            context.skipNative = true;
+            return null;
+        }
         String name = String.format("special_clinit_%d_%d", context.classIndex, context.methodIndex);
 
         context.proxyMethod = context.obfuscator.getHiddenMethodsPool().getMethod(name, "(Ljava/lang/Class;)V", methodNode -> {
@@ -37,5 +43,24 @@ public class ClInitSpecialMethodProcessor implements SpecialMethodProcessor {
                 context.proxyMethod.getMethodNode().name,
                 context.proxyMethod.getMethodNode().desc, false));
         instructions.add(new InsnNode(Opcodes.RETURN));
+    }
+    private static boolean shouldKeepOriginalClinit(MethodContext context) {
+        // 1) Enum classes: JVM places special constraints on enum initialization order.
+        boolean isEnum = (context.clazz.access & Opcodes.ACC_ENUM) != 0;
+
+        // 2) Synthetic switch-map holder classes typically look like: one static synthetic int[] field
+        // and only a <clinit> method. These are very sensitive to init ordering.
+        boolean looksLikeSwitchMap = false;
+        if (context.clazz.fields != null && context.clazz.fields.size() == 1) {
+            FieldNode f = (FieldNode) context.clazz.fields.get(0);
+            boolean oneIntArray = "[I".equals(f.desc);
+            boolean isStatic = (f.access & Opcodes.ACC_STATIC) != 0;
+            boolean isSynthetic = (f.access & Opcodes.ACC_SYNTHETIC) != 0;
+            boolean onlyClinit = context.clazz.methods != null
+                    && context.clazz.methods.stream().allMatch(m -> "<clinit>".equals(m.name));
+            looksLikeSwitchMap = oneIntArray && isStatic && isSynthetic && onlyClinit;
+        }
+
+        return isEnum || looksLikeSwitchMap;
     }
 }

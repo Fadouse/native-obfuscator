@@ -139,7 +139,7 @@ public class NativeObfuscator {
         cMakeBuilder.addMainFile("vm_jit.hpp");
         cMakeBuilder.addMainFile("vm_jit.cpp");
 
-        if (platform == Platform.HOTSPOT) {
+        if (platform != Platform.ANDROID) {
             cMakeBuilder.addFlag("USE_HOTSPOT");
         }
 
