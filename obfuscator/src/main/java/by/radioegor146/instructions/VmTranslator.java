@@ -223,6 +223,13 @@ public class VmTranslator {
         public static final int OP_IF_ICMPLE_W = 119;
         public static final int OP_IF_ICMPGT_W = 120;
         public static final int OP_IF_ICMPGE_W = 121;
+        public static final int OP_POP = 122;
+        public static final int OP_POP2 = 123;
+        public static final int OP_DUP_X1 = 124;
+        public static final int OP_DUP_X2 = 125;
+        public static final int OP_DUP2 = 126;
+        public static final int OP_DUP2_X1 = 127;
+        public static final int OP_DUP2_X2 = 128;
     }
 
     /**
@@ -253,6 +260,33 @@ public class VmTranslator {
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             int opcode = insn.getOpcode();
             switch (opcode) {
+                case Opcodes.POP:
+                    result.add(new Instruction(VmOpcodes.OP_POP, 0));
+                    break;
+                case Opcodes.POP2:
+                    result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                    break;
+                case Opcodes.DUP:
+                    result.add(new Instruction(VmOpcodes.OP_DUP, 0));
+                    break;
+                case Opcodes.DUP_X1:
+                    result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                    break;
+                case Opcodes.DUP_X2:
+                    result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                    break;
+                case Opcodes.DUP2:
+                    result.add(new Instruction(VmOpcodes.OP_DUP2, 0));
+                    break;
+                case Opcodes.DUP2_X1:
+                    result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                    break;
+                case Opcodes.DUP2_X2:
+                    result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                    break;
+                case Opcodes.SWAP:
+                    result.add(new Instruction(VmOpcodes.OP_SWAP, 0));
+                    break;
                 case Opcodes.ILOAD:
                     result.add(new Instruction(VmOpcodes.OP_LOAD, ((VarInsnNode) insn).var));
                     break;
