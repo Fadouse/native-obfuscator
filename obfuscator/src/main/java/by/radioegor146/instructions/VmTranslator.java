@@ -2,6 +2,11 @@ package by.radioegor146.instructions;
 
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.BasicInterpreter;
+import org.objectweb.asm.tree.analysis.BasicValue;
+import org.objectweb.asm.tree.analysis.Frame;
 
 import java.util.*;
 
@@ -223,6 +228,13 @@ public class VmTranslator {
         public static final int OP_IF_ICMPLE_W = 119;
         public static final int OP_IF_ICMPGT_W = 120;
         public static final int OP_IF_ICMPGE_W = 121;
+        public static final int OP_POP = 122;
+        public static final int OP_POP2 = 123;
+        public static final int OP_DUP_X1 = 124;
+        public static final int OP_DUP_X2 = 125;
+        public static final int OP_DUP2 = 126;
+        public static final int OP_DUP2_X1 = 127;
+        public static final int OP_DUP2_X2 = 128;
     }
 
     /**
@@ -234,6 +246,15 @@ public class VmTranslator {
         fieldRefs.clear();
         tableSwitches.clear();
         lookupSwitches.clear();
+
+        Analyzer<BasicValue> analyzer = new Analyzer<>(new BasicInterpreter());
+        Frame<BasicValue>[] frames;
+        try {
+            frames = analyzer.analyze("java/lang/Object", method);
+        } catch (AnalyzerException e) {
+            return null;
+        }
+
         Map<LabelNode, Integer> labelIds = new HashMap<>();
         int index = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -250,9 +271,48 @@ public class VmTranslator {
         int classIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
         int fieldIndex = 0;
-        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+        int insnIndex = 0;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext(), insnIndex++) {
             int opcode = insn.getOpcode();
+            Frame<BasicValue> frame = insnIndex < frames.length ? frames[insnIndex] : null;
             switch (opcode) {
+                case Opcodes.POP:
+                    result.add(new Instruction(VmOpcodes.OP_POP, 0));
+                    break;
+                case Opcodes.POP2:
+                    if (frame != null && frame.getStackSize() > 0 &&
+                            frame.getStack(frame.getStackSize() - 1).getSize() == 2) {
+                        result.add(new Instruction(VmOpcodes.OP_POP, 0));
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_POP2, 0));
+                    }
+                    break;
+                case Opcodes.DUP:
+                    result.add(new Instruction(VmOpcodes.OP_DUP, 0));
+                    break;
+                case Opcodes.DUP_X1:
+                    result.add(new Instruction(VmOpcodes.OP_DUP_X1, 0));
+                    break;
+                case Opcodes.DUP_X2:
+                    result.add(new Instruction(VmOpcodes.OP_DUP_X2, 0));
+                    break;
+                case Opcodes.DUP2:
+                    if (frame != null && frame.getStackSize() > 0 &&
+                            frame.getStack(frame.getStackSize() - 1).getSize() == 2) {
+                        result.add(new Instruction(VmOpcodes.OP_DUP, 0));
+                    } else {
+                        result.add(new Instruction(VmOpcodes.OP_DUP2, 0));
+                    }
+                    break;
+                case Opcodes.DUP2_X1:
+                    result.add(new Instruction(VmOpcodes.OP_DUP2_X1, 0));
+                    break;
+                case Opcodes.DUP2_X2:
+                    result.add(new Instruction(VmOpcodes.OP_DUP2_X2, 0));
+                    break;
+                case Opcodes.SWAP:
+                    result.add(new Instruction(VmOpcodes.OP_SWAP, 0));
+                    break;
                 case Opcodes.ILOAD:
                     result.add(new Instruction(VmOpcodes.OP_LOAD, ((VarInsnNode) insn).var));
                     break;
