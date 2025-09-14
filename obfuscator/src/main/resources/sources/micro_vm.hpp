@@ -187,6 +187,11 @@ struct MethodRef {
     const char* method_sig;
 };
 
+struct MultiArrayInfo {
+    const char* class_name; // binary name or descriptor acceptable by FindClass
+    jint dims;              // number of dimensions
+};
+
 struct ConstantPoolEntry {
     enum Type : uint8_t {
         TYPE_INTEGER = 0,
@@ -266,4 +271,3 @@ size_t get_class_cache_calls();
 } // namespace native_jvm::vm
 
 // NOLINTEND
-

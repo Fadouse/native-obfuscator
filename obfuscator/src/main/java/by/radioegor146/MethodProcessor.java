@@ -190,6 +190,9 @@ public class MethodProcessor {
             vmCode = null;
         }
         List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
+        List<String> classRefs = vmTranslator.getClassRefs();
+        List<VmTranslator.MultiArrayRefInfo> multiArrayRefs = vmTranslator.getMultiArrayRefs();
+        List<VmTranslator.MethodRefInfo> methodRefs = vmTranslator.getMethodRefs();
         List<VmTranslator.ConstantPoolEntry> constantPool = vmTranslator.getConstantPool();
         if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
@@ -209,6 +212,38 @@ public class MethodProcessor {
                     if (i + 1 < fieldRefs.size()) {
                         output.append(", ");
                     }
+                }
+                output.append(" };\n");
+            }
+            if (!methodRefs.isEmpty()) {
+                output.append("    native_jvm::vm::MethodRef __ngen_vm_methods[] = {");
+                for (int i = 0; i < methodRefs.size(); i++) {
+                    VmTranslator.MethodRefInfo mr = methodRefs.get(i);
+                    output.append(String.format("{ %s, %s, %s }",
+                            context.getStringPool().get(mr.owner),
+                            context.getStringPool().get(mr.name),
+                            context.getStringPool().get(mr.desc)));
+                    if (i + 1 < methodRefs.size()) {
+                        output.append(", ");
+                    }
+                }
+                output.append(" };\n");
+            }
+            if (!classRefs.isEmpty()) {
+                output.append("    const char* __ngen_vm_classes[] = {");
+                for (int i = 0; i < classRefs.size(); i++) {
+                    output.append(context.getStringPool().get(classRefs.get(i)));
+                    if (i + 1 < classRefs.size()) output.append(", ");
+                }
+                output.append(" };\n");
+            }
+            if (!multiArrayRefs.isEmpty()) {
+                output.append("    native_jvm::vm::MultiArrayInfo __ngen_vm_multi[] = {");
+                for (int i = 0; i < multiArrayRefs.size(); i++) {
+                    VmTranslator.MultiArrayRefInfo mi = multiArrayRefs.get(i);
+                    output.append(String.format("{ %s, %d }",
+                            context.getStringPool().get(mi.desc), mi.dims));
+                    if (i + 1 < multiArrayRefs.size()) output.append(", ");
                 }
                 output.append(" };\n");
             }
@@ -253,15 +288,38 @@ public class MethodProcessor {
                     }
                 }
             }
-            if (!fieldRefs.isEmpty()) {
+            if (!fieldRefs.isEmpty() || !methodRefs.isEmpty() || !classRefs.isEmpty() || !multiArrayRefs.isEmpty()) {
                 output.append("    for (auto &ins : __ngen_vm_code) {\n");
                 output.append("        switch (ins.op) {\n");
-                output.append("            case native_jvm::vm::OP_GETSTATIC:\n");
-                output.append("            case native_jvm::vm::OP_PUTSTATIC:\n");
-                output.append("            case native_jvm::vm::OP_GETFIELD:\n");
-                output.append("            case native_jvm::vm::OP_PUTFIELD:\n");
-                output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_fields[ins.operand]);\n");
-                output.append("                break;\n");
+                if (!fieldRefs.isEmpty()) {
+                    output.append("            case native_jvm::vm::OP_GETSTATIC:\n");
+                    output.append("            case native_jvm::vm::OP_PUTSTATIC:\n");
+                    output.append("            case native_jvm::vm::OP_GETFIELD:\n");
+                    output.append("            case native_jvm::vm::OP_PUTFIELD:\n");
+                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_fields[ins.operand]);\n");
+                    output.append("                break;\n");
+                }
+                if (!methodRefs.isEmpty()) {
+                    output.append("            case native_jvm::vm::OP_INVOKESTATIC:\n");
+                    output.append("            case native_jvm::vm::OP_INVOKEVIRTUAL:\n");
+                    output.append("            case native_jvm::vm::OP_INVOKESPECIAL:\n");
+                    output.append("            case native_jvm::vm::OP_INVOKEINTERFACE:\n");
+                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_methods[ins.operand]);\n");
+                    output.append("                break;\n");
+                }
+                if (!classRefs.isEmpty()) {
+                    output.append("            case native_jvm::vm::OP_NEW:\n");
+                    output.append("            case native_jvm::vm::OP_ANEWARRAY:\n");
+                    output.append("            case native_jvm::vm::OP_CHECKCAST:\n");
+                    output.append("            case native_jvm::vm::OP_INSTANCEOF:\n");
+                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_classes[ins.operand]);\n");
+                    output.append("                break;\n");
+                }
+                if (!multiArrayRefs.isEmpty()) {
+                    output.append("            case native_jvm::vm::OP_MULTIANEWARRAY:\n");
+                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_multi[ins.operand]);\n");
+                    output.append("                break;\n");
+                }
                 output.append("        }\n");
                 output.append("    }\n");
             }

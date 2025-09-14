@@ -1518,25 +1518,18 @@ do_newarray:
 
 do_multianewarray:
     {
-        jint dims = static_cast<jint>(tmp & 0xFFFFFFFF);
-        const char* name = reinterpret_cast<const char*>(tmp >> 32);
+        auto* info = reinterpret_cast<const MultiArrayInfo*>(tmp);
+        jint dims = info->dims;
+        const char* name = info->class_name;
         std::vector<jint> sizes(dims);
         for (int i = dims - 1; i >= 0 && sp > 0; --i) {
             sizes[i] = static_cast<jint>(stack[--sp]);
         }
         jobjectArray arr = nullptr;
-        if (dims == 1) {
-            jclass clazz = env->FindClass(name);
-            if (clazz) {
-                arr = env->NewObjectArray(sizes[0], clazz, nullptr);
-                env->DeleteLocalRef(clazz);
-            }
-        } else if (dims > 1) {
-            jclass clazz = env->FindClass(name);
-            if (clazz) {
-                arr = env->NewObjectArray(sizes[0], clazz, nullptr);
-                env->DeleteLocalRef(clazz);
-            }
+        jclass clazz = env->FindClass(name);
+        if (clazz) {
+            arr = env->NewObjectArray(dims > 0 ? sizes[0] : 0, clazz, nullptr);
+            env->DeleteLocalRef(clazz);
         }
         stack[sp++] = reinterpret_cast<int64_t>(arr);
     }

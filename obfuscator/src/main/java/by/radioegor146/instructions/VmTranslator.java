@@ -15,6 +15,14 @@ public class VmTranslator {
 
     private boolean useJit;
     private final List<FieldRefInfo> fieldRefs = new ArrayList<>();
+    private final List<MethodRefInfo> methodRefs = new ArrayList<>();
+    private final List<String> classRefs = new ArrayList<>();
+    public static class MultiArrayRefInfo {
+        public final String desc;
+        public final int dims;
+        public MultiArrayRefInfo(String desc, int dims) { this.desc = desc; this.dims = dims; }
+    }
+    private final List<MultiArrayRefInfo> multiArrayRefs = new ArrayList<>();
 
     public VmTranslator() {
         this(false);
@@ -59,6 +67,24 @@ public class VmTranslator {
     public List<FieldRefInfo> getFieldRefs() {
         return fieldRefs;
     }
+
+    public static class MethodRefInfo {
+        public final String owner;
+        public final String name;
+        public final String desc;
+
+        public MethodRefInfo(String owner, String name, String desc) {
+            this.owner = owner;
+            this.name = name;
+            this.desc = desc;
+        }
+    }
+
+    public List<MethodRefInfo> getMethodRefs() {
+        return methodRefs;
+    }
+    public List<String> getClassRefs() { return classRefs; }
+    public List<MultiArrayRefInfo> getMultiArrayRefs() { return multiArrayRefs; }
 
     /** Holds information about a constant pool entry. */
     public static class ConstantPoolEntry {
@@ -297,6 +323,8 @@ public class VmTranslator {
         int classIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
         int fieldIndex = 0;
+        Map<String, Integer> methodIds = new HashMap<>();
+        int methodIndex = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             int opcode = insn.getOpcode();
             switch (opcode) {
@@ -492,6 +520,7 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        classRefs.add(desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_NEW, idObj));
                     break;
@@ -502,6 +531,7 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        classRefs.add(desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_ANEWARRAY, idObj));
                     break;
@@ -514,13 +544,16 @@ public class VmTranslator {
                 case Opcodes.MULTIANEWARRAY: {
                     MultiANewArrayInsnNode m = (MultiANewArrayInsnNode) insn;
                     String desc = m.desc;
-                    Integer idObj = classIds.get(desc);
-                    if (idObj == null) {
-                        idObj = classIndex++;
-                        classIds.put(desc, idObj);
+                    int idx = -1;
+                    for (int i = 0; i < multiArrayRefs.size(); i++) {
+                        MultiArrayRefInfo info = multiArrayRefs.get(i);
+                        if (info.desc.equals(desc) && info.dims == m.dims) { idx = i; break; }
                     }
-                    long operand = ((long) idObj << 32) | (m.dims & 0xFFFFFFFFL);
-                    result.add(new Instruction(VmOpcodes.OP_MULTIANEWARRAY, operand));
+                    if (idx < 0) {
+                        idx = multiArrayRefs.size();
+                        multiArrayRefs.add(new MultiArrayRefInfo(desc, m.dims));
+                    }
+                    result.add(new Instruction(VmOpcodes.OP_MULTIANEWARRAY, idx));
                     break;
                 }
                 case Opcodes.CHECKCAST: {
@@ -529,6 +562,7 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        classRefs.add(desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_CHECKCAST, idObj));
                     break;
@@ -539,6 +573,7 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        classRefs.add(desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_INSTANCEOF, idObj));
                     break;
@@ -754,20 +789,31 @@ public class VmTranslator {
                     result.add(new Instruction(VmOpcodes.OP_PUSH, 0));
                     break;
                 case Opcodes.INVOKEVIRTUAL:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKEVIRTUAL, invokeIndex++));
-                    break;
                 case Opcodes.INVOKESPECIAL:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKESPECIAL, invokeIndex++));
-                    break;
                 case Opcodes.INVOKEINTERFACE:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKEINTERFACE, invokeIndex++));
+                case Opcodes.INVOKESTATIC: {
+                    MethodInsnNode mi = (MethodInsnNode) insn;
+                    String key = mi.owner + '.' + mi.name + '!' + mi.desc;
+                    Integer id = methodIds.get(key);
+                    if (id == null) {
+                        id = methodIndex++;
+                        methodIds.put(key, id);
+                        methodRefs.add(new MethodRefInfo(mi.owner, mi.name, mi.desc));
+                    }
+                    int op;
+                    switch (opcode) {
+                        case Opcodes.INVOKESTATIC: op = VmOpcodes.OP_INVOKESTATIC; break;
+                        case Opcodes.INVOKESPECIAL: op = VmOpcodes.OP_INVOKESPECIAL; break;
+                        case Opcodes.INVOKEINTERFACE: op = VmOpcodes.OP_INVOKEINTERFACE; break;
+                        default: op = VmOpcodes.OP_INVOKEVIRTUAL; break;
+                    }
+                    result.add(new Instruction(op, id));
                     break;
+                }
                 case Opcodes.INVOKEDYNAMIC:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKEDYNAMIC, invokeIndex++));
-                    break;
-                case Opcodes.INVOKESTATIC:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKESTATIC, invokeIndex++));
-                    break;
+                    // INVOKEDYNAMIC should have been expanded by the IndyPreprocessor.
+                    // If not, we bail out to avoid invalid MethodRef pointers.
+                    return null;
                 case Opcodes.GETSTATIC:
                 case Opcodes.PUTSTATIC:
                 case Opcodes.GETFIELD:
@@ -898,4 +944,3 @@ public class VmTranslator {
         return constantPool.size() - 1;
     }
 }
-
