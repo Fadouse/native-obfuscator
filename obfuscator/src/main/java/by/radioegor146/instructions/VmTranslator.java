@@ -28,6 +28,7 @@ public class VmTranslator {
     private boolean useJit;
     private final List<FieldRefInfo> fieldRefs = new ArrayList<>();
     private final List<MethodRefInfo> methodRefs = new ArrayList<>();
+    private final List<String> classRefs = new ArrayList<>();
 
     public VmTranslator() {
         this(false);
@@ -88,6 +89,16 @@ public class VmTranslator {
 
     public List<MethodRefInfo> getMethodRefs() {
         return methodRefs;
+    }
+
+    public List<String> getClassRefs() {
+        return classRefs;
+    }
+
+    private void ensureClassRefCapacity(int index) {
+        while (classRefs.size() <= index) {
+            classRefs.add(null);
+        }
     }
 
     /** Describes a TABLESWITCH instruction's jump table. */
@@ -270,6 +281,7 @@ public class VmTranslator {
     public Instruction[] translate(MethodNode method) {
         fieldRefs.clear();
         methodRefs.clear();
+        classRefs.clear();
         tableSwitches.clear();
         lookupSwitches.clear();
 
@@ -514,6 +526,8 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        ensureClassRefCapacity(idObj);
+                        classRefs.set(idObj, desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_NEW, idObj));
                     break;
@@ -524,6 +538,8 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        ensureClassRefCapacity(idObj);
+                        classRefs.set(idObj, desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_ANEWARRAY, idObj));
                     break;
@@ -540,6 +556,8 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        ensureClassRefCapacity(idObj);
+                        classRefs.set(idObj, desc);
                     }
                     long operand = ((long) idObj << 32) | (m.dims & 0xFFFFFFFFL);
                     result.add(new Instruction(VmOpcodes.OP_MULTIANEWARRAY, operand));
@@ -551,6 +569,8 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        ensureClassRefCapacity(idObj);
+                        classRefs.set(idObj, desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_CHECKCAST, idObj));
                     break;
@@ -561,6 +581,8 @@ public class VmTranslator {
                     if (idObj == null) {
                         idObj = classIndex++;
                         classIds.put(desc, idObj);
+                        ensureClassRefCapacity(idObj);
+                        classRefs.set(idObj, desc);
                     }
                     result.add(new Instruction(VmOpcodes.OP_INSTANCEOF, idObj));
                     break;

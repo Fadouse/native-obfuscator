@@ -168,17 +168,41 @@ public class MethodProcessor {
         boolean useJit = Boolean.getBoolean("nativeobfuscator.jit");
         VmTranslator vmTranslator = new VmTranslator(useJit);
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
-        List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
-        List<VmTranslator.MethodRefInfo> methodRefs = vmTranslator.getMethodRefs();
+          List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
+          List<VmTranslator.MethodRefInfo> methodRefs = vmTranslator.getMethodRefs();
+          List<String> classRefs = vmTranslator.getClassRefs();
         if (vmCode != null && vmCode.length > 0) {
-            output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
-                    VmTranslator.serialize(vmCode)));
-            output.append(String.format("    jlong __ngen_vm_locals[%d] = {0};\n", Math.max(1, method.maxLocals)));
-            for (int i = 0; i < argNames.size(); i++) {
-                output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, argNames.get(i)));
-            }
-            if (!fieldRefs.isEmpty()) {
-                output.append("    native_jvm::vm::FieldRef __ngen_vm_fields[] = {");
+              output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
+                      VmTranslator.serialize(vmCode)));
+              output.append(String.format("    jlong __ngen_vm_locals[%d] = {0};\n", Math.max(1, method.maxLocals)));
+              for (int i = 0; i < argNames.size(); i++) {
+                  output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, argNames.get(i)));
+              }
+              if (!classRefs.isEmpty()) {
+                  output.append("    const char* __ngen_vm_classes[] = {");
+                  for (int i = 0; i < classRefs.size(); i++) {
+                      output.append(context.getStringPool().get(classRefs.get(i)));
+                      if (i + 1 < classRefs.size()) {
+                          output.append(", ");
+                      }
+                  }
+                  output.append(" };\n");
+                  output.append("    for (auto &ins : __ngen_vm_code) {\n");
+                  output.append("        switch (ins.op) {\n");
+                  output.append("            case native_jvm::vm::OP_NEW:\n");
+                  output.append("            case native_jvm::vm::OP_ANEWARRAY:\n");
+                  output.append("            case native_jvm::vm::OP_CHECKCAST:\n");
+                  output.append("            case native_jvm::vm::OP_INSTANCEOF:\n");
+                  output.append("                ins.operand = reinterpret_cast<jlong>(__ngen_vm_classes[ins.operand]);\n");
+                  output.append("                break;\n");
+                  output.append("            case native_jvm::vm::OP_MULTIANEWARRAY:\n");
+                  output.append("                ins.operand = (static_cast<jlong>(reinterpret_cast<intptr_t>(__ngen_vm_classes[ins.operand >> 32])) << 32) | (ins.operand & 0xFFFFFFFFLL);\n");
+                  output.append("                break;\n");
+                  output.append("        }\n");
+                  output.append("    }\n");
+              }
+              if (!fieldRefs.isEmpty()) {
+                  output.append("    native_jvm::vm::FieldRef __ngen_vm_fields[] = {");
                 for (int i = 0; i < fieldRefs.size(); i++) {
                     VmTranslator.FieldRefInfo fr = fieldRefs.get(i);
                     output.append(String.format("{ %s, %s, %s }",
@@ -232,11 +256,11 @@ public class MethodProcessor {
             if (vmTranslator.isUseJit()) {
                 output.append(String.format(
                         "    return (%s)native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, Math.max(1, method.maxLocals), vmKeySeed));
             } else {
                 output.append(String.format(
                         "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed));
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, Math.max(1, method.maxLocals), vmKeySeed));
             }
             output.append("}\n");
 
