@@ -20,6 +20,7 @@ public class VmTranslator {
 
     private boolean useJit;
     private final List<FieldRefInfo> fieldRefs = new ArrayList<>();
+    private final List<MethodRefInfo> methodRefs = new ArrayList<>();
 
     public VmTranslator() {
         this(false);
@@ -63,6 +64,23 @@ public class VmTranslator {
 
     public List<FieldRefInfo> getFieldRefs() {
         return fieldRefs;
+    }
+
+    /** Holds information about a referenced method. */
+    public static class MethodRefInfo {
+        public final String owner;
+        public final String name;
+        public final String desc;
+
+        public MethodRefInfo(String owner, String name, String desc) {
+            this.owner = owner;
+            this.name = name;
+            this.desc = desc;
+        }
+    }
+
+    public List<MethodRefInfo> getMethodRefs() {
+        return methodRefs;
     }
 
     /** Describes a TABLESWITCH instruction's jump table. */
@@ -244,6 +262,7 @@ public class VmTranslator {
      */
     public Instruction[] translate(MethodNode method) {
         fieldRefs.clear();
+        methodRefs.clear();
         tableSwitches.clear();
         lookupSwitches.clear();
 
@@ -266,11 +285,12 @@ public class VmTranslator {
         }
 
         List<Instruction> result = new ArrayList<>();
-        int invokeIndex = 0;
         Map<String, Integer> classIds = new HashMap<>();
         int classIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
         int fieldIndex = 0;
+        Map<String, Integer> methodIds = new HashMap<>();
+        int methodIndex = 0;
         int insnIndex = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext(), insnIndex++) {
             int opcode = insn.getOpcode();
@@ -750,20 +770,29 @@ public class VmTranslator {
                     result.add(new Instruction(VmOpcodes.OP_PUSH, 0));
                     break;
                 case Opcodes.INVOKEVIRTUAL:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKEVIRTUAL, invokeIndex++));
-                    break;
                 case Opcodes.INVOKESPECIAL:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKESPECIAL, invokeIndex++));
-                    break;
                 case Opcodes.INVOKEINTERFACE:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKEINTERFACE, invokeIndex++));
+                case Opcodes.INVOKESTATIC: {
+                    MethodInsnNode mi = (MethodInsnNode) insn;
+                    String key = mi.owner + '.' + mi.name + mi.desc;
+                    Integer id = methodIds.get(key);
+                    if (id == null) {
+                        id = methodIndex++;
+                        methodIds.put(key, id);
+                        methodRefs.add(new MethodRefInfo(mi.owner, mi.name, mi.desc));
+                    }
+                    int op;
+                    switch (opcode) {
+                        case Opcodes.INVOKEVIRTUAL: op = VmOpcodes.OP_INVOKEVIRTUAL; break;
+        case Opcodes.INVOKESPECIAL: op = VmOpcodes.OP_INVOKESPECIAL; break;
+                        case Opcodes.INVOKEINTERFACE: op = VmOpcodes.OP_INVOKEINTERFACE; break;
+                        default: op = VmOpcodes.OP_INVOKESTATIC; break;
+                    }
+                    result.add(new Instruction(op, id));
                     break;
+                }
                 case Opcodes.INVOKEDYNAMIC:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKEDYNAMIC, invokeIndex++));
-                    break;
-                case Opcodes.INVOKESTATIC:
-                    result.add(new Instruction(VmOpcodes.OP_INVOKESTATIC, invokeIndex++));
-                    break;
+                    return null;
                 case Opcodes.GETSTATIC:
                 case Opcodes.PUTSTATIC:
                 case Opcodes.GETFIELD:

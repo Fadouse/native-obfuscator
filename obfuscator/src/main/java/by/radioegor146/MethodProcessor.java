@@ -169,6 +169,7 @@ public class MethodProcessor {
         VmTranslator vmTranslator = new VmTranslator(useJit);
         VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
         List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
+        List<VmTranslator.MethodRefInfo> methodRefs = vmTranslator.getMethodRefs();
         if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
                     VmTranslator.serialize(vmCode)));
@@ -196,6 +197,31 @@ public class MethodProcessor {
                 output.append("            case native_jvm::vm::OP_GETFIELD:\n");
                 output.append("            case native_jvm::vm::OP_PUTFIELD:\n");
                 output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_fields[ins.operand]);\n");
+                output.append("                break;\n");
+                output.append("        }\n");
+                output.append("    }\n");
+            }
+            if (!methodRefs.isEmpty()) {
+                output.append("    native_jvm::vm::MethodRef __ngen_vm_methods[] = {");
+                for (int i = 0; i < methodRefs.size(); i++) {
+                    VmTranslator.MethodRefInfo mr = methodRefs.get(i);
+                    output.append(String.format("{ %s, %s, %s }",
+                            context.getStringPool().get(mr.owner),
+                            context.getStringPool().get(mr.name),
+                            context.getStringPool().get(mr.desc)));
+                    if (i + 1 < methodRefs.size()) {
+                        output.append(", ");
+                    }
+                }
+                output.append(" };\n");
+                output.append("    for (auto &ins : __ngen_vm_code) {\n");
+                output.append("        switch (ins.op) {\n");
+                output.append("            case native_jvm::vm::OP_INVOKEVIRTUAL:\n");
+                output.append("            case native_jvm::vm::OP_INVOKESPECIAL:\n");
+                output.append("            case native_jvm::vm::OP_INVOKEINTERFACE:\n");
+                output.append("            case native_jvm::vm::OP_INVOKEDYNAMIC:\n");
+                output.append("            case native_jvm::vm::OP_INVOKESTATIC:\n");
+                output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_methods[ins.operand]);\n");
                 output.append("                break;\n");
                 output.append("        }\n");
                 output.append("    }\n");
