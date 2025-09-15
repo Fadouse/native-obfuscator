@@ -4,68 +4,48 @@ import by.radioegor146.NativeObfuscator;
 import by.radioegor146.Platform;
 
 import javax.swing.*;
-import javax.swing.border.*;
-import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.event.*;
+import java.awt.event.ActionEvent;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
+import java.nio.file.FileVisitOption;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 public class ObfuscatorFrame extends JFrame {
-    // UI Colors
-    private static final Color SIDEBAR_BG = new Color(45, 45, 48);
-    private static final Color MAIN_BG = new Color(30, 30, 30);
-    private static final Color CARD_BG = new Color(37, 37, 38);
-    private static final Color ACCENT_COLOR = new Color(0, 122, 204);
-    private static final Color TEXT_PRIMARY = new Color(220, 220, 220);
-    private static final Color TEXT_SECONDARY = new Color(160, 160, 160);
-    private static final Color BORDER_COLOR = new Color(60, 60, 60);
-    private static final Color SUCCESS_COLOR = new Color(87, 166, 74);
-    private static final Color ERROR_COLOR = new Color(232, 17, 35);
+    // LEFT NAV SECTIONS
+    private static final String CARD_IMPORT = "import";
+    private static final String CARD_SETTINGS = "settings";
+    private static final String CARD_RUN = "run";
 
-    // Form fields
-    private final JTextField jarField = createStyledTextField();
-    private final JTextField outDirField = createStyledTextField();
-    private final JTextField libsDirField = createStyledTextField();
-    private final JTextField blacklistField = createStyledTextField();
-    private final JTextField whitelistField = createStyledTextField();
-    private final JTextField plainLibNameField = createStyledTextField();
-    private final JTextField customLibDirField = createStyledTextField();
-    private final JComboBox<Platform> platformCombo = createStyledComboBox();
-    private final JCheckBox useAnnotationsBox = createStyledCheckBox("Use annotations");
-    private final JCheckBox debugJarBox = createStyledCheckBox("Generate debug jar");
-    private final JCheckBox packageBox = createStyledCheckBox("Package native lib into JAR");
-    private final JButton runButton = createPrimaryButton("Run Obfuscation");
-    private final JTextArea logArea = createStyledTextArea();
-    private final JProgressBar progressBar = createStyledProgressBar();
-    private final JLabel statusLabel = new JLabel("Ready");
+    // Shared controls (across cards)
+    private final JTextField jarField = new JTextField();
+    private final JTextField outDirField = new JTextField();
+    private final JTextField libsDirField = new JTextField();
+    private final JTextField blacklistField = new JTextField();
+    private final JTextField whitelistField = new JTextField();
+    private final JTextField plainLibNameField = new JTextField();
+    private final JTextField customLibDirField = new JTextField();
+    private final JComboBox<Platform> platformCombo = new JComboBox<>(Platform.values());
+    private final JCheckBox useAnnotationsBox = new JCheckBox("Use annotations");
+    private final JCheckBox debugJarBox = new JCheckBox("Generate debug jar");
+    private final JCheckBox packageBox = new JCheckBox("Package native lib into JAR", true);
+    private final JButton runButton = new JButton("Run");
+    private final JTextArea logArea = new JTextArea();
+    private final JProgressBar progressBar = new JProgressBar();
 
-    // Sidebar components
-    private JPanel sidebarPanel;
-    private JButton nativeTabButton;
-    private JButton javaTabButton;
-    private JPanel cardPanel;
-    private CardLayout cardLayout;
-
-    // File chooser cache
-    private File lastSelectedDirectory = null;
+    private final JList<String> leftNav;
+    private final JPanel rightCards;
 
     public static void launch() {
-        // Set system look and feel or FlatLaf if available
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            // If using FlatLaf, uncomment:
-            // FlatDarkLaf.setup();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
         SwingUtilities.invokeLater(() -> {
             ObfuscatorFrame frame = new ObfuscatorFrame();
             frame.setVisible(true);
@@ -73,794 +53,414 @@ public class ObfuscatorFrame extends JFrame {
     }
 
     public ObfuscatorFrame() {
-        super("Native Obfuscator");
+        super("Native Obfuscator – GUI");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        setMinimumSize(new Dimension(1200, 700));
-        setPreferredSize(new Dimension(1200, 700));
+        setMinimumSize(new Dimension(980, 620));
         setLocationRelativeTo(null);
 
-        // Set dark theme for frame
-        setBackground(MAIN_BG);
+        JPanel root = new JPanel(new BorderLayout());
+        root.setBorder(new EmptyBorder(12, 12, 12, 12));
+        setContentPane(root);
 
-        initializeUI();
-        setupLayout();
-        setupEventHandlers();
+        // ===== Left Sidebar (reserved for future expansion) =====
+        leftNav = buildLeftNav();
+        JScrollPane navScroll = new JScrollPane(leftNav);
+        navScroll.setBorder(new EmptyBorder(0, 0, 0, 12));
+        navScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        navScroll.setPreferredSize(new Dimension(180, 500));
 
-        // Set default values
+        // ===== Right Cards =====
+        rightCards = new JPanel(new CardLayout());
+        rightCards.add(buildImportCard(), CARD_IMPORT);
+        rightCards.add(buildSettingsCard(), CARD_SETTINGS);
+        rightCards.add(buildRunCard(), CARD_RUN);
+
+        // Layout using JSplitPane for resize friendliness
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, navScroll, rightCards);
+        split.setResizeWeight(0);
+        split.setDividerSize(8);
+        split.setContinuousLayout(true);
+        split.setBorder(null);
+
+        root.add(split, BorderLayout.CENTER);
+
         platformCombo.setSelectedItem(Platform.HOTSPOT);
-        packageBox.setSelected(true);
-        updateStatus("Ready", TEXT_SECONDARY);
-    }
-
-    private void initializeUI() {
-        // Create main container
-        JPanel mainContainer = new JPanel(new BorderLayout(0, 0));
-        mainContainer.setBackground(MAIN_BG);
-        setContentPane(mainContainer);
-
-        // Create sidebar
-        createSidebar();
-        mainContainer.add(sidebarPanel, BorderLayout.WEST);
-
-        // Create main content area with cards
-        cardLayout = new CardLayout();
-        cardPanel = new JPanel(cardLayout);
-        cardPanel.setBackground(MAIN_BG);
-
-        // Add Native Obfuscation panel
-        JPanel nativePanel = createNativeObfuscationPanel();
-        cardPanel.add(nativePanel, "native");
-
-        // Add Java Obfuscation placeholder panel
-        JPanel javaPanel = createJavaObfuscationPanel();
-        cardPanel.add(javaPanel, "java");
-
-        mainContainer.add(cardPanel, BorderLayout.CENTER);
-
-        // Show native panel by default
-        cardLayout.show(cardPanel, "native");
-        nativeTabButton.setBackground(ACCENT_COLOR);
-    }
-
-    private void createSidebar() {
-        sidebarPanel = new JPanel();
-        sidebarPanel.setLayout(new BoxLayout(sidebarPanel, BoxLayout.Y_AXIS));
-        sidebarPanel.setBackground(SIDEBAR_BG);
-        sidebarPanel.setPreferredSize(new Dimension(250, 0));
-        sidebarPanel.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, BORDER_COLOR));
-
-        // Logo/Title area
-        JPanel logoPanel = new JPanel();
-        logoPanel.setBackground(SIDEBAR_BG);
-        logoPanel.setLayout(new FlowLayout(FlowLayout.CENTER, 0, 20));
-        logoPanel.setMaximumSize(new Dimension(250, 80));
-
-        JLabel logoLabel = new JLabel("OBFUSCATOR");
-        logoLabel.setFont(new Font("Segoe UI", Font.BOLD, 20));
-        logoLabel.setForeground(TEXT_PRIMARY);
-        logoPanel.add(logoLabel);
-
-        sidebarPanel.add(logoPanel);
-        sidebarPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-
-        // Navigation buttons
-        nativeTabButton = createSidebarButton("Native Obfuscation", "native");
-        javaTabButton = createSidebarButton("Java Obfuscation", "java");
-
-        sidebarPanel.add(nativeTabButton);
-        sidebarPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-        sidebarPanel.add(javaTabButton);
-
-        // Add separator
-        sidebarPanel.add(Box.createRigidArea(new Dimension(0, 30)));
-        JSeparator separator = new JSeparator();
-        separator.setMaximumSize(new Dimension(200, 1));
-        separator.setForeground(BORDER_COLOR);
-        sidebarPanel.add(separator);
-
-        // Add info panel
-        JPanel infoPanel = new JPanel();
-        infoPanel.setBackground(SIDEBAR_BG);
-        infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
-        infoPanel.setBorder(new EmptyBorder(20, 20, 20, 20));
-        infoPanel.setMaximumSize(new Dimension(250, 200));
-
-        JLabel infoTitle = new JLabel("Quick Info");
-        infoTitle.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        infoTitle.setForeground(TEXT_PRIMARY);
-        infoTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        JTextArea infoText = new JTextArea();
-        infoText.setText("Transform your Java bytecode into native code for enhanced protection against reverse engineering.");
-        infoText.setWrapStyleWord(true);
-        infoText.setLineWrap(true);
-        infoText.setOpaque(false);
-        infoText.setEditable(false);
-        infoText.setForeground(TEXT_SECONDARY);
-        infoText.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        infoText.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        infoPanel.add(infoTitle);
-        infoPanel.add(Box.createRigidArea(new Dimension(0, 10)));
-        infoPanel.add(infoText);
-
-        sidebarPanel.add(infoPanel);
-        sidebarPanel.add(Box.createVerticalGlue());
-
-        // Add status at bottom
-        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 20, 10));
-        statusPanel.setBackground(SIDEBAR_BG);
-        statusPanel.setMaximumSize(new Dimension(250, 40));
-        statusLabel.setForeground(TEXT_SECONDARY);
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        statusPanel.add(statusLabel);
-        sidebarPanel.add(statusPanel);
-    }
-
-    private JButton createSidebarButton(String text, String cardName) {
-        JButton button = new JButton(text);
-        button.setMaximumSize(new Dimension(220, 40));
-        button.setAlignmentX(Component.CENTER_ALIGNMENT);
-        button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        button.setForeground(TEXT_PRIMARY);
-        button.setBackground(SIDEBAR_BG);
-        button.setBorderPainted(false);
-        button.setFocusPainted(false);
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
-        button.addActionListener(e -> {
-            // Reset all buttons
-            nativeTabButton.setBackground(SIDEBAR_BG);
-            javaTabButton.setBackground(SIDEBAR_BG);
-
-            // Highlight selected
-            button.setBackground(ACCENT_COLOR);
-
-            // Show corresponding panel
-            cardLayout.show(cardPanel, cardName);
-        });
-
-        button.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseEntered(MouseEvent e) {
-                if (button.getBackground() != ACCENT_COLOR) {
-                    button.setBackground(new Color(60, 60, 63));
-                }
-            }
-
-            @Override
-            public void mouseExited(MouseEvent e) {
-                if (button.getBackground() != ACCENT_COLOR) {
-                    button.setBackground(SIDEBAR_BG);
-                }
-            }
-        });
-
-        return button;
-    }
-
-    private JPanel createNativeObfuscationPanel() {
-        JPanel panel = new JPanel(new BorderLayout(0, 0));
-        panel.setBackground(MAIN_BG);
-        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
-
-        // Header
-        JPanel headerPanel = new JPanel(new BorderLayout());
-        headerPanel.setBackground(MAIN_BG);
-        headerPanel.setBorder(new EmptyBorder(0, 0, 20, 0));
-
-        JLabel titleLabel = new JLabel("Native Code Obfuscation");
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        titleLabel.setForeground(TEXT_PRIMARY);
-        headerPanel.add(titleLabel, BorderLayout.WEST);
-
-        panel.add(headerPanel, BorderLayout.NORTH);
-
-        // Create split pane for form and log
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
-        splitPane.setBackground(MAIN_BG);
-        splitPane.setBorder(null);
-        splitPane.setDividerSize(5);
-        splitPane.setDividerLocation(380);
-
-        // Top: Form panel
-        JPanel formContainer = new JPanel(new BorderLayout());
-        formContainer.setBackground(MAIN_BG);
-
-        JScrollPane formScroll = new JScrollPane(createFormPanel());
-        formScroll.setBorder(null);
-        formScroll.getViewport().setBackground(MAIN_BG);
-        formContainer.add(formScroll, BorderLayout.CENTER);
-
-        splitPane.setTopComponent(formContainer);
-
-        // Bottom: Log panel
-        JPanel logPanel = createLogPanel();
-        splitPane.setBottomComponent(logPanel);
-
-        panel.add(splitPane, BorderLayout.CENTER);
-
-        return panel;
-    }
-
-    private JPanel createFormPanel() {
-        JPanel formPanel = new JPanel();
-        formPanel.setLayout(new BoxLayout(formPanel, BoxLayout.Y_AXIS));
-        formPanel.setBackground(MAIN_BG);
-
-        // Input/Output section
-        formPanel.add(createSectionPanel("Input & Output", new Component[][]{
-                {new JLabel("Input JAR:"), jarField, createBrowseButton(() -> browseFile(jarField, "Select Input JAR", "jar", "JAR Files"))},
-                {new JLabel("Output Directory:"), outDirField, createBrowseButton(() -> browseDirectory(outDirField, "Select Output Directory"))}
-        }));
-
-        formPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-
-        // Configuration section
-        formPanel.add(createSectionPanel("Configuration", new Component[][]{
-                {new JLabel("Libraries Directory:"), libsDirField, createBrowseButton(() -> browseDirectory(libsDirField, "Select Libraries Directory"))},
-                {new JLabel("Whitelist File:"), whitelistField, createBrowseButton(() -> browseFile(whitelistField, "Select Whitelist", "txt", "Text Files"))},
-                {new JLabel("Blacklist File:"), blacklistField, createBrowseButton(() -> browseFile(blacklistField, "Select Blacklist", "txt", "Text Files"))}
-        }));
-
-        formPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-
-        // Advanced section
-        JPanel advancedContent = new JPanel(new GridBagLayout());
-        advancedContent.setBackground(CARD_BG);
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 10, 5, 10);
-
-        // Platform row
-        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0;
-        JLabel platformLabel = new JLabel("Platform:");
-        platformLabel.setForeground(TEXT_PRIMARY);
-        advancedContent.add(platformLabel, gbc);
-
-        gbc.gridx = 1; gbc.weightx = 1;
-        advancedContent.add(platformCombo, gbc);
-
-        // Library name row
-        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0;
-        JLabel libNameLabel = new JLabel("Plain Library Name:");
-        libNameLabel.setForeground(TEXT_PRIMARY);
-        advancedContent.add(libNameLabel, gbc);
-
-        gbc.gridx = 1; gbc.weightx = 1;
-        advancedContent.add(plainLibNameField, gbc);
-
-        // Custom dir row
-        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0;
-        JLabel customDirLabel = new JLabel("Custom Lib Directory:");
-        customDirLabel.setForeground(TEXT_PRIMARY);
-        advancedContent.add(customDirLabel, gbc);
-
-        gbc.gridx = 1; gbc.weightx = 1;
-        advancedContent.add(customLibDirField, gbc);
-
-        // Options row
-        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2;
-        JPanel optionsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 5));
-        optionsPanel.setBackground(CARD_BG);
-        optionsPanel.add(useAnnotationsBox);
-        optionsPanel.add(debugJarBox);
-        optionsPanel.add(packageBox);
-        advancedContent.add(optionsPanel, gbc);
-
-        formPanel.add(createCollapsibleSection("Advanced Settings", advancedContent));
-
-        formPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-
-        // Action buttons
-        JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 0));
-        actionPanel.setBackground(MAIN_BG);
-        actionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
-
-        JButton clearButton = createSecondaryButton("Clear All");
-        clearButton.addActionListener(e -> clearAllFields());
-
-        actionPanel.add(clearButton);
-        actionPanel.add(runButton);
-
-        formPanel.add(actionPanel);
-
-        return formPanel;
-    }
-
-    private JPanel createSectionPanel(String title, Component[][] rows) {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(CARD_BG);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                new EmptyBorder(15, 15, 15, 15)
-        ));
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
-
-        JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        titleLabel.setForeground(TEXT_PRIMARY);
-        titleLabel.setBorder(new EmptyBorder(0, 0, 10, 0));
-        panel.add(titleLabel, BorderLayout.NORTH);
-
-        JPanel content = new JPanel(new GridBagLayout());
-        content.setBackground(CARD_BG);
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
-
-        for (int i = 0; i < rows.length; i++) {
-            gbc.gridy = i;
-            gbc.gridx = 0;
-            gbc.weightx = 0;
-            JLabel label = (JLabel) rows[i][0];
-            label.setForeground(TEXT_PRIMARY);
-            content.add(label, gbc);
-
-            gbc.gridx = 1;
-            gbc.weightx = 1;
-            content.add(rows[i][1], gbc);
-
-            if (rows[i].length > 2) {
-                gbc.gridx = 2;
-                gbc.weightx = 0;
-                content.add(rows[i][2], gbc);
-            }
-        }
-
-        panel.add(content, BorderLayout.CENTER);
-        return panel;
-    }
-
-    private JPanel createCollapsibleSection(String title, JComponent content) {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(CARD_BG);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                new EmptyBorder(10, 10, 10, 10)
-        ));
-        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 300));
-
-        JButton toggleButton = new JButton("▼ " + title);
-        toggleButton.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        toggleButton.setForeground(TEXT_PRIMARY);
-        toggleButton.setBackground(CARD_BG);
-        toggleButton.setBorderPainted(false);
-        toggleButton.setFocusPainted(false);
-        toggleButton.setHorizontalAlignment(SwingConstants.LEFT);
-        toggleButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-
-        panel.add(toggleButton, BorderLayout.NORTH);
-        panel.add(content, BorderLayout.CENTER);
-
-        toggleButton.addActionListener(e -> {
-            boolean visible = content.isVisible();
-            content.setVisible(!visible);
-            toggleButton.setText((visible ? "▶ " : "▼ ") + title);
-        });
-
-        return panel;
-    }
-
-    private JPanel createLogPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(CARD_BG);
-        panel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                new EmptyBorder(10, 10, 10, 10)
-        ));
-
-        JLabel logTitle = new JLabel("Output Log");
-        logTitle.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        logTitle.setForeground(TEXT_PRIMARY);
-        logTitle.setBorder(new EmptyBorder(0, 0, 10, 0));
-        panel.add(logTitle, BorderLayout.NORTH);
-
-        JScrollPane scrollPane = new JScrollPane(logArea);
-        scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
-        scrollPane.getViewport().setBackground(new Color(25, 25, 26));
-        panel.add(scrollPane, BorderLayout.CENTER);
-
-        panel.add(progressBar, BorderLayout.SOUTH);
-
-        return panel;
-    }
-
-    private JPanel createJavaObfuscationPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(MAIN_BG);
-        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
-
-        JLabel label = new JLabel("Java Obfuscation Settings");
-        label.setFont(new Font("Segoe UI", Font.BOLD, 24));
-        label.setForeground(TEXT_PRIMARY);
-        label.setHorizontalAlignment(SwingConstants.CENTER);
-        panel.add(label, BorderLayout.NORTH);
-
-        JPanel centerPanel = new JPanel();
-        centerPanel.setBackground(CARD_BG);
-        centerPanel.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR, 1),
-                new EmptyBorder(40, 40, 40, 40)
-        ));
-
-        JLabel comingSoon = new JLabel("Coming Soon...");
-        comingSoon.setFont(new Font("Segoe UI", Font.PLAIN, 18));
-        comingSoon.setForeground(TEXT_SECONDARY);
-        centerPanel.add(comingSoon);
-
-        panel.add(centerPanel, BorderLayout.CENTER);
-
-        return panel;
-    }
-
-    private void setupLayout() {
-        // Set placeholders
-        jarField.putClientProperty("JTextField.placeholderText", "Select input JAR file...");
-        outDirField.putClientProperty("JTextField.placeholderText", "Choose output directory...");
-        libsDirField.putClientProperty("JTextField.placeholderText", "Optional: Select libraries directory...");
-        whitelistField.putClientProperty("JTextField.placeholderText", "Optional: Select whitelist.txt...");
-        blacklistField.putClientProperty("JTextField.placeholderText", "Optional: Select blacklist.txt...");
-        plainLibNameField.putClientProperty("JTextField.placeholderText", "Optional: Enter plain library name...");
-        customLibDirField.putClientProperty("JTextField.placeholderText", "Optional: Custom directory in JAR...");
-    }
-
-    private void setupEventHandlers() {
         runButton.addActionListener(this::runObfuscation);
 
-        // Auto-fill output directory when JAR is selected
-        jarField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            public void insertUpdate(javax.swing.event.DocumentEvent e) { updateOutputDir(); }
-            public void removeUpdate(javax.swing.event.DocumentEvent e) { updateOutputDir(); }
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { updateOutputDir(); }
+        // Placeholders (FlatLaf text fields support)
+        jarField.putClientProperty("JTextComponent.placeholderText", "Select input .jar");
+        outDirField.putClientProperty("JTextComponent.placeholderText", "Choose output directory");
+        libsDirField.putClientProperty("JTextComponent.placeholderText", "Optional libraries directory");
+        whitelistField.putClientProperty("JTextComponent.placeholderText", "Optional whitelist.txt");
+        blacklistField.putClientProperty("JTextComponent.placeholderText", "Optional blacklist.txt");
+        plainLibNameField.putClientProperty("JTextComponent.placeholderText", "Plain lib name (optional)");
+        customLibDirField.putClientProperty("JTextComponent.placeholderText", "Custom lib dir inside jar (optional)");
+    }
 
-            private void updateOutputDir() {
-                if (outDirField.getText().trim().isEmpty()) {
-                    String jarPath = jarField.getText().trim();
-                    if (!jarPath.isEmpty()) {
-                        File jarFile = new File(jarPath);
-                        if (jarFile.exists()) {
-                            File parent = jarFile.getParentFile();
-                            if (parent != null) {
-                                outDirField.setText(new File(parent, "native-output").getAbsolutePath());
-                            }
-                        }
-                    }
+    // ------------------------ UI BUILDERS ------------------------
+
+    private JList<String> buildLeftNav() {
+        DefaultListModel<String> model = new DefaultListModel<>();
+        model.addElement("Import Files");
+        model.addElement("Native Settings");
+        model.addElement("Run & Logs");
+
+        JList<String> list = new JList<>(model);
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        list.setSelectedIndex(0);
+        list.setFixedCellHeight(36);
+        list.setBorder(new EmptyBorder(4, 4, 4, 4));
+        list.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                switch (list.getSelectedIndex()) {
+                    case 0:
+                        showCard(CARD_IMPORT);
+                        break;
+                    case 1:
+                        showCard(CARD_SETTINGS);
+                        break;
+                    case 2:
+                        showCard(CARD_RUN);
                 }
             }
         });
-    }
-
-    // UI Component factory methods
-    private JTextField createStyledTextField() {
-        JTextField field = new JTextField();
-        field.setBackground(new Color(25, 25, 26));
-        field.setForeground(TEXT_PRIMARY);
-        field.setCaretColor(TEXT_PRIMARY);
-        field.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(BORDER_COLOR),
-                new EmptyBorder(5, 10, 5, 10)
-        ));
-        field.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        return field;
-    }
-
-    private JComboBox<Platform> createStyledComboBox() {
-        JComboBox<Platform> combo = new JComboBox<>(Platform.values());
-        combo.setBackground(new Color(25, 25, 26));
-        combo.setForeground(TEXT_PRIMARY);
-        combo.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
-        combo.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        return combo;
-    }
-
-    private JCheckBox createStyledCheckBox(String text) {
-        JCheckBox checkBox = new JCheckBox(text);
-        checkBox.setBackground(CARD_BG);
-        checkBox.setForeground(TEXT_PRIMARY);
-        checkBox.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        checkBox.setFocusPainted(false);
-        return checkBox;
-    }
-
-    private JButton createPrimaryButton(String text) {
-        JButton button = new JButton(text);
-        button.setBackground(ACCENT_COLOR);
-        button.setForeground(Color.WHITE);
-        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        button.setBorderPainted(false);
-        button.setFocusPainted(false);
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(180, 40));
-
-        button.addMouseListener(new MouseAdapter() {
+        list.setCellRenderer(new DefaultListCellRenderer() {
             @Override
-            public void mouseEntered(MouseEvent e) {
-                button.setBackground(ACCENT_COLOR.brighter());
-            }
-
-            @Override
-            public void mouseExited(MouseEvent e) {
-                button.setBackground(ACCENT_COLOR);
+            public Component getListCellRendererComponent(JList<?> jList, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel lbl = (JLabel) super.getListCellRendererComponent(jList, value, index, isSelected, cellHasFocus);
+                lbl.setHorizontalAlignment(SwingConstants.LEFT);
+                lbl.setBorder(new EmptyBorder(6, 10, 6, 10));
+                return lbl;
             }
         });
-
-        return button;
+        return list;
     }
 
-    private JButton createSecondaryButton(String text) {
-        JButton button = new JButton(text);
-        button.setBackground(CARD_BG);
-        button.setForeground(TEXT_PRIMARY);
-        button.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-        button.setBorder(BorderFactory.createLineBorder(BORDER_COLOR));
-        button.setFocusPainted(false);
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(120, 40));
+    private JPanel buildImportCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBorder(new EmptyBorder(4, 0, 0, 0));
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(6, 6, 6, 6);
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 0;
+        int row = 0;
 
-        return button;
+        row = addPathRow(form, c, row, "Input JAR", jarField, this::browseFileJar);
+        row = addPathRow(form, c, row, "Output Directory", outDirField, this::browseDir);
+        row = addPathRow(form, c, row, "Libraries Directory", libsDirField, this::browseDirOptional);
+        row = addPathRow(form, c, row, "Whitelist File", whitelistField, () -> browseFileTxt(whitelistField));
+        row = addPathRow(form, c, row, "Blacklist File", blacklistField, () -> browseFileTxt(blacklistField));
+
+        card.add(form, BorderLayout.NORTH);
+        card.add(buildHintPanel("Select your input/output and optional allow/deny lists. " +
+                "Native file dialogs are used for better OS-level search and navigation."), BorderLayout.SOUTH);
+        return card;
     }
 
-    private JButton createBrowseButton(Runnable action) {
-        JButton button = new JButton("Browse");
-        button.setBackground(new Color(60, 60, 63));
-        button.setForeground(TEXT_PRIMARY);
-        button.setFont(new Font("Segoe UI", Font.PLAIN, 11));
-        button.setBorderPainted(false);
-        button.setFocusPainted(false);
-        button.setCursor(new Cursor(Cursor.HAND_CURSOR));
-        button.setPreferredSize(new Dimension(80, 28));
+    private JPanel buildSettingsCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBorder(new EmptyBorder(4, 0, 0, 0));
 
-        button.addActionListener(e -> action.run());
+        JPanel form = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(6, 6, 6, 6);
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 0;
+        int row = 0;
 
-        button.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseEntered(MouseEvent e) {
-                button.setBackground(new Color(70, 70, 73));
-            }
+        row = addFieldRow(form, c, row, "Plain Library Name", plainLibNameField);
+        row = addFieldRow(form, c, row, "Custom Library Dir (in jar)", customLibDirField);
 
-            @Override
-            public void mouseExited(MouseEvent e) {
-                button.setBackground(new Color(60, 60, 63));
-            }
-        });
+        // Platform + flags
+        c.gridx = 0;
+        c.gridy = row;
+        c.weightx = 0;
+        c.gridwidth = 1;
+        form.add(new JLabel("Platform"), c);
+        c.gridx = 1;
+        c.gridy = row;
+        c.weightx = 1;
+        form.add(platformCombo, c);
+        JPanel flags = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        flags.add(useAnnotationsBox);
+        flags.add(debugJarBox);
+        flags.add(packageBox);
+        c.gridx = 2;
+        c.gridy = row;
+        c.weightx = 0;
+        form.add(flags, c);
+        row++;
 
-        return button;
+        card.add(form, BorderLayout.NORTH);
+        card.add(buildHintPanel("Configure native obfuscation options and platform. " +
+                "Use annotations and debug jar are optional."), BorderLayout.SOUTH);
+        return card;
     }
 
-    private JTextArea createStyledTextArea() {
-        JTextArea area = new JTextArea();
-        area.setBackground(new Color(25, 25, 26));
-        area.setForeground(new Color(200, 200, 200));
-        area.setFont(new Font("Consolas", Font.PLAIN, 12));
-        area.setEditable(false);
-        area.setBorder(new EmptyBorder(10, 10, 10, 10));
-        return area;
+    private JPanel buildRunCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBorder(new EmptyBorder(4, 0, 0, 0));
+
+        JPanel top = new JPanel(new BorderLayout());
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        actions.add(runButton);
+        top.add(actions, BorderLayout.EAST);
+
+        progressBar.setIndeterminate(true);
+        progressBar.setString("Running...");
+        progressBar.setStringPainted(true);
+        progressBar.setVisible(false);
+        top.add(progressBar, BorderLayout.SOUTH);
+
+        logArea.setEditable(false);
+        logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        JScrollPane logScroll = new JScrollPane(logArea);
+
+        card.add(top, BorderLayout.NORTH);
+        card.add(logScroll, BorderLayout.CENTER);
+        card.add(buildHintPanel("Start obfuscation here. Build logs will appear below. " +
+                "Native library packaging can be enabled in Settings."), BorderLayout.SOUTH);
+        return card;
     }
 
-    private JProgressBar createStyledProgressBar() {
-        JProgressBar bar = new JProgressBar();
-        bar.setIndeterminate(true);
-        bar.setString("Processing...");
-        bar.setStringPainted(true);
-        bar.setBackground(CARD_BG);
-        bar.setForeground(ACCENT_COLOR);
-        bar.setBorder(new EmptyBorder(10, 0, 0, 0));
-        bar.setVisible(false);
-        return bar;
+    private JPanel buildHintPanel(String text) {
+        JPanel pnl = new JPanel(new BorderLayout());
+        JLabel lbl = new JLabel(text);
+        lbl.setBorder(new EmptyBorder(8, 6, 6, 6));
+        pnl.add(lbl, BorderLayout.CENTER);
+        return pnl;
     }
 
-    // File/Directory browsing methods using system file chooser
-    private void browseFile(JTextField targetField, String title, String extension, String description) {
-        JFileChooser chooser = new JFileChooser(lastSelectedDirectory);
-        chooser.setDialogTitle(title);
+    private void showCard(String name) {
+        CardLayout cl = (CardLayout) rightCards.getLayout();
+        cl.show(rightCards, name);
+    }
+
+    // ------------------------ Row Helpers ------------------------
+
+    private int addPathRow(JPanel form, GridBagConstraints c, int row, String label, JTextField field, Runnable browse) {
+        c.gridx = 0;
+        c.gridy = row;
+        c.weightx = 0;
+        c.gridwidth = 1;
+        form.add(new JLabel(label), c);
+        c.gridx = 1;
+        c.gridy = row;
+        c.weightx = 1;
+        form.add(field, c);
+        JButton btn = new JButton("Browse");
+        btn.addActionListener(e -> browse.run());
+        c.gridx = 2;
+        c.gridy = row;
+        c.weightx = 0;
+        form.add(btn, c);
+        return row + 1;
+    }
+
+    private int addFieldRow(JPanel form, GridBagConstraints c, int row, String label, JTextField field) {
+        c.gridx = 0;
+        c.gridy = row;
+        c.weightx = 0;
+        c.gridwidth = 1;
+        form.add(new JLabel(label), c);
+        c.gridx = 1;
+        c.gridy = row;
+        c.weightx = 1;
+        c.gridwidth = 2;
+        form.add(field, c);
+        c.gridwidth = 1;
+        return row + 1;
+    }
+
+    // ------------------------ Native/System Pickers ------------------------
+
+    private void browseFileJar() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Select input JAR");
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-
-        if (extension != null && description != null) {
-            FileNameExtensionFilter filter = new FileNameExtensionFilter(description, extension);
-            chooser.setFileFilter(filter);
-        }
-
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            File selected = chooser.getSelectedFile();
-            targetField.setText(selected.getAbsolutePath());
-            lastSelectedDirectory = selected.getParentFile();
+            File f = chooser.getSelectedFile();
+            jarField.setText(f.getAbsolutePath());
+            if (outDirField.getText().trim().isEmpty()) {
+                File parent = f.getParentFile();
+                if (parent != null) outDirField.setText(new File(parent, "native-output").getAbsolutePath());
+            }
         }
     }
 
-    private void browseDirectory(JTextField targetField, String title) {
-        JFileChooser chooser = new JFileChooser(lastSelectedDirectory);
-        chooser.setDialogTitle(title);
+    private void browseDir() {
+        File dir = openDirectoryDialogSwing();
+        if (dir != null) {
+            outDirField.setText(dir.getAbsolutePath());
+        }
+    }
+
+    private void browseDirOptional() {
+        File dir = openDirectoryDialogSwing();
+        if (dir != null) {
+            libsDirField.setText(dir.getAbsolutePath());
+        }
+    }
+
+    private void browseFileTxt(JTextField targetField) {
+        File f = openNativeFileDialog(this, "Select text file", new String[]{".txt"});
+        if (f != null) {
+            targetField.setText(f.getAbsolutePath());
+        }
+    }
+
+    /**
+     * Native file dialog (AWT FileDialog) for files to leverage OS search / look & feel.
+     *
+     * @param parent     parent frame
+     * @param title      dialog title
+     * @param extensions allowed extensions (lowercase, with dot), or null for all
+     */
+    private static File openNativeFileDialog(Frame parent, String title, String[] extensions) {
+        FileDialog fd = new FileDialog(parent, title, FileDialog.LOAD);
+        if (extensions != null && extensions.length > 0) {
+            fd.setFilenameFilter(new FilenameFilter() {
+                @Override
+                public boolean accept(File dir, String name) {
+                    String lower = name.toLowerCase();
+                    for (String ext : extensions) {
+                        if (lower.endsWith(ext)) return true;
+                    }
+                    return false;
+                }
+            });
+        }
+        fd.setVisible(true);
+        if (fd.getFile() == null) return null;
+        return new File(fd.getDirectory(), fd.getFile());
+    }
+
+    /**
+     * Directory chooser (JFileChooser with DIRECTORIES_ONLY).
+     * JFileChooser is used for folders as AWT FileDialog has limited directory-only support.
+     */
+    private File openDirectoryDialogSwing() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Select directory");
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-
-        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            File selected = chooser.getSelectedFile();
-            targetField.setText(selected.getAbsolutePath());
-            lastSelectedDirectory = selected;
+        chooser.setAcceptAllFileFilterUsed(false);
+        int ret = chooser.showOpenDialog(this);
+        if (ret == JFileChooser.APPROVE_OPTION) {
+            return chooser.getSelectedFile();
         }
+        return null;
     }
 
-    private void clearAllFields() {
-        jarField.setText("");
-        outDirField.setText("");
-        libsDirField.setText("");
-        blacklistField.setText("");
-        whitelistField.setText("");
-        plainLibNameField.setText("");
-        customLibDirField.setText("");
-        platformCombo.setSelectedItem(Platform.HOTSPOT);
-        useAnnotationsBox.setSelected(false);
-        debugJarBox.setSelected(false);
-        packageBox.setSelected(true);
-        logArea.setText("");
-        updateStatus("Ready", TEXT_SECONDARY);
-    }
-
-    private void updateStatus(String message, Color color) {
-        SwingUtilities.invokeLater(() -> {
-            statusLabel.setText(message);
-            statusLabel.setForeground(color);
-        });
-    }
+    // ------------------------ Actions ------------------------
 
     private void runObfuscation(ActionEvent e) {
         String jarPath = jarField.getText().trim();
         String outDir = outDirField.getText().trim();
-
         if (jarPath.isEmpty() || outDir.isEmpty()) {
-            JOptionPane.showMessageDialog(this,
-                    "Please select both input JAR and output directory.",
-                    "Missing Required Fields",
-                    JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select input JAR and output directory.",
+                    "Missing inputs", JOptionPane.WARNING_MESSAGE);
+            leftNav.setSelectedIndex(0);
+            showCard(CARD_IMPORT);
             return;
         }
 
         File jarFile = new File(jarPath);
         if (!jarFile.isFile()) {
-            JOptionPane.showMessageDialog(this,
-                    "The selected input JAR file does not exist.",
-                    "Invalid Input",
-                    JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Input JAR does not exist.",
+                    "Invalid input", JOptionPane.ERROR_MESSAGE);
+            leftNav.setSelectedIndex(0);
+            showCard(CARD_IMPORT);
             return;
         }
 
+        showCard(CARD_RUN);
+        leftNav.setSelectedIndex(2);
         setFormEnabled(false);
         progressBar.setVisible(true);
-        logArea.setText("");
-        appendLog("=== Starting Native Obfuscation Process ===\n");
-        appendLog("Input: " + jarPath + "\n");
-        appendLog("Output: " + outDir + "\n\n");
-        updateStatus("Processing...", ACCENT_COLOR);
+        appendLog("Starting obfuscation...\n");
 
         SwingWorker<Integer, String> worker = new SwingWorker<Integer, String>() {
             @Override
             protected Integer doInBackground() throws Exception {
-                try {
-                    // Collect libraries
-                    List<Path> libs = new ArrayList<>();
-                    String libsDir = libsDirField.getText().trim();
-                    if (!libsDir.isEmpty()) {
-                        appendLog("Scanning libraries directory: " + libsDir + "\n");
-                        Files.walk(Paths.get(libsDir), FileVisitOption.FOLLOW_LINKS)
-                                .filter(p -> p.toString().endsWith(".jar") || p.toString().endsWith(".zip"))
-                                .forEach(libs::add);
-                        appendLog("Found " + libs.size() + " library files\n");
+                List<Path> libs = new ArrayList<>();
+                String libsDir = libsDirField.getText().trim();
+                if (!libsDir.isEmpty()) {
+                    Path start = Paths.get(libsDir);
+                    if (!Files.isDirectory(start)) {
+                        throw new IOException("Libraries directory not found: " + libsDir);
                     }
 
-                    // Load blacklist
-                    List<String> blackList = new ArrayList<>();
-                    String blk = blacklistField.getText().trim();
-                    if (!blk.isEmpty()) {
-                        appendLog("Loading blacklist from: " + blk + "\n");
-                        blackList = Files.readAllLines(Paths.get(blk), StandardCharsets.UTF_8)
-                                .stream()
-                                .filter(s -> !s.trim().isEmpty())
-                                .collect(Collectors.toList());
-                        appendLog("Loaded " + blackList.size() + " blacklist entries\n");
-                    }
-
-                    // Load whitelist
-                    List<String> whiteList = null;
-                    String wht = whitelistField.getText().trim();
-                    if (!wht.isEmpty()) {
-                        appendLog("Loading whitelist from: " + wht + "\n");
-                        whiteList = Files.readAllLines(Paths.get(wht), StandardCharsets.UTF_8)
-                                .stream()
-                                .filter(s -> !s.trim().isEmpty())
-                                .collect(Collectors.toList());
-                        appendLog("Loaded " + whiteList.size() + " whitelist entries\n");
-                    }
-
-                    String plainName = emptyToNull(plainLibNameField.getText());
-                    String customDir = emptyToNull(customLibDirField.getText());
-                    Platform platform = (Platform) platformCombo.getSelectedItem();
-                    boolean useAnnotations = useAnnotationsBox.isSelected();
-                    boolean debug = debugJarBox.isSelected();
-
-                    appendLog("\n=== Configuration ===\n");
-                    appendLog("Platform: " + platform + "\n");
-                    appendLog("Use Annotations: " + useAnnotations + "\n");
-                    appendLog("Debug JAR: " + debug + "\n");
-                    appendLog("Package into JAR: " + packageBox.isSelected() + "\n");
-                    if (plainName != null) appendLog("Plain Library Name: " + plainName + "\n");
-                    if (customDir != null) appendLog("Custom Directory: " + customDir + "\n");
-
-                    appendLog("\n=== Processing ===\n");
-
-                    // Run obfuscation
-                    NativeObfuscator obfuscator = new NativeObfuscator();
-                    obfuscator.process(
-                            jarFile.toPath(),
-                            Paths.get(outDir),
-                            libs,
-                            blackList,
-                            whiteList,
-                            plainName,
-                            customDir,
-                            platform,
-                            useAnnotations,
-                            debug
-                    );
-
-                    // Package if needed
-                    if (plainName == null && packageBox.isSelected()) {
-                        appendLog("\n=== Building Native Library ===\n");
-                        Path cppDir = Paths.get(outDir, "cpp");
-                        runCmakeAndPackage(cppDir, Paths.get(outDir),
-                                new File(outDir, jarFile.getName()).toPath(),
-                                obfuscator.getNativeDir());
-                    } else if (plainName != null) {
-                        appendLog("\nSkipping JAR packaging (plain library mode)\n");
-                    } else if (!packageBox.isSelected()) {
-                        appendLog("\nSkipping JAR packaging (disabled by user)\n");
-                    }
-
-                    return 0;
-                } catch (Exception ex) {
-                    appendLog("\n!!! ERROR !!!\n");
-                    appendLog(ex.getMessage() + "\n");
-                    throw ex;
+                    Files.walk(start, FileVisitOption.FOLLOW_LINKS)
+                            .filter(p -> {
+                                String s = p.toString().toLowerCase();
+                                return s.endsWith(".jar") || s.endsWith(".zip");
+                            })
+                            .forEach(libs::add);
                 }
+
+                List<String> blackList = new ArrayList<>();
+                String blk = blacklistField.getText().trim();
+                if (!blk.isEmpty()) {
+                    blackList = Files.readAllLines(Paths.get(blk), StandardCharsets.UTF_8)
+                            .stream().map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
+                }
+
+                List<String> whiteList = null;
+                String wht = whitelistField.getText().trim();
+                if (!wht.isEmpty()) {
+                    whiteList = Files.readAllLines(Paths.get(wht), StandardCharsets.UTF_8)
+                            .stream().map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
+                }
+
+                String plainName = emptyToNull(plainLibNameField.getText());
+                String customDir = emptyToNull(customLibDirField.getText());
+                Platform platform = (Platform) platformCombo.getSelectedItem();
+                boolean useAnnotations = useAnnotationsBox.isSelected();
+                boolean debug = debugJarBox.isSelected();
+
+                NativeObfuscator obfuscator = new NativeObfuscator();
+                obfuscator.process(
+                        jarFile.toPath(),
+                        Paths.get(outDir),
+                        libs,
+                        blackList,
+                        whiteList,
+                        plainName,
+                        customDir,
+                        platform,
+                        useAnnotations,
+                        debug
+                );
+
+                // After obfuscation, automatically run cmake and package the built library into the jar
+                if (plainName == null && packageBox.isSelected()) {
+                    Path cppDir = Paths.get(outDir, "cpp");
+                    runCmakeAndPackage(cppDir, Paths.get(outDir),
+                            new File(outDir, jarFile.getName()).toPath(), obfuscator.getNativeDir());
+                } else if (plainName != null) {
+                    appendLog("Plain library mode selected; skipping jar packaging.\n");
+                } else {
+                    appendLog("Packaging disabled by user.\n");
+                }
+                return 0;
             }
 
             @Override
             protected void done() {
                 try {
                     get();
-                    appendLog("\n=== OBFUSCATION COMPLETED SUCCESSFULLY ===\n");
-                    appendLog("Output location: " + outDir + "\n");
-                    updateStatus("Completed", SUCCESS_COLOR);
-
-                    // Show success dialog with option to open output folder
-                    int result = JOptionPane.showOptionDialog(ObfuscatorFrame.this,
-                            "Obfuscation completed successfully!\nOutput saved to: " + outDir,
-                            "Success",
-                            JOptionPane.OK_CANCEL_OPTION,
-                            JOptionPane.INFORMATION_MESSAGE,
-                            null,
-                            new String[]{"Open Output Folder", "OK"},
-                            "OK");
-
-                    if (result == 0) {
-                        try {
-                            Desktop.getDesktop().open(new File(outDir));
-                        } catch (IOException ex) {
-                            // Ignore if can't open
-                        }
-                    }
+                    appendLog("Done. Output at: " + outDir + "\n");
+                    JOptionPane.showMessageDialog(ObfuscatorFrame.this,
+                            "Obfuscation completed.", "Success", JOptionPane.INFORMATION_MESSAGE);
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     appendLogError(cause);
-                    updateStatus("Failed", ERROR_COLOR);
-
                     JOptionPane.showMessageDialog(ObfuscatorFrame.this,
-                            "Obfuscation failed:\n" +
-                                    (cause.getMessage() == null ? cause.toString() : cause.getMessage()),
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE);
+                            cause.getMessage() == null ? cause.toString() : cause.getMessage(),
+                            "Error", JOptionPane.ERROR_MESSAGE);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
-                    updateStatus("Interrupted", ERROR_COLOR);
                 } finally {
                     setFormEnabled(true);
                     progressBar.setVisible(false);
@@ -871,6 +471,8 @@ public class ObfuscatorFrame extends JFrame {
         worker.execute();
     }
 
+    // ------------------------ Utils ------------------------
+
     private static String emptyToNull(String s) {
         if (s == null) return null;
         String t = s.trim();
@@ -878,6 +480,8 @@ public class ObfuscatorFrame extends JFrame {
     }
 
     private void setFormEnabled(boolean enabled) {
+        leftNav.setEnabled(enabled);
+
         jarField.setEnabled(enabled);
         outDirField.setEnabled(enabled);
         libsDirField.setEnabled(enabled);
@@ -890,9 +494,6 @@ public class ObfuscatorFrame extends JFrame {
         debugJarBox.setEnabled(enabled);
         packageBox.setEnabled(enabled);
         runButton.setEnabled(enabled);
-
-        // Update button text
-        runButton.setText(enabled ? "Run Obfuscation" : "Processing...");
     }
 
     private void appendLog(String text) {
@@ -912,8 +513,7 @@ public class ObfuscatorFrame extends JFrame {
         appendLog(sb.toString());
     }
 
-    private void runCmakeAndPackage(Path cppDir, Path outDir, Path outJar, String nativeDir)
-            throws IOException, InterruptedException {
+    private void runCmakeAndPackage(Path cppDir, Path outDir, Path outJar, String nativeDir) throws IOException, InterruptedException {
         if (!Files.isDirectory(cppDir)) {
             throw new IOException("C++ output directory not found: " + cppDir);
         }
@@ -926,7 +526,7 @@ public class ObfuscatorFrame extends JFrame {
 
         Path libDir = cppDir.resolve("build").resolve("lib");
         if (!Files.isDirectory(libDir)) {
-            throw new IOException("Native lib directory not found: " + libDir);
+            throw new IOException("Native lib dir not found: " + libDir);
         }
 
         File libFile = Files.list(libDir)
@@ -937,7 +537,6 @@ public class ObfuscatorFrame extends JFrame {
                 .map(Path::toFile)
                 .findFirst()
                 .orElse(null);
-
         if (libFile == null) {
             throw new IOException("No native library (.dll/.so/.dylib) found in " + libDir);
         }
@@ -946,11 +545,17 @@ public class ObfuscatorFrame extends JFrame {
             throw new IOException("Output JAR not found: " + outJar);
         }
 
-        // Determine platform-specific path
         String arch = System.getProperty("os.arch").toLowerCase();
         String os = System.getProperty("os.name").toLowerCase();
-        String platformTypeName;
+        String entryPath = getEntryPath(nativeDir, arch, os);
 
+        appendLog("\nPackaging native lib into jar at /" + entryPath + "...\n");
+        packageIntoJar(outJar, libFile.toPath(), entryPath);
+        appendLog("Packaging completed.\n");
+    }
+
+    private static String getEntryPath(String nativeDir, String arch, String os) {
+        String platformTypeName;
         switch (arch) {
             case "x86_64":
             case "amd64":
@@ -965,15 +570,8 @@ public class ObfuscatorFrame extends JFrame {
             default:
                 platformTypeName = arch.startsWith("arm") ? "arm32" : ("raw" + arch);
         }
-
-        String osTypeName = (os.contains("win")) ? "windows.dll" :
-                (os.contains("mac") ? "macos.dylib" : "linux.so");
-        String entryPath = nativeDir + "/" + platformTypeName + "-" + osTypeName;
-
-        appendLog("\nPackaging native library into JAR...\n");
-        appendLog("Library location in JAR: /" + entryPath + "\n");
-        packageIntoJar(outJar, libFile.toPath(), entryPath);
-        appendLog("Packaging completed successfully!\n");
+        String osTypeName = (os.contains("win")) ? "windows.dll" : (os.contains("mac") ? "macos.dylib" : "linux.so");
+        return nativeDir + "/" + platformTypeName + "-" + osTypeName;
     }
 
     private void runProcess(String[] cmd, File workDir) throws IOException, InterruptedException {
@@ -981,25 +579,20 @@ public class ObfuscatorFrame extends JFrame {
         pb.directory(workDir);
         pb.redirectErrorStream(true);
         Process p = pb.start();
-
-        Thread outputThread = new Thread(() -> {
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(p.getInputStream()))) {
+        Thread t = new Thread(() -> {
+            try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
                 String line;
-                while ((line = reader.readLine()) != null) {
-                    appendLog("  > " + line + "\n");
+                while ((line = r.readLine()) != null) {
+                    appendLog(line + "\n");
                 }
             } catch (IOException ignored) {
             }
         });
-
-        outputThread.setDaemon(true);
-        outputThread.start();
-
-        int exitCode = p.waitFor();
-        if (exitCode != 0) {
-            throw new IOException("Command failed: " + String.join(" ", cmd) +
-                    " (exit code: " + exitCode + ")");
+        t.setDaemon(true);
+        t.start();
+        int code = p.waitFor();
+        if (code != 0) {
+            throw new IOException("Command failed (" + String.join(" ", cmd) + ") with exit code " + code);
         }
     }
 
@@ -1007,7 +600,6 @@ public class ObfuscatorFrame extends JFrame {
         java.net.URI uri = java.net.URI.create("jar:" + jarPath.toUri().toString());
         java.util.Map<String, String> env = new java.util.HashMap<>();
         env.put("create", "false");
-
         try (java.nio.file.FileSystem fs = java.nio.file.FileSystems.newFileSystem(uri, env)) {
             Path inside = fs.getPath("/" + entryPath);
             if (inside.getParent() != null) {
