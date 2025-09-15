@@ -343,6 +343,23 @@ namespace native_jvm::utils {
         env->DeleteLocalRef(system_class);
     }
 
+    void debug_print_int(JNIEnv *env, const char *context, jint value, int line) {
+        jclass system_class = env->FindClass("java/lang/System");
+        jfieldID err_field = env->GetStaticFieldID(system_class, "err", "Ljava/io/PrintStream;");
+        jobject err_stream = env->GetStaticObjectField(system_class, err_field);
+        jclass print_stream_class = env->FindClass("java/io/PrintStream");
+        jmethodID println_method = env->GetMethodID(print_stream_class, "println", "(Ljava/lang/String;)V");
+
+        std::string debug_msg = std::string(context) + " = " + std::to_string(value) + ", line: " + std::to_string(line);
+        jstring debug_str = env->NewStringUTF(debug_msg.c_str());
+        env->CallVoidMethod(err_stream, println_method, debug_str);
+
+        env->DeleteLocalRef(debug_str);
+        env->DeleteLocalRef(err_stream);
+        env->DeleteLocalRef(print_stream_class);
+        env->DeleteLocalRef(system_class);
+    }
+
     void throw_re(JNIEnv *env, const char *exception_class, const char *error, int line) {
         jclass exception_class_ptr = env->FindClass(exception_class);
         if (env->ExceptionCheck()) {
@@ -410,5 +427,33 @@ namespace native_jvm::utils {
         if (env->ExceptionCheck())
             return nullptr;
         return result;
+    }
+
+    void ensure_initialized(JNIEnv *env, jobject classloader, const char *class_name_dot) {
+        // Use Class.forName(name, true, loader) to trigger class initialization.
+        jclass class_class = env->FindClass("java/lang/Class");
+        if (env->ExceptionCheck()) return;
+        jmethodID for_name = env->GetStaticMethodID(class_class, "forName",
+                                                    "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;");
+        if (env->ExceptionCheck()) { env->DeleteLocalRef(class_class); return; }
+        jstring name_str = env->NewStringUTF(class_name_dot);
+        if (env->ExceptionCheck()) { env->DeleteLocalRef(class_class); return; }
+        jobject ignore = env->CallStaticObjectMethod(class_class, for_name, name_str, JNI_TRUE, classloader);
+        (void)ignore; // ignore result
+        env->DeleteLocalRef(name_str);
+        env->DeleteLocalRef(class_class);
+        if (env->ExceptionCheck()) return;
+    }
+
+    void ensure_initialized(JNIEnv *env, jobject classloader, jstring class_name_dot) {
+        jclass class_class = env->FindClass("java/lang/Class");
+        if (env->ExceptionCheck()) return;
+        jmethodID for_name = env->GetStaticMethodID(class_class, "forName",
+                                                    "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;");
+        if (env->ExceptionCheck()) { env->DeleteLocalRef(class_class); return; }
+        jobject ignore = env->CallStaticObjectMethod(class_class, for_name, class_name_dot, JNI_TRUE, classloader);
+        (void)ignore;
+        env->DeleteLocalRef(class_class);
+        if (env->ExceptionCheck()) return;
     }
 }

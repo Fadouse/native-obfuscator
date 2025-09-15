@@ -22,6 +22,7 @@ namespace native_jvm::utils {
     void init_utils(JNIEnv *env);
 
     void debug_print_stack_state(JNIEnv *env, const char *context, int object_index, int return_index, int line);
+    void debug_print_int(JNIEnv *env, const char *context, jint value, int line);
 
     void throw_re(JNIEnv *env, const char *exception_class, const char *error, int line);
 
@@ -97,6 +98,12 @@ namespace native_jvm::utils {
     void clear_refs(JNIEnv *env, std::unordered_set<jobject> &refs);
 
     jstring get_interned(JNIEnv *env, jstring value);
+
+    // Ensure the class identified by dot-style name is initialized.
+    // This mirrors JVM semantics where getstatic/putstatic/invokestatic
+    // trigger <clinit> on first use.
+    void ensure_initialized(JNIEnv *env, jobject classloader, const char *class_name_dot);
+    void ensure_initialized(JNIEnv *env, jobject classloader, jstring class_name_dot);
 
     jint decode_int(jint enc, jint key, jint method_id, jint class_id, jint seed);
     jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id, jint seed);

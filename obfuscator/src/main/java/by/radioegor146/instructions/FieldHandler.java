@@ -33,6 +33,13 @@ public class FieldHandler extends GenericInstructionHandler<FieldInsnNode> {
                 classId,
                 trimmedTryCatchBlock));
 
+        // Mirror JVM semantics: static field access triggers class initialization.
+        if (isStatic) {
+            String dotted = node.owner.replace('/', '.');
+            context.output.append(String.format("utils::ensure_initialized(env, classloader, %s); %s ",
+                    context.getCachedStrings().getPointer(dotted), trimmedTryCatchBlock));
+        }
+
         int fieldId = context.getCachedFields().getId(info);
         props.put("fieldid", context.getCachedFields().getPointer(info));
 

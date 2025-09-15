@@ -197,6 +197,12 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                 classId,
                 trimmedTryCatchBlock));
 
+        if (isStatic) {
+            String dotted = node.owner.replace('/', '.');
+            context.output.append(String.format("utils::ensure_initialized(env, classloader, %s); %s ",
+                    context.getCachedStrings().getPointer(dotted), trimmedTryCatchBlock));
+        }
+
         CachedMethodInfo methodInfo = new CachedMethodInfo(node.owner, node.name, node.desc, isStatic);
         int methodId = context.getCachedMethods().getId(methodInfo);
         props.put("methodid", context.getCachedMethods().getPointer(methodInfo));

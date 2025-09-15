@@ -19,12 +19,11 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
                 // while preserving stack semantics and exception behavior.
                 if (context.enumSwitchMapOnStack && context.lastWasEnumOrdinal) {
                     instructionName = null;
-                    // Preserve NPE behavior on null array reference as in IALOAD
+                    // Preserve NPE behavior on null array reference as in IALOAD.
+                    // Note: use string literals here to avoid relying on snippet #VARS expansion.
                     context.output.append(String.format(
-                            "if (cstack%s.l == nullptr) utils::throw_re(env, %s, %s, %d); else { cstack%s.i = (jint) (cstack%s.i + 1); } %s",
+                            "if (cstack%s.l == nullptr) utils::throw_re(env, \"java/lang/NullPointerException\", \"IALOAD npe\", %d); else { cstack%s.i = (jint) (cstack%s.i + 1); } %s",
                             props.get("stackindexm2"),
-                            context.getSnippets().getSnippet("IALOAD_S_CONST_NPE"),
-                            context.getSnippets().getSnippet("IALOAD_S_CONST_ERROR_DESC"),
                             context.line,
                             props.get("stackindexm2"),
                             props.get("stackindexm1"),

@@ -19,8 +19,9 @@ public class LookupSwitchHandler extends GenericInstructionHandler<LookupSwitchI
                     node.labels.get(i).getLabel())));
         }
         output.append(String.format("    %s\n    ", getDefault(context, node.dflt.getLabel())));
-
-        instructionName = "LOOKUPSWITCH_END";
+        // Close inner switch and break out of the outer state machine switch
+        output.append("}\n    break;\n    ");
+        instructionName = null;
     }
 
     private static String getStart(MethodContext context) {
