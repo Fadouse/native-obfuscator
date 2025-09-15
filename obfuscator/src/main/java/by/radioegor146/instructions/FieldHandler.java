@@ -44,6 +44,15 @@ public class FieldHandler extends GenericInstructionHandler<FieldInsnNode> {
                 context.getStringPool().get(node.name),
                 context.getStringPool().get(node.desc),
                 trimmedTryCatchBlock));
+
+        // Heuristic: mark when the synthetic enum switch mapping array is loaded onto the stack.
+        // Pattern: GETSTATIC <SomeClass>.$SwitchMap$... : [I
+        if (node.getOpcode() == Opcodes.GETSTATIC
+                && "[I".equals(node.desc)
+                && node.name != null && node.name.startsWith("$SwitchMap$")
+        ) {
+            context.enumSwitchMapOnStack = true;
+        }
     }
 
     @Override

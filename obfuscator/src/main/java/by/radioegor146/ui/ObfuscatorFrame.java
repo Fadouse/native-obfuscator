@@ -18,6 +18,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 
 public class ObfuscatorFrame extends JFrame {
@@ -44,6 +45,10 @@ public class ObfuscatorFrame extends JFrame {
 
     private final JList<String> leftNav;
     private final JPanel rightCards;
+
+    private final Preferences prefs = Preferences.userNodeForPackage(ObfuscatorFrame.class);
+    private static final String PREF_LAST_JAR_DIR  = "lastJarDir";
+    private static final String PREF_LAST_ANY_DIR  = "lastAnyDir";
 
     public static void launch() {
         SwingUtilities.invokeLater(() -> {
@@ -275,16 +280,70 @@ public class ObfuscatorFrame extends JFrame {
 
     // ------------------------ Native/System Pickers ------------------------
 
+    private File getExistingDir(String path) {
+        if (path == null || path.trim().isEmpty()) return null;
+        File f = new File(path.trim());
+        if (f.isFile()) f = f.getParentFile();
+        return (f != null && f.isDirectory()) ? f : null;
+    }
+
+    private File guessStartDirForJarChooser() {
+        File byJar = getExistingDir(jarField.getText());
+        if (byJar != null) return byJar;
+
+        File byOut = getExistingDir(outDirField.getText());
+        if (byOut != null) return byOut;
+        File byLibs = getExistingDir(libsDirField.getText());
+        if (byLibs != null) return byLibs;
+
+        String lastJarDir = prefs.get(PREF_LAST_JAR_DIR, null);
+        File byPrefJar = getExistingDir(lastJarDir);
+        if (byPrefJar != null) return byPrefJar;
+
+        String lastAnyDir = prefs.get(PREF_LAST_ANY_DIR, null);
+        File byPrefAny = getExistingDir(lastAnyDir);
+        if (byPrefAny != null) return byPrefAny;
+
+        if (isWindows()) {
+            String[] candidates = {"D:\\", "E:\\", "F:\\", "C:\\"};
+            for (String p : candidates) {
+                File root = new File(p);
+                if (root.exists() && root.isDirectory()) return root;
+            }
+        }
+        return new File(System.getProperty("user.home"));
+    }
+
+    private boolean isWindows() {
+        return System.getProperty("os.name", "").toLowerCase().contains("win");
+    }
+
+
     private void browseFileJar() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Select input JAR");
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+
+        File startDir = guessStartDirForJarChooser();
+        if (startDir.isDirectory()) {
+            chooser.setCurrentDirectory(startDir);
+        }
+
+        chooser.setAcceptAllFileFilterUsed(true);
+        chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Java Archives (*.jar)", "jar"));
+
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File f = chooser.getSelectedFile();
             jarField.setText(f.getAbsolutePath());
-            if (outDirField.getText().trim().isEmpty()) {
-                File parent = f.getParentFile();
-                if (parent != null) outDirField.setText(new File(parent, "native-output").getAbsolutePath());
+
+            File parent = f.getParentFile();
+            if (parent != null) {
+                prefs.put(PREF_LAST_JAR_DIR, parent.getAbsolutePath());
+                prefs.put(PREF_LAST_ANY_DIR, parent.getAbsolutePath());
+            }
+
+            if (outDirField.getText().trim().isEmpty() && parent != null) {
+                outDirField.setText(new File(parent, "native-output").getAbsolutePath());
             }
         }
     }

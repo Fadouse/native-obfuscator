@@ -11,6 +11,32 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
     @Override
     protected void process(MethodContext context, InsnNode node) {
         switch (node.getOpcode()) {
+            case Opcodes.IALOAD: {
+                // Rewrite enum-switch mapping pattern:
+                // When prior sequence was GETSTATIC $SwitchMap...; ALOAD enum; INVOKEVIRTUAL ordinal()I;
+                // then IALOAD; we can avoid reading the mapping array and compute mapping value directly
+                // as (ordinal + 1). This fixes inconsistent mapping contents across JVMs
+                // while preserving stack semantics and exception behavior.
+                if (context.enumSwitchMapOnStack && context.lastWasEnumOrdinal) {
+                    instructionName = null;
+                    // Preserve NPE behavior on null array reference as in IALOAD
+                    context.output.append(String.format(
+                            "if (cstack%s.l == nullptr) utils::throw_re(env, %s, %s, %d); else { cstack%s.i = (jint) (cstack%s.i + 1); } %s",
+                            props.get("stackindexm2"),
+                            context.getSnippets().getSnippet("IALOAD_S_CONST_NPE"),
+                            context.getSnippets().getSnippet("IALOAD_S_CONST_ERROR_DESC"),
+                            context.line,
+                            props.get("stackindexm2"),
+                            props.get("stackindexm1"),
+                            props.get("trycatchhandler")));
+                    // Reset flags after rewriting one mapping load
+                    context.enumSwitchMapOnStack = false;
+                    context.lastWasEnumOrdinal = false;
+                    break;
+                }
+                // fall through to default snippets
+                break;
+            }
             case Opcodes.IADD: {
                 instructionName = null;
                 long seed = ThreadLocalRandom.current().nextLong();

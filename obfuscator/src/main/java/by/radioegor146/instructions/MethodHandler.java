@@ -212,6 +212,16 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                         trimmedTryCatchBlock));
 
         props.put("args", argsBuilder.toString());
+
+        // Heuristic marker: if we're in the middle of an enum-switch mapping sequence
+        // and we just encountered ordinal()I, remember it so we can rewrite the
+        // following IALOAD accordingly.
+        if (node.getOpcode() == Opcodes.INVOKEVIRTUAL
+                && "ordinal".equals(node.name)
+                && "()I".equals(node.desc)
+                && context.enumSwitchMapOnStack) {
+            context.lastWasEnumOrdinal = true;
+        }
     }
 
     @Override

@@ -44,6 +44,14 @@ public class MethodContext {
     // and skip generating/registering any native implementation for it.
     public boolean skipNative;
 
+    // Heuristics flags used to safely rewrite enum-switch bytecode patterns
+    // that utilize the synthetic "$SwitchMap$..." int[] array. When the pattern
+    // "GETSTATIC $SwitchMap...; ALOAD <enum>; INVOKEVIRTUAL ordinal()I; IALOAD; TABLESWITCH" is
+    // detected, we replace the IALOAD with a direct computation (ordinal + 1), avoiding
+    // reliance on the fragile synthetic mapping array.
+    public boolean enumSwitchMapOnStack;
+    public boolean lastWasEnumOrdinal;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex) {
         this.obfuscator = obfuscator;
