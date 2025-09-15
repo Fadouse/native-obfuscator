@@ -325,6 +325,24 @@ namespace native_jvm::utils {
         return clazz;
     }
 
+    void debug_print_stack_state(JNIEnv *env, const char *context, int object_index, int return_index, int line) {
+        jclass system_class = env->FindClass("java/lang/System");
+        jfieldID err_field = env->GetStaticFieldID(system_class, "err", "Ljava/io/PrintStream;");
+        jobject err_stream = env->GetStaticObjectField(system_class, err_field);
+        jclass print_stream_class = env->FindClass("java/io/PrintStream");
+        jmethodID println_method = env->GetMethodID(print_stream_class, "println", "(Ljava/lang/String;)V");
+
+        std::string debug_msg = std::string(context) + " - object_index: " + std::to_string(object_index) +
+                               ", return_index: " + std::to_string(return_index) + ", line: " + std::to_string(line);
+        jstring debug_str = env->NewStringUTF(debug_msg.c_str());
+        env->CallVoidMethod(err_stream, println_method, debug_str);
+
+        env->DeleteLocalRef(debug_str);
+        env->DeleteLocalRef(err_stream);
+        env->DeleteLocalRef(print_stream_class);
+        env->DeleteLocalRef(system_class);
+    }
+
     void throw_re(JNIEnv *env, const char *exception_class, const char *error, int line) {
         jclass exception_class_ptr = env->FindClass(exception_class);
         if (env->ExceptionCheck()) {

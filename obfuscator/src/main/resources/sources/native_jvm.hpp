@@ -21,6 +21,8 @@ namespace native_jvm::utils {
 
     void init_utils(JNIEnv *env);
 
+    void debug_print_stack_state(JNIEnv *env, const char *context, int object_index, int return_index, int line);
+
     void throw_re(JNIEnv *env, const char *exception_class, const char *error, int line);
 
     jobjectArray create_multidim_array(JNIEnv *env, jobject classloader, jint count, jint required_count,

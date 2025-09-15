@@ -243,13 +243,23 @@ void init_key(uint64_t seed);
 // variables for OP_LOAD/OP_STORE instructions.
 int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
                 int64_t* locals, size_t locals_length, uint64_t seed,
-                const ConstantPoolEntry* constant_pool = nullptr, size_t constant_pool_size = 0);
+                const ConstantPoolEntry* constant_pool = nullptr, size_t constant_pool_size = 0,
+                const MethodRef* method_refs = nullptr, size_t method_refs_size = 0,
+                const FieldRef* field_refs = nullptr, size_t field_refs_size = 0,
+                const MultiArrayInfo* multi_refs = nullptr, size_t multi_refs_size = 0,
+                const TableSwitch* table_refs = nullptr, size_t table_refs_size = 0,
+                const LookupSwitch* lookup_refs = nullptr, size_t lookup_refs_size = 0);
 
 // JIT-enabled variant that caches translated machine code for hot sequences
 // and executes them directly. Falls back to the interpreter for cold code.
 int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
                     int64_t* locals, size_t locals_length, uint64_t seed,
-                    const ConstantPoolEntry* constant_pool = nullptr, size_t constant_pool_size = 0);
+                    const ConstantPoolEntry* constant_pool = nullptr, size_t constant_pool_size = 0,
+                    const MethodRef* method_refs = nullptr, size_t method_refs_size = 0,
+                    const FieldRef* field_refs = nullptr, size_t field_refs_size = 0,
+                    const MultiArrayInfo* multi_refs = nullptr, size_t multi_refs_size = 0,
+                    const TableSwitch* table_refs = nullptr, size_t table_refs_size = 0,
+                    const LookupSwitch* lookup_refs = nullptr, size_t lookup_refs_size = 0);
 
 // Encodes a program in-place using the internal key so that it can be
 // executed by the VM.  The seed should be the same value passed to

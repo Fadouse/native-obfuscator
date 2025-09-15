@@ -87,6 +87,17 @@ static void parse_method_sig(const char* sig, std::vector<char>& args, char& ret
 
 static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
                           int64_t* stack, size_t& sp) {
+    if (!ref) {
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Null method reference");
+        return;
+    }
+    if (!ref->class_name || !ref->method_name || !ref->method_sig) {
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "Invalid method reference: class=%p name=%p sig=%p",
+                 ref->class_name, ref->method_name, ref->method_sig);
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), error_msg);
+        return;
+    }
     std::vector<char> arg_types;
     char ret;
     parse_method_sig(ref->method_sig, arg_types, ret);
@@ -279,7 +290,12 @@ Instruction encode(OpCode op, int64_t operand, uint64_t key, uint64_t nonce) {
 
 int64_t execute(JNIEnv* env, const Instruction* code, size_t length,
                 int64_t* locals, size_t locals_length, uint64_t seed,
-                const ConstantPoolEntry* constant_pool, size_t constant_pool_size) {
+                const ConstantPoolEntry* constant_pool, size_t constant_pool_size,
+                const MethodRef* method_refs, size_t method_refs_size,
+                const FieldRef* field_refs, size_t field_refs_size,
+                const MultiArrayInfo* multi_refs, size_t multi_refs_size,
+                const TableSwitch* table_refs, size_t table_refs_size,
+                const LookupSwitch* lookup_refs, size_t lookup_refs_size) {
     int64_t stack[256];
     size_t sp = 0;
     size_t pc = 0;
@@ -1154,7 +1170,7 @@ do_if_acmpne:
 
 do_tableswitch:
     if (sp >= 1) {
-        auto* ts = reinterpret_cast<TableSwitch*>(tmp);
+        auto* ts = &table_refs[tmp];
         int32_t idx = static_cast<int32_t>(stack[--sp]);
         if (idx < ts->low || idx > ts->high) {
             pc = ts->default_target;
@@ -1166,7 +1182,7 @@ do_tableswitch:
 
 do_lookupswitch:
     if (sp >= 1) {
-        auto* ls = reinterpret_cast<LookupSwitch*>(tmp);
+        auto* ls = &lookup_refs[tmp];
         int32_t key = static_cast<int32_t>(stack[--sp]);
         pc = ls->default_target;
         for (int32_t i = 0; i < ls->count; ++i) {
@@ -1518,7 +1534,7 @@ do_newarray:
 
 do_multianewarray:
     {
-        auto* info = reinterpret_cast<const MultiArrayInfo*>(tmp);
+        auto* info = &multi_refs[tmp];
         jint dims = info->dims;
         const char* name = info->class_name;
         std::vector<jint> sizes(dims);
@@ -1565,7 +1581,7 @@ do_instanceof:
 
 do_getstatic:
     if (sp < 256) {
-        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        auto* ref = &field_refs[tmp];
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
@@ -1609,7 +1625,7 @@ do_getstatic:
 
 do_putstatic:
     if (sp >= 1) {
-        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        auto* ref = &field_refs[tmp];
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
             jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
@@ -1657,7 +1673,7 @@ do_putstatic:
 
 do_getfield:
     if (sp >= 1 && sp < 256) {
-        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        auto* ref = &field_refs[tmp];
         jobject obj = reinterpret_cast<jobject>(stack[--sp]);
         if (!obj) {
             env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
@@ -1706,7 +1722,7 @@ do_getfield:
 
 do_putfield:
     if (sp >= 2) {
-        auto* ref = reinterpret_cast<FieldRef*>(tmp);
+        auto* ref = &field_refs[tmp];
         int64_t value = stack[--sp];
         jobject obj = reinterpret_cast<jobject>(stack[--sp]);
         if (!obj) {
@@ -1755,23 +1771,53 @@ do_putfield:
     goto dispatch;
 
 do_invokestatic:
-    invoke_method(env, OP_INVOKESTATIC, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
+        invoke_method(env, OP_INVOKESTATIC, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
+    } else {
+        // Method reference not found - this shouldn't happen in valid code
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        goto halt;
+    }
     goto dispatch;
 
 do_invokevirtual:
-    invoke_method(env, OP_INVOKEVIRTUAL, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
+        invoke_method(env, OP_INVOKEVIRTUAL, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
+    } else {
+        // Method reference not found - this shouldn't happen in valid code
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        goto halt;
+    }
     goto dispatch;
 
 do_invokespecial:
-    invoke_method(env, OP_INVOKESPECIAL, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
+        invoke_method(env, OP_INVOKESPECIAL, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
+    } else {
+        // Method reference not found - this shouldn't happen in valid code
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        goto halt;
+    }
     goto dispatch;
 
 do_invokeinterface:
-    invoke_method(env, OP_INVOKEINTERFACE, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
+        invoke_method(env, OP_INVOKEINTERFACE, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
+    } else {
+        // Method reference not found - this shouldn't happen in valid code
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        goto halt;
+    }
     goto dispatch;
 
 do_invokedynamic:
-    invoke_method(env, OP_INVOKEDYNAMIC, reinterpret_cast<MethodRef*>(tmp), stack, sp);
+    if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
+        invoke_method(env, OP_INVOKEDYNAMIC, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
+    } else {
+        // Method reference not found - this shouldn't happen in valid code
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        goto halt;
+    }
     goto dispatch;
 
 do_ldc:
@@ -1853,7 +1899,12 @@ void encode_program(Instruction* code, size_t length, uint64_t seed) {
 
 int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
                     int64_t* locals, size_t locals_length, uint64_t seed,
-                    const ConstantPoolEntry* constant_pool, size_t constant_pool_size) {
+                    const ConstantPoolEntry* constant_pool, size_t constant_pool_size,
+                    const MethodRef* method_refs, size_t method_refs_size,
+                    const FieldRef* field_refs, size_t field_refs_size,
+                    const MultiArrayInfo* multi_refs, size_t multi_refs_size,
+                    const TableSwitch* table_refs, size_t table_refs_size,
+                    const LookupSwitch* lookup_refs, size_t lookup_refs_size) {
     ensure_init(seed);
     auto it = jit_cache.find(code);
     if (it != jit_cache.end()) {
@@ -1865,7 +1916,7 @@ int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
         it = jit_cache.emplace(code, compiled).first;
         return it->second.func(env, locals, locals_length, seed, it->second.ctx);
     }
-    return execute(env, code, length, locals, locals_length, seed, constant_pool, constant_pool_size);
+    return execute(env, code, length, locals, locals_length, seed, constant_pool, constant_pool_size, method_refs, method_refs_size, field_refs, field_refs_size, multi_refs, multi_refs_size, table_refs, table_refs_size, lookup_refs, lookup_refs_size);
 }
 
 static int64_t execute_variant(JNIEnv* env, const Instruction* code, size_t length,
@@ -1873,7 +1924,7 @@ static int64_t execute_variant(JNIEnv* env, const Instruction* code, size_t leng
     volatile uint64_t noise = KEY ^ seed;
     noise ^= noise << 13;
     // noise is intentionally unused to introduce a distinct entry
-    return execute(env, code, length, locals, locals_length, seed, nullptr, 0);
+    return execute(env, code, length, locals, locals_length, seed, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0);
 }
 
 int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t seed) {
@@ -1912,7 +1963,7 @@ int64_t run_arith_vm(JNIEnv* env, OpCode op, int64_t lhs, int64_t rhs, uint64_t 
     // These simple arithmetic functions don't need constant pool support
     std::uniform_int_distribution<int> entry_dist(0, 1);
     if (entry_dist(rng) == 0) {
-        return execute(env, program.data(), program.size(), nullptr, 0, seed, nullptr, 0);
+        return execute(env, program.data(), program.size(), nullptr, 0, seed, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0);
     } else {
         return execute_variant(env, program.data(), program.size(), nullptr, 0, seed);
     }
@@ -1947,7 +1998,7 @@ int64_t run_unary_vm(JNIEnv* env, OpCode op, int64_t value, uint64_t seed) {
     emit_junk();
     emit(OP_HALT, 0);
 
-    return execute(env, program.data(), program.size(), nullptr, 0, seed, nullptr, 0);
+    return execute(env, program.data(), program.size(), nullptr, 0, seed, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0);
 }
 
 } // namespace native_jvm::vm

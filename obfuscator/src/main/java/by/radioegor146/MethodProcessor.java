@@ -296,7 +296,8 @@ public class MethodProcessor {
                     output.append("            case native_jvm::vm::OP_PUTSTATIC:\n");
                     output.append("            case native_jvm::vm::OP_GETFIELD:\n");
                     output.append("            case native_jvm::vm::OP_PUTFIELD:\n");
-                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_fields[ins.operand]);\n");
+                    // Keep operand as index, don't convert to pointer
+                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_fields[ins.operand]);\n");
                     output.append("                break;\n");
                 }
                 if (!methodRefs.isEmpty()) {
@@ -304,7 +305,8 @@ public class MethodProcessor {
                     output.append("            case native_jvm::vm::OP_INVOKEVIRTUAL:\n");
                     output.append("            case native_jvm::vm::OP_INVOKESPECIAL:\n");
                     output.append("            case native_jvm::vm::OP_INVOKEINTERFACE:\n");
-                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_methods[ins.operand]);\n");
+                    // Keep operand as index, don't convert to pointer
+                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_methods[ins.operand]);\n");
                     output.append("                break;\n");
                 }
                 if (!classRefs.isEmpty()) {
@@ -312,12 +314,14 @@ public class MethodProcessor {
                     output.append("            case native_jvm::vm::OP_ANEWARRAY:\n");
                     output.append("            case native_jvm::vm::OP_CHECKCAST:\n");
                     output.append("            case native_jvm::vm::OP_INSTANCEOF:\n");
-                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_classes[ins.operand]);\n");
+                    // Keep operand as index, don't convert to pointer
+                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_classes[ins.operand]);\n");
                     output.append("                break;\n");
                 }
                 if (!multiArrayRefs.isEmpty()) {
                     output.append("            case native_jvm::vm::OP_MULTIANEWARRAY:\n");
-                    output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_multi[ins.operand]);\n");
+                    // Keep operand as index, don't convert to pointer
+                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_multi[ins.operand]);\n");
                     output.append("                break;\n");
                 }
                 output.append("        }\n");
@@ -330,14 +334,32 @@ public class MethodProcessor {
             String constantPoolPtr = constantPool.isEmpty() ? "nullptr" : "__ngen_vm_constants";
             int constantPoolSize = constantPool.size();
 
+            // Determine method references parameters
+            String methodRefsPtr = methodRefs.isEmpty() ? "nullptr" : "__ngen_vm_methods";
+            int methodRefsSize = methodRefs.size();
+
+            // Determine field references parameters
+            String fieldRefsPtr = fieldRefs.isEmpty() ? "nullptr" : "__ngen_vm_fields";
+            int fieldRefsSize = fieldRefs.size();
+
+            // Determine multi-array references parameters
+            String multiRefsPtr = multiArrayRefs.isEmpty() ? "nullptr" : "__ngen_vm_multi";
+            int multiRefsSize = multiArrayRefs.size();
+
+            // Determine class references parameters (for switches, not implemented yet)
+            String tableRefsPtr = "nullptr";
+            int tableRefsSize = 0;
+            String lookupRefsPtr = "nullptr";
+            int lookupRefsSize = 0;
+
             if (vmTranslator.isUseJit()) {
                 output.append(String.format(
-                        "    return (%s)native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize));
+                        "    return (%s)native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize));
             } else {
                 output.append(String.format(
-                        "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize));
+                        "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
+                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize));
             }
             output.append("}\n");
 

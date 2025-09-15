@@ -191,51 +191,33 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
                 break;
             }
             case Opcodes.DUP_X1: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP_X1, 0, %dLL);%s",
-                        seed, props.get("trycatchhandler")));
+                // Use snippets instead of VM to maintain consistent stack state
+                // instructionName will be handled by snippets
                 break;
             }
             case Opcodes.DUP_X2: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP_X2, 0, %dLL);%s",
-                        seed, props.get("trycatchhandler")));
+                // Use snippets instead of VM to maintain consistent stack state
+                // instructionName will be handled by snippets
                 break;
             }
             case Opcodes.DUP2: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP2, 0, %dLL);%s",
-                        seed, props.get("trycatchhandler")));
+                // Use snippets instead of VM to maintain consistent stack state
+                // instructionName will be handled by snippets
                 break;
             }
             case Opcodes.DUP2_X1: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP2_X1, 0, %dLL);%s",
-                        seed, props.get("trycatchhandler")));
+                // Use snippets instead of VM to maintain consistent stack state
+                // instructionName will be handled by snippets
                 break;
             }
             case Opcodes.DUP2_X2: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_DUP2_X2, 0, %dLL);%s",
-                        seed, props.get("trycatchhandler")));
+                // Use snippets instead of VM to maintain consistent stack state
+                // instructionName will be handled by snippets
                 break;
             }
             case Opcodes.ATHROW: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_ATHROW, 0, %dLL);%s",
-                        seed, props.get("trycatchhandler")));
+                // Use snippets instead of VM to maintain consistent stack state
+                // instructionName will be handled by snippets
                 break;
             }
             default:
@@ -267,8 +249,6 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.LNEG:
             case Opcodes.INEG:
             case Opcodes.SWAP:
-            case Opcodes.DALOAD:
-            case Opcodes.LALOAD:
                 return currentStackPointer;
             case Opcodes.ACONST_NULL:
             case Opcodes.F2D:
