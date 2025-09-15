@@ -359,14 +359,55 @@ public class MethodProcessor {
             String lookupRefsPtr = "nullptr";
             int lookupRefsSize = 0;
 
+            // Execute micro VM and correctly convert the encoded top-of-stack value
+            // back to the Java return type. The VM encodes values on a 64-bit stack:
+            // - int/float use low 32 bits (float is raw IEEE754 bits)
+            // - long/double use all 64 bits (double is raw IEEE754 bits)
+            // - object/array are stored as their pointer cast to int64
+            String vmCallFmt;
             if (vmTranslator.isUseJit()) {
-                output.append(String.format(
-                        "    return (%s)native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize));
+                vmCallFmt = String.format(
+                        "    auto __ngen_vm_ret = native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
+                        vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize);
             } else {
-                output.append(String.format(
-                        "    return (%s)native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
-                        CPP_TYPES[context.ret.getSort()], vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize));
+                vmCallFmt = String.format(
+                        "    auto __ngen_vm_ret = native_jvm::vm::execute(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
+                        vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize);
+            }
+            output.append(vmCallFmt);
+            switch (context.ret.getSort()) {
+                case Type.DOUBLE: {
+                    output.append("    jdouble __ngen_vm_ret_d; std::memcpy(&__ngen_vm_ret_d, &__ngen_vm_ret, sizeof(jdouble)); return __ngen_vm_ret_d;\n");
+                    break;
+                }
+                case Type.FLOAT: {
+                    output.append("    jint __ngen_vm_fbits = (jint)__ngen_vm_ret; jfloat __ngen_vm_ret_f; std::memcpy(&__ngen_vm_ret_f, &__ngen_vm_fbits, sizeof(jfloat)); return __ngen_vm_ret_f;\n");
+                    break;
+                }
+                case Type.LONG: {
+                    output.append("    return (jlong)__ngen_vm_ret;\n");
+                    break;
+                }
+                case Type.INT:
+                case Type.SHORT:
+                case Type.CHAR:
+                case Type.BYTE:
+                case Type.BOOLEAN: {
+                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") (jint)__ngen_vm_ret;\n");
+                    break;
+                }
+                case Type.OBJECT:
+                case Type.ARRAY: {
+                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") (jlong)__ngen_vm_ret;\n");
+                    break;
+                }
+                case Type.VOID: {
+                    output.append("    (void)__ngen_vm_ret; return;\n");
+                    break;
+                }
+                default:
+                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") 0;\n");
+                    break;
             }
             output.append("}\n");
 
