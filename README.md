@@ -5,9 +5,6 @@ Currently fully supports only Java 8. Java 9+ and Android support is entirely ex
 
 Warning: blacklist/whitelist usage is recommended because this tool slows down code significantly (like do not obfuscate full Minecraft .jar)
 
-Also, this tool does not particularly obfuscate your code; it just transpiles it to native. Remember to use protectors like VMProtect, Themida (in case of clang usage)
-
-
 本项目完全由 OpenAI Codex 和 Claude Code 完成
 在该优秀框架的基础上添加了以下功能:
  - 基本字符串，常量混淆
