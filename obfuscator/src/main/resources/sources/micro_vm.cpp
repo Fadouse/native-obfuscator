@@ -157,6 +157,22 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
         env->DeleteLocalRef(clazz);
         return;
     }
+    // Save VM decode state to survive nested obfuscated calls that reinitialize it
+    struct VmStateSnapshot {
+        uint64_t KEY;
+        std::array<uint8_t, OP_COUNT> op_map;
+        std::array<uint8_t, OP_COUNT> op_map2;
+        std::array<uint8_t, OP_COUNT> inv_op_map2;
+        std::array<OpCode, OP_COUNT> inv_op_map;
+        bool vm_state_initialized;
+    } snapshot{};
+    snapshot.KEY = KEY;
+    snapshot.op_map = op_map;
+    snapshot.op_map2 = op_map2;
+    snapshot.inv_op_map2 = inv_op_map2;
+    snapshot.inv_op_map = inv_op_map;
+    snapshot.vm_state_initialized = vm_state_initialized;
+
     switch (ret) {
         case 'V':
             if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC)
@@ -226,6 +242,14 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
             break;
         }
     }
+
+    // Restore VM decode state after potential nested obfuscated calls
+    KEY = snapshot.KEY;
+    op_map = snapshot.op_map;
+    op_map2 = snapshot.op_map2;
+    inv_op_map2 = snapshot.inv_op_map2;
+    inv_op_map = snapshot.inv_op_map;
+    vm_state_initialized = snapshot.vm_state_initialized;
     env->DeleteLocalRef(clazz);
 }
 
@@ -266,12 +290,22 @@ void decode_for_jit(const Instruction* code, size_t length, uint64_t seed,
     uint64_t state = KEY ^ seed;
     for (size_t pc = 0; pc < length; ++pc) {
         state = (state + KEY) ^ (KEY >> 3);
-        uint64_t mix = state ^ code[pc].nonce;
-        uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
-        mapped ^= static_cast<uint8_t>(code[pc].nonce);
-        mapped = inv_op_map2[mapped];
-        OpCode op = inv_op_map[mapped];
-        int64_t operand = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
+        OpCode op;
+        int64_t operand;
+
+        if (code[pc].nonce == 0) {
+            // Plain instructions (not encrypted) - used by generated VM code
+            op = static_cast<OpCode>(code[pc].op);
+            operand = code[pc].operand;
+        } else {
+            // Encrypted instructions - normal path
+            uint64_t mix = state ^ code[pc].nonce;
+            uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
+            mapped ^= static_cast<uint8_t>(code[pc].nonce);
+            mapped = inv_op_map2[mapped];
+            op = inv_op_map[mapped];
+            operand = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
+        }
         out.push_back({op, operand});
     }
 }
@@ -312,12 +346,19 @@ dispatch:
     if (pc >= length) goto halt;
     // XOR promotes to int; cast back to uint8_t before converting to OpCode
     {
-        uint64_t mix = state ^ code[pc].nonce;
-        uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
-        mapped ^= static_cast<uint8_t>(code[pc].nonce);
-        mapped = inv_op_map2[mapped];
-        op = inv_op_map[mapped];
-        tmp = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
+        if (code[pc].nonce == 0) {
+            // Plain instructions (not encrypted) - used by generated VM code
+            op = static_cast<OpCode>(code[pc].op);
+            tmp = code[pc].operand;
+        } else {
+            // Encrypted instructions - normal path
+            uint64_t mix = state ^ code[pc].nonce;
+            uint8_t mapped = static_cast<uint8_t>(code[pc].op ^ static_cast<uint8_t>(mix));
+            mapped ^= static_cast<uint8_t>(code[pc].nonce);
+            mapped = inv_op_map2[mapped];
+            op = inv_op_map[mapped];
+            tmp = code[pc].operand ^ static_cast<int64_t>(mix * 0x9E3779B97F4A7C15ULL);
+        }
     }
     ++pc;
     static thread_local uint64_t chaos = 0;
@@ -336,6 +377,7 @@ dispatch:
         case OP_MUL:   goto do_mul;
         case OP_DIV:   goto do_div;
         case OP_PRINT: goto do_print;
+        case OP_HALT:  goto halt;
         case OP_NOP:   goto junk;   // never executed by valid programs
         case OP_JUNK1: goto do_junk1;
         case OP_JUNK2: goto do_junk2;
@@ -1775,7 +1817,9 @@ do_invokestatic:
         invoke_method(env, OP_INVOKESTATIC, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
     } else {
         // Method reference not found - this shouldn't happen in valid code
-        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        char debug_msg[256];
+        snprintf(debug_msg, sizeof(debug_msg), "Method reference not found: index=%lld, size=%zu", (long long)tmp, method_refs_size);
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), debug_msg);
         goto halt;
     }
     goto dispatch;
@@ -1785,7 +1829,9 @@ do_invokevirtual:
         invoke_method(env, OP_INVOKEVIRTUAL, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
     } else {
         // Method reference not found - this shouldn't happen in valid code
-        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        char debug_msg[256];
+        snprintf(debug_msg, sizeof(debug_msg), "Method reference not found: index=%lld, size=%zu", (long long)tmp, method_refs_size);
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), debug_msg);
         goto halt;
     }
     goto dispatch;
@@ -1794,8 +1840,10 @@ do_invokespecial:
     if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
         invoke_method(env, OP_INVOKESPECIAL, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
     } else {
-        // Method reference not found - this shouldn't happen in valid code
-        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        // Method reference not found - include index/size for diagnostics
+        char debug_msg[256];
+        snprintf(debug_msg, sizeof(debug_msg), "Method reference not found: index=%lld, size=%zu", (long long)tmp, method_refs_size);
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), debug_msg);
         goto halt;
     }
     goto dispatch;
@@ -1804,8 +1852,10 @@ do_invokeinterface:
     if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
         invoke_method(env, OP_INVOKEINTERFACE, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
     } else {
-        // Method reference not found - this shouldn't happen in valid code
-        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        // Method reference not found - include index/size for diagnostics
+        char debug_msg[256];
+        snprintf(debug_msg, sizeof(debug_msg), "Method reference not found: index=%lld, size=%zu", (long long)tmp, method_refs_size);
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), debug_msg);
         goto halt;
     }
     goto dispatch;
@@ -1814,8 +1864,10 @@ do_invokedynamic:
     if (method_refs && static_cast<size_t>(tmp) < method_refs_size) {
         invoke_method(env, OP_INVOKEDYNAMIC, const_cast<MethodRef*>(&method_refs[tmp]), stack, sp);
     } else {
-        // Method reference not found - this shouldn't happen in valid code
-        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Method reference not found");
+        // Method reference not found - include index/size for diagnostics
+        char debug_msg[256];
+        snprintf(debug_msg, sizeof(debug_msg), "Method reference not found: index=%lld, size=%zu", (long long)tmp, method_refs_size);
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), debug_msg);
         goto halt;
     }
     goto dispatch;
@@ -1846,6 +1898,91 @@ do_ldc:
                 stack[sp++] = reinterpret_cast<int64_t>(clazz);
                 break;
             }
+            case ConstantPoolEntry::TYPE_METHOD_TYPE: {
+                // Create MethodType object from descriptor string
+                jstring desc = env->NewStringUTF(entry.str_value);
+                jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                    "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, desc, nullptr);
+                env->DeleteLocalRef(desc);
+                stack[sp++] = reinterpret_cast<int64_t>(mt);
+                break;
+            }
+            case ConstantPoolEntry::TYPE_METHOD_HANDLE: {
+                // Parse MethodHandle format: "tag:owner:name:desc"
+                std::string handle_str(entry.str_value);
+                size_t pos1 = handle_str.find(':');
+                size_t pos2 = handle_str.find(':', pos1 + 1);
+                size_t pos3 = handle_str.find(':', pos2 + 1);
+
+                if (pos1 == std::string::npos || pos2 == std::string::npos || pos3 == std::string::npos) {
+                    env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Invalid MethodHandle format");
+                    goto halt;
+                }
+
+                int tag = std::stoi(handle_str.substr(0, pos1));
+                std::string owner = handle_str.substr(pos1 + 1, pos2 - pos1 - 1);
+                std::string name = handle_str.substr(pos2 + 1, pos3 - pos2 - 1);
+                std::string desc = handle_str.substr(pos3 + 1);
+
+                // Create MethodHandle using Lookup
+                jclass lookup_class = get_cached_class(env, "java/lang/invoke/MethodHandles$Lookup");
+                jmethodID lookup_method = env->GetStaticMethodID(lookup_class, "lookup",
+                    "()Ljava/lang/invoke/MethodHandles$Lookup;");
+                jobject lookup = env->CallStaticObjectMethod(lookup_class, lookup_method);
+
+                jclass target_class = get_cached_class(env, owner.c_str());
+                jstring method_name = env->NewStringUTF(name.c_str());
+                jstring method_desc = env->NewStringUTF(desc.c_str());
+
+                jobject method_handle = nullptr;
+                switch (tag) {
+                    case 6: { // H_INVOKESTATIC
+                        jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                        jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                            "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                        jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, method_desc, nullptr);
+                        jmethodID findStatic = env->GetMethodID(lookup_class, "findStatic",
+                            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;");
+                        method_handle = env->CallObjectMethod(lookup, findStatic, target_class, method_name, mt);
+                        env->DeleteLocalRef(mt);
+                        break;
+                    }
+                    case 5: { // H_INVOKEVIRTUAL
+                        jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                        jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                            "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                        jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, method_desc, nullptr);
+                        jmethodID findVirtual = env->GetMethodID(lookup_class, "findVirtual",
+                            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;");
+                        method_handle = env->CallObjectMethod(lookup, findVirtual, target_class, method_name, mt);
+                        env->DeleteLocalRef(mt);
+                        break;
+                    }
+                    case 7: { // H_INVOKESPECIAL
+                        jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                        jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                            "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                        jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, method_desc, nullptr);
+                        jmethodID findSpecial = env->GetMethodID(lookup_class, "findSpecial",
+                            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/Class;)Ljava/lang/invoke/MethodHandle;");
+                        method_handle = env->CallObjectMethod(lookup, findSpecial, target_class, method_name, mt, target_class);
+                        env->DeleteLocalRef(mt);
+                        break;
+                    }
+                    default:
+                        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Unsupported MethodHandle tag");
+                        goto halt;
+                }
+
+                env->DeleteLocalRef(method_name);
+                env->DeleteLocalRef(method_desc);
+                env->DeleteLocalRef(lookup);
+
+                stack[sp++] = reinterpret_cast<int64_t>(method_handle);
+                break;
+            }
             default:
                 // Unsupported constant type in LDC
                 goto halt;
@@ -1854,7 +1991,7 @@ do_ldc:
     goto dispatch;
 
 do_ldc2_w:
-    // Load 2-word constant from constant pool (long, double)
+    // Load 2-word constant from constant pool (long, double, MethodHandle, MethodType)
     if (sp < 256 && constant_pool && static_cast<size_t>(tmp) < constant_pool_size) {
         const ConstantPoolEntry& entry = constant_pool[tmp];
         switch (entry.type) {
@@ -1865,6 +2002,91 @@ do_ldc2_w:
                 int64_t bits;
                 std::memcpy(&bits, &entry.d_value, sizeof(double));
                 stack[sp++] = bits;
+                break;
+            }
+            case ConstantPoolEntry::TYPE_METHOD_TYPE: {
+                // Create MethodType object from descriptor string
+                jstring desc = env->NewStringUTF(entry.str_value);
+                jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                    "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, desc, nullptr);
+                env->DeleteLocalRef(desc);
+                stack[sp++] = reinterpret_cast<int64_t>(mt);
+                break;
+            }
+            case ConstantPoolEntry::TYPE_METHOD_HANDLE: {
+                // Parse MethodHandle format: "tag:owner:name:desc"
+                std::string handle_str(entry.str_value);
+                size_t pos1 = handle_str.find(':');
+                size_t pos2 = handle_str.find(':', pos1 + 1);
+                size_t pos3 = handle_str.find(':', pos2 + 1);
+
+                if (pos1 == std::string::npos || pos2 == std::string::npos || pos3 == std::string::npos) {
+                    env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Invalid MethodHandle format");
+                    goto halt;
+                }
+
+                int tag = std::stoi(handle_str.substr(0, pos1));
+                std::string owner = handle_str.substr(pos1 + 1, pos2 - pos1 - 1);
+                std::string name = handle_str.substr(pos2 + 1, pos3 - pos2 - 1);
+                std::string desc = handle_str.substr(pos3 + 1);
+
+                // Create MethodHandle using Lookup
+                jclass lookup_class = get_cached_class(env, "java/lang/invoke/MethodHandles$Lookup");
+                jmethodID lookup_method = env->GetStaticMethodID(lookup_class, "lookup",
+                    "()Ljava/lang/invoke/MethodHandles$Lookup;");
+                jobject lookup = env->CallStaticObjectMethod(lookup_class, lookup_method);
+
+                jclass target_class = get_cached_class(env, owner.c_str());
+                jstring method_name = env->NewStringUTF(name.c_str());
+                jstring method_desc = env->NewStringUTF(desc.c_str());
+
+                jobject method_handle = nullptr;
+                switch (tag) {
+                    case 6: { // H_INVOKESTATIC
+                        jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                        jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                            "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                        jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, method_desc, nullptr);
+                        jmethodID findStatic = env->GetMethodID(lookup_class, "findStatic",
+                            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;");
+                        method_handle = env->CallObjectMethod(lookup, findStatic, target_class, method_name, mt);
+                        env->DeleteLocalRef(mt);
+                        break;
+                    }
+                    case 5: { // H_INVOKEVIRTUAL
+                        jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                        jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                            "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                        jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, method_desc, nullptr);
+                        jmethodID findVirtual = env->GetMethodID(lookup_class, "findVirtual",
+                            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;");
+                        method_handle = env->CallObjectMethod(lookup, findVirtual, target_class, method_name, mt);
+                        env->DeleteLocalRef(mt);
+                        break;
+                    }
+                    case 7: { // H_INVOKESPECIAL
+                        jclass mt_class = get_cached_class(env, "java/lang/invoke/MethodType");
+                        jmethodID fromDesc = env->GetStaticMethodID(mt_class, "fromMethodDescriptorString",
+                            "(Ljava/lang/String;Ljava/lang/ClassLoader;)Ljava/lang/invoke/MethodType;");
+                        jobject mt = env->CallStaticObjectMethod(mt_class, fromDesc, method_desc, nullptr);
+                        jmethodID findSpecial = env->GetMethodID(lookup_class, "findSpecial",
+                            "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/Class;)Ljava/lang/invoke/MethodHandle;");
+                        method_handle = env->CallObjectMethod(lookup, findSpecial, target_class, method_name, mt, target_class);
+                        env->DeleteLocalRef(mt);
+                        break;
+                    }
+                    default:
+                        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "Unsupported MethodHandle tag");
+                        goto halt;
+                }
+
+                env->DeleteLocalRef(method_name);
+                env->DeleteLocalRef(method_desc);
+                env->DeleteLocalRef(lookup);
+
+                stack[sp++] = reinterpret_cast<int64_t>(method_handle);
                 break;
             }
             default:

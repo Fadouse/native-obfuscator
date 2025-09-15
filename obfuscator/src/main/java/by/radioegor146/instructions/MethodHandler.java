@@ -173,8 +173,12 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                     Util.createMap("index", argOffsets.get(i))));
         }
 
-        props.put("objectstackindex", String.valueOf(stackOffset - objectOffset));
-        props.put("returnstackindex", String.valueOf(stackOffset - objectOffset));
+        // Receiver resides just below the arguments on the operand stack
+        int objectStackIndex = stackOffset - objectOffset;
+        props.put("objectstackindex", String.valueOf(objectStackIndex));
+        int objectStackPrev = Math.max(0, objectStackIndex - 1);
+        props.put("objectstackprev", String.valueOf(objectStackPrev));
+        props.put("returnstackindex", String.valueOf(objectStackIndex));
 
         if (isStatic || node.getOpcode() == Opcodes.INVOKESPECIAL) {
             props.put("class_ptr", context.getCachedClasses().getPointer(node.owner));

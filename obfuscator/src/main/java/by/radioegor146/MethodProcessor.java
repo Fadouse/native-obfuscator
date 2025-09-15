@@ -193,6 +193,12 @@ public class MethodProcessor {
         List<String> classRefs = vmTranslator.getClassRefs();
         List<VmTranslator.MultiArrayRefInfo> multiArrayRefs = vmTranslator.getMultiArrayRefs();
         List<VmTranslator.MethodRefInfo> methodRefs = vmTranslator.getMethodRefs();
+        // Be conservative: if the VM-translated method performs any method calls,
+        // fall back to the regular state-machine codegen to avoid operand decode
+        // mismatches across JVMs. Arithmetic/stack-only methods still benefit.
+        if (vmCode != null && !methodRefs.isEmpty()) {
+            vmCode = null;
+        }
         List<VmTranslator.ConstantPoolEntry> constantPool = vmTranslator.getConstantPool();
         if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
@@ -296,8 +302,8 @@ public class MethodProcessor {
                     output.append("            case native_jvm::vm::OP_PUTSTATIC:\n");
                     output.append("            case native_jvm::vm::OP_GETFIELD:\n");
                     output.append("            case native_jvm::vm::OP_PUTFIELD:\n");
-                    // Keep operand as index, don't convert to pointer
-                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_fields[ins.operand]);\n");
+                    // Keep operand as index; native VM indexes into __ngen_vm_fields
+                    // (do not convert to pointer here)
                     output.append("                break;\n");
                 }
                 if (!methodRefs.isEmpty()) {
@@ -305,8 +311,8 @@ public class MethodProcessor {
                     output.append("            case native_jvm::vm::OP_INVOKEVIRTUAL:\n");
                     output.append("            case native_jvm::vm::OP_INVOKESPECIAL:\n");
                     output.append("            case native_jvm::vm::OP_INVOKEINTERFACE:\n");
-                    // Keep operand as index, don't convert to pointer
-                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_methods[ins.operand]);\n");
+                    // Keep operand as index; native VM indexes into __ngen_vm_methods
+                    // (do not convert to pointer here)
                     output.append("                break;\n");
                 }
                 if (!classRefs.isEmpty()) {
@@ -314,14 +320,15 @@ public class MethodProcessor {
                     output.append("            case native_jvm::vm::OP_ANEWARRAY:\n");
                     output.append("            case native_jvm::vm::OP_CHECKCAST:\n");
                     output.append("            case native_jvm::vm::OP_INSTANCEOF:\n");
-                    // Keep operand as index, don't convert to pointer
-                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_classes[ins.operand]);\n");
+                    // Convert index -> actual const char* pointer value
+                    // Native VM expects ins.operand to be a C string pointer
+                    output.append("                ins.operand = reinterpret_cast<jlong>(__ngen_vm_classes[ins.operand]);\n");
                     output.append("                break;\n");
                 }
                 if (!multiArrayRefs.isEmpty()) {
                     output.append("            case native_jvm::vm::OP_MULTIANEWARRAY:\n");
-                    // Keep operand as index, don't convert to pointer
-                    // output.append("                ins.operand = reinterpret_cast<jlong>(&__ngen_vm_multi[ins.operand]);\n");
+                    // Keep operand as index; native VM indexes into __ngen_vm_multi
+                    // (do not convert to pointer here)
                     output.append("                break;\n");
                 }
                 output.append("        }\n");

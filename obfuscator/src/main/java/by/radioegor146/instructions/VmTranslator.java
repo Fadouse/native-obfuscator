@@ -924,10 +924,21 @@ public class VmTranslator {
             type = ConstantPoolEntry.Type.STRING;
             value = constant;
         } else if (constant instanceof org.objectweb.asm.Type) {
-            type = ConstantPoolEntry.Type.CLASS;
-            value = ((org.objectweb.asm.Type) constant).getInternalName();
+            org.objectweb.asm.Type asmType = (org.objectweb.asm.Type) constant;
+            if (asmType.getSort() == org.objectweb.asm.Type.METHOD) {
+                type = ConstantPoolEntry.Type.METHOD_TYPE;
+                value = asmType.getDescriptor();
+            } else {
+                type = ConstantPoolEntry.Type.CLASS;
+                value = asmType.getInternalName();
+            }
+        } else if (constant instanceof org.objectweb.asm.Handle) {
+            type = ConstantPoolEntry.Type.METHOD_HANDLE;
+            org.objectweb.asm.Handle handle = (org.objectweb.asm.Handle) constant;
+            // Encode handle as "tag:owner:name:desc" format
+            value = handle.getTag() + ":" + handle.getOwner() + ":" + handle.getName() + ":" + handle.getDesc();
         } else {
-            // Unsupported constant type (MethodHandle, MethodType, etc.)
+            // Unsupported constant type
             return -1;
         }
 

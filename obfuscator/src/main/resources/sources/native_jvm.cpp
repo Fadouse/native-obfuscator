@@ -397,9 +397,11 @@ namespace native_jvm::utils {
     }
 
     void clear_refs(JNIEnv *env, std::unordered_set<jobject> &refs) {
-        for (jobject ref : refs)
-            if (env->GetObjectRefType(ref) == JNILocalRefType)
-                env->DeleteLocalRef(ref);
+        // Avoid eagerly deleting local refs that might still be referenced via
+        // cstack slots. Let the JVM clear locals at the end of the native call.
+        // This prevents accidental invalidation of receiver/argument objects
+        // used by subsequent INVOKEVIRTUAL calls in the generated state machine.
+        (void)env;
         refs.clear();
     }
 
