@@ -181,13 +181,18 @@ public class MethodProcessor {
         long vmKeySeed = ThreadLocalRandom.current().nextLong();
         output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
 
-        boolean useJit = Boolean.getBoolean("nativeobfuscator.jit");
+        boolean useJit = context.protectionConfig.isJitEnabled();
         VmTranslator vmTranslator = new VmTranslator(useJit);
-        VmTranslator.Instruction[] vmCode = vmTranslator.translate(method);
-        // Avoid VM translation for interface methods to reduce risk of mismatched
-        // dispatch (default/interface semantics) across JVM versions.
-        if ((context.clazz.access & Opcodes.ACC_INTERFACE) != 0) {
-            vmCode = null;
+        VmTranslator.Instruction[] vmCode = null;
+
+        // Only use VM translation if virtualization is enabled
+        if (context.protectionConfig.isVirtualizationEnabled()) {
+            vmCode = vmTranslator.translate(method);
+            // Avoid VM translation for interface methods to reduce risk of mismatched
+            // dispatch (default/interface semantics) across JVM versions.
+            if ((context.clazz.access & Opcodes.ACC_INTERFACE) != 0) {
+                vmCode = null;
+            }
         }
         List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
         List<String> classRefs = vmTranslator.getClassRefs();
@@ -452,6 +457,23 @@ public class MethodProcessor {
             }
             output.append("}\n");
 
+            // Apply control flow flattening to virtualized methods if enabled
+            if (context.protectionConfig.isControlFlowFlatteningEnabled()) {
+                String methodBody = output.toString();
+                int methodStart = methodBody.indexOf(") {\n") + 4;
+                int methodEnd = methodBody.lastIndexOf("}\n");
+
+                if (methodStart > 3 && methodEnd > methodStart) {
+                    String methodSignature = methodBody.substring(0, methodStart);
+                    String methodContent = methodBody.substring(methodStart, methodEnd);
+                    String methodClosing = methodBody.substring(methodEnd);
+
+                    String flattenedContent = ControlFlowFlattener.flattenControlFlow(methodContent, method.name);
+                    output.setLength(0);
+                    output.append(methodSignature).append(flattenedContent).append(methodClosing);
+                }
+            }
+
             method.localVariables.clear();
             method.tryCatchBlocks.clear();
 
@@ -664,6 +686,24 @@ public class MethodProcessor {
         output.append("    }\n\n");
 
         output.append("}\n");
+
+        // Apply control flow flattening if enabled
+        if (context.protectionConfig.isControlFlowFlatteningEnabled()) {
+            String methodBody = output.toString();
+            // Find the method body (between the opening brace and closing brace)
+            int methodStart = methodBody.indexOf(") {\n") + 4;
+            int methodEnd = methodBody.lastIndexOf("}\n");
+
+            if (methodStart > 3 && methodEnd > methodStart) {
+                String methodSignature = methodBody.substring(0, methodStart);
+                String methodContent = methodBody.substring(methodStart, methodEnd);
+                String methodClosing = methodBody.substring(methodEnd);
+
+                String flattenedContent = ControlFlowFlattener.flattenControlFlow(methodContent, method.name);
+                output.setLength(0);
+                output.append(methodSignature).append(flattenedContent).append(methodClosing);
+            }
+        }
 
         method.localVariables.clear();
         method.tryCatchBlocks.clear();

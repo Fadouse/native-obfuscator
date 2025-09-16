@@ -5,10 +5,11 @@ import by.radioegor146.Platform;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
+import java.awt.event.HierarchyEvent;
 import java.io.File;
-import java.io.FilenameFilter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitOption;
@@ -21,7 +22,17 @@ import java.util.concurrent.ExecutionException;
 import java.util.prefs.Preferences;
 import java.util.stream.Collectors;
 
+
 public class ObfuscatorFrame extends JFrame {
+    // Layout constants (tune to preference)
+    private static final int LABEL_W = 180;
+    private static final int FIELD_H = 30;
+    private static final int BROWSE_W = 96;   // fixed column width for Browse
+    private static final int HINT_MIN_W = 96;
+    private static final int HINT_MAX_W = 360;
+    private static final int HINT_PADDING = 12;
+    private static final int ROW_H = 40;      // max row height for single-line rows
+
     // LEFT NAV SECTIONS
     private static final String CARD_IMPORT = "import";
     private static final String CARD_SETTINGS = "settings";
@@ -39,6 +50,11 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox useAnnotationsBox = new JCheckBox("Use annotations");
     private final JCheckBox debugJarBox = new JCheckBox("Generate debug jar");
     private final JCheckBox packageBox = new JCheckBox("Package native lib into JAR", true);
+
+    // Protection feature checkboxes
+    private final JCheckBox enableVirtualizationBox = new JCheckBox("Enable VM virtualization");
+    private final JCheckBox enableJitBox = new JCheckBox("Enable JIT compilation");
+    private final JCheckBox flattenControlFlowBox = new JCheckBox("Enable control flow flattening");
     private final JButton runButton = new JButton("Run");
     private final JTextArea logArea = new JTextArea();
     private final JProgressBar progressBar = new JProgressBar();
@@ -47,8 +63,8 @@ public class ObfuscatorFrame extends JFrame {
     private final JPanel rightCards;
 
     private final Preferences prefs = Preferences.userNodeForPackage(ObfuscatorFrame.class);
-    private static final String PREF_LAST_JAR_DIR  = "lastJarDir";
-    private static final String PREF_LAST_ANY_DIR  = "lastAnyDir";
+    private static final String PREF_LAST_JAR_DIR = "lastJarDir";
+    private static final String PREF_LAST_ANY_DIR = "lastAnyDir";
 
     public static void launch() {
         SwingUtilities.invokeLater(() -> {
@@ -58,7 +74,7 @@ public class ObfuscatorFrame extends JFrame {
     }
 
     public ObfuscatorFrame() {
-        super("Native Obfuscator – GUI");
+        super("Native Obfuscator");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(980, 620));
         setLocationRelativeTo(null);
@@ -67,18 +83,20 @@ public class ObfuscatorFrame extends JFrame {
         root.setBorder(new EmptyBorder(12, 12, 12, 12));
         setContentPane(root);
 
-        // ===== Left Sidebar (reserved for future expansion) =====
+        // ===== Left Sidebar =====
         leftNav = buildLeftNav();
         JScrollPane navScroll = new JScrollPane(leftNav);
         navScroll.setBorder(new EmptyBorder(0, 0, 0, 12));
         navScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        navScroll.setPreferredSize(new Dimension(180, 500));
+        navScroll.setPreferredSize(new Dimension(160, 500));
+        navScroll.setMinimumSize(new Dimension(160, 0)); // never collapse
 
         // ===== Right Cards =====
         rightCards = new JPanel(new CardLayout());
         rightCards.add(buildImportCard(), CARD_IMPORT);
         rightCards.add(buildSettingsCard(), CARD_SETTINGS);
         rightCards.add(buildRunCard(), CARD_RUN);
+        rightCards.setMinimumSize(new Dimension(520, 400));
 
         // Layout using JSplitPane for resize friendliness
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, navScroll, rightCards);
@@ -86,20 +104,27 @@ public class ObfuscatorFrame extends JFrame {
         split.setDividerSize(8);
         split.setContinuousLayout(true);
         split.setBorder(null);
+        split.setDividerLocation(160);
 
         root.add(split, BorderLayout.CENTER);
 
         platformCombo.setSelectedItem(Platform.HOTSPOT);
         runButton.addActionListener(this::runObfuscation);
 
-        // Placeholders (FlatLaf text fields support)
+        // Feature interactions
+        enableVirtualizationBox.addActionListener(e -> {
+            enableJitBox.setEnabled(enableVirtualizationBox.isSelected());
+            if (!enableVirtualizationBox.isSelected()) enableJitBox.setSelected(false);
+        });
+
+        // Placeholders (FlatLaf)
         jarField.putClientProperty("JTextComponent.placeholderText", "Select input .jar");
         outDirField.putClientProperty("JTextComponent.placeholderText", "Choose output directory");
         libsDirField.putClientProperty("JTextComponent.placeholderText", "Optional libraries directory");
         whitelistField.putClientProperty("JTextComponent.placeholderText", "Optional whitelist.txt");
         blacklistField.putClientProperty("JTextComponent.placeholderText", "Optional blacklist.txt");
-        plainLibNameField.putClientProperty("JTextComponent.placeholderText", "Plain lib name (optional)");
-        customLibDirField.putClientProperty("JTextComponent.placeholderText", "Custom lib dir inside jar (optional)");
+        plainLibNameField.putClientProperty("JTextComponent.placeholderText", "Specify to skip packaging");
+        customLibDirField.putClientProperty("JTextComponent.placeholderText", "e.g. native/win64 — inside output JAR");
     }
 
     // ------------------------ UI BUILDERS ------------------------
@@ -110,25 +135,23 @@ public class ObfuscatorFrame extends JFrame {
         model.addElement("Native Settings");
         model.addElement("Run & Logs");
 
-        JList<String> list = new JList<>(model);
+        final JList<String> list = new JList<>(model);
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setSelectedIndex(0);
         list.setFixedCellHeight(36);
+        list.setFixedCellWidth(160);
         list.setBorder(new EmptyBorder(4, 4, 4, 4));
         list.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 switch (list.getSelectedIndex()) {
-                    case 0:
-                        showCard(CARD_IMPORT);
-                        break;
-                    case 1:
-                        showCard(CARD_SETTINGS);
-                        break;
-                    case 2:
-                        showCard(CARD_RUN);
+                    case 0: showCard(CARD_IMPORT); break;
+                    case 1: showCard(CARD_SETTINGS); break;
+                    case 2: showCard(CARD_RUN); break;
+                    default: break;
                 }
             }
         });
+
         list.setCellRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> jList, Object value, int index, boolean isSelected, boolean cellHasFocus) {
@@ -144,62 +167,145 @@ public class ObfuscatorFrame extends JFrame {
     private JPanel buildImportCard() {
         JPanel card = new JPanel(new BorderLayout());
         card.setBorder(new EmptyBorder(4, 0, 0, 0));
-        JPanel form = new JPanel(new GridBagLayout());
-        GridBagConstraints c = new GridBagConstraints();
-        c.insets = new Insets(6, 6, 6, 6);
-        c.fill = GridBagConstraints.HORIZONTAL;
-        c.weightx = 0;
-        int row = 0;
 
-        row = addPathRow(form, c, row, "Input JAR", jarField, this::browseFileJar);
-        row = addPathRow(form, c, row, "Output Directory", outDirField, this::browseDir);
-        row = addPathRow(form, c, row, "Libraries Directory", libsDirField, this::browseDirOptional);
-        row = addPathRow(form, c, row, "Whitelist File", whitelistField, () -> browseFileTxt(whitelistField));
-        row = addPathRow(form, c, row, "Blacklist File", blacklistField, () -> browseFileTxt(blacklistField));
+        JPanel form = new JPanel();
+        form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
 
-        card.add(form, BorderLayout.NORTH);
-        card.add(buildHintPanel("Select your input/output and optional allow/deny lists. " +
-                "Native file dialogs are used for better OS-level search and navigation."), BorderLayout.SOUTH);
+        form.add(createPathRowPanel("Input JAR", jarField, this::browseFileJar,
+                ""));
+        form.add(Box.createRigidArea(new Dimension(0, 8)));
+
+        form.add(createPathRowPanel("Output Directory", outDirField, this::browseDir,
+                ""));
+        form.add(Box.createRigidArea(new Dimension(0, 8)));
+
+        form.add(createPathRowPanel("Libraries Directory", libsDirField, this::browseDirOptional,
+                ""));
+        form.add(Box.createRigidArea(new Dimension(0, 8)));
+
+        form.add(createPathRowPanel("Blacklist File", blacklistField, () -> browseFileTxt(blacklistField),
+                "Exclude classes/packages"));
+        form.add(Box.createRigidArea(new Dimension(0, 8)));
+
+        form.add(createPathRowPanel("Whitelist File", whitelistField, () -> browseFileTxt(whitelistField),
+                "Allow-only list; overrides blacklist"));
+
+
+
+        form.add(Box.createVerticalGlue());
+
+        card.add(form, BorderLayout.CENTER);
+
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton next = new JButton("Next → Settings");
+        next.addActionListener(e -> { leftNav.setSelectedIndex(1); showCard(CARD_SETTINGS); });
+        footer.add(next);
+        card.add(footer, BorderLayout.SOUTH);
+
         return card;
     }
+
 
     private JPanel buildSettingsCard() {
         JPanel card = new JPanel(new BorderLayout());
         card.setBorder(new EmptyBorder(4, 0, 0, 0));
 
-        JPanel form = new JPanel(new GridBagLayout());
-        GridBagConstraints c = new GridBagConstraints();
-        c.insets = new Insets(6, 6, 6, 6);
-        c.fill = GridBagConstraints.HORIZONTAL;
-        c.weightx = 0;
-        int row = 0;
+        JPanel form = new JPanel();
+        form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
 
-        row = addFieldRow(form, c, row, "Plain Library Name", plainLibNameField);
-        row = addFieldRow(form, c, row, "Custom Library Dir (in jar)", customLibDirField);
+        JPanel upperHintsScope = new JPanel();
+        upperHintsScope.setLayout(new BoxLayout(upperHintsScope, BoxLayout.Y_AXIS));
+        upperHintsScope.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        // Platform + flags
-        c.gridx = 0;
-        c.gridy = row;
-        c.weightx = 0;
-        c.gridwidth = 1;
-        form.add(new JLabel("Platform"), c);
-        c.gridx = 1;
-        c.gridy = row;
-        c.weightx = 1;
-        form.add(platformCombo, c);
-        JPanel flags = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        flags.add(useAnnotationsBox);
-        flags.add(debugJarBox);
-        flags.add(packageBox);
-        c.gridx = 2;
-        c.gridy = row;
-        c.weightx = 0;
-        form.add(flags, c);
-        row++;
+        // Plain Library Name
+        upperHintsScope.add(createFieldRowPanel("Plain Library Name", plainLibNameField, "Specify to skip packaging into JAR"));
+        upperHintsScope.add(Box.createRigidArea(new Dimension(0, 8)));
 
-        card.add(form, BorderLayout.NORTH);
-        card.add(buildHintPanel("Configure native obfuscation options and platform. " +
-                "Use annotations and debug jar are optional."), BorderLayout.SOUTH);
+        // Custom Library Dir
+        upperHintsScope.add(createFieldRowPanel("Custom Library Dir (in jar)", customLibDirField, "e.g. native/win64 — inside output JAR"));
+        upperHintsScope.add(Box.createRigidArea(new Dimension(0, 8)));
+
+        form.add(upperHintsScope);
+
+        // Platform only
+        JPanel platformPanel = new JPanel();
+        platformPanel.setLayout(new BoxLayout(platformPanel, BoxLayout.X_AXIS));
+        platformPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        platformPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+
+        JLabel platformLabel = new JLabel("Platform");
+        platformLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        platformLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        platformLabel.setVerticalAlignment(SwingConstants.CENTER);
+        platformPanel.add(platformLabel);
+
+        platformCombo.setMaximumSize(new Dimension(200, FIELD_H));
+        platformCombo.setAlignmentY(Component.CENTER_ALIGNMENT);
+        platformPanel.add(platformCombo);
+        platformPanel.add(Box.createHorizontalGlue());
+
+        form.add(platformPanel);
+        form.add(Box.createRigidArea(new Dimension(0, 10)));
+
+        // Build Options
+        JPanel buildOpts = new JPanel();
+        buildOpts.setLayout(new BoxLayout(buildOpts, BoxLayout.Y_AXIS));
+        buildOpts.setBorder(new TitledBorder("Build Options"));
+        buildOpts.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JPanel line1 = new JPanel();
+        line1.setLayout(new BoxLayout(line1, BoxLayout.X_AXIS));
+        line1.setAlignmentX(Component.LEFT_ALIGNMENT);
+        useAnnotationsBox.setAlignmentY(Component.CENTER_ALIGNMENT);
+        debugJarBox.setAlignmentY(Component.CENTER_ALIGNMENT);
+        packageBox.setAlignmentY(Component.CENTER_ALIGNMENT);
+        line1.add(useAnnotationsBox);
+        line1.add(Box.createRigidArea(new Dimension(16, 0)));
+        line1.add(debugJarBox);
+        line1.add(Box.createRigidArea(new Dimension(16, 0)));
+        line1.add(packageBox);
+        line1.add(Box.createHorizontalGlue());
+        buildOpts.add(line1);
+
+        form.add(buildOpts);
+        form.add(Box.createRigidArea(new Dimension(0, 12)));
+
+        // Protection Features：单独 scope，单独计算 hint 宽度
+        JPanel protectionPanel = new JPanel();
+        protectionPanel.setLayout(new BoxLayout(protectionPanel, BoxLayout.Y_AXIS));
+        protectionPanel.setBorder(new TitledBorder("Protection Features"));
+        protectionPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        protectionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
+
+        protectionPanel.add(checkWithHint(enableVirtualizationBox,
+                "Translate selected methods to a custom VM; strongest protection"));
+        enableJitBox.setEnabled(false);
+        protectionPanel.add(indent(checkWithHint(enableJitBox,
+                "JIT for virtualized methods; improves runtime performance"), 20));
+        protectionPanel.add(checkWithHint(flattenControlFlowBox,
+                "State-machine style CFG flattening for native methods"));
+
+        form.add(protectionPanel);
+        form.add(Box.createVerticalGlue());
+
+        JScrollPane sc = new JScrollPane(form);
+        sc.setBorder(null);
+        sc.getVerticalScrollBar().setUnitIncrement(16);
+        sc.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        card.add(sc, BorderLayout.CENTER);
+
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton back = new JButton("← Back");
+        back.addActionListener(e -> { leftNav.setSelectedIndex(0); showCard(CARD_IMPORT); });
+        JButton saveDefaults = new JButton("Save as Defaults");
+        saveDefaults.addActionListener(e -> savePreferences());
+        JButton goRun = new JButton("Continue → Run");
+        goRun.addActionListener(e -> { leftNav.setSelectedIndex(2); showCard(CARD_RUN); });
+        footer.add(back);
+        footer.add(saveDefaults);
+        footer.add(goRun);
+        card.add(footer, BorderLayout.SOUTH);
+
         return card;
     }
 
@@ -224,61 +330,153 @@ public class ObfuscatorFrame extends JFrame {
 
         card.add(top, BorderLayout.NORTH);
         card.add(logScroll, BorderLayout.CENTER);
-        card.add(buildHintPanel("Start obfuscation here. Build logs will appear below. " +
-                "Native library packaging can be enabled in Settings."), BorderLayout.SOUTH);
         return card;
     }
 
-    private JPanel buildHintPanel(String text) {
-        JPanel pnl = new JPanel(new BorderLayout());
-        JLabel lbl = new JLabel(text);
-        lbl.setBorder(new EmptyBorder(8, 6, 6, 6));
-        pnl.add(lbl, BorderLayout.CENTER);
-        return pnl;
+    // ------------------------ Row Builders with alignment ------------------------
+
+    private JPanel createPathRowPanel(String labelText, JTextField field, final Runnable browseAction, String hintText) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+
+        // Label column
+        JLabel label = new JLabel(labelText);
+        label.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        label.setAlignmentY(Component.CENTER_ALIGNMENT);
+        label.setVerticalAlignment(SwingConstants.CENTER);
+        row.add(label);
+
+        // Field column (fills)
+        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, FIELD_H));
+        field.setPreferredSize(new Dimension(10, FIELD_H));
+        field.setAlignmentY(Component.CENTER_ALIGNMENT);
+        row.add(field);
+
+        // Gap + Browse column (fixed width)
+        row.add(Box.createRigidArea(new Dimension(8, 0)));
+        JButton browseBtn = new JButton("Browse");
+        browseBtn.setPreferredSize(new Dimension(BROWSE_W, FIELD_H));
+        browseBtn.setMaximumSize(new Dimension(BROWSE_W, FIELD_H));
+        browseBtn.setAlignmentY(Component.CENTER_ALIGNMENT);
+        browseBtn.addActionListener(e -> browseAction.run());
+        row.add(browseBtn);
+
+        // Hint column (fixed width so fields stay equal)
+        row.add(Box.createRigidArea(new Dimension(8, 0)));
+        JLabel hint = makeHint(hintText == null ? "" : hintText);
+        row.add(hint);
+
+        return row;
+    }
+
+    private JPanel createFieldRowPanel(String labelText, JTextField field, String hintText) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+
+        JLabel label = new JLabel(labelText);
+        label.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        label.setAlignmentY(Component.CENTER_ALIGNMENT);
+        label.setVerticalAlignment(SwingConstants.CENTER);
+        row.add(label);
+
+        field.setMaximumSize(new Dimension(Integer.MAX_VALUE, FIELD_H));
+        field.setPreferredSize(new Dimension(10, FIELD_H));
+        field.setAlignmentY(Component.CENTER_ALIGNMENT);
+        row.add(field);
+
+        row.add(Box.createRigidArea(new Dimension(8, 0)));
+
+        JLabel hint = makeHint(hintText == null ? "" : hintText);
+        row.add(hint);
+
+        return row;
+    }
+
+    /**
+     * Compact, baseline-friendly hint label.
+     */
+    private JLabel makeHint(String text) {
+        JLabel hint = new JLabel(text == null ? "" : text);
+        hint.setForeground(new Color(154, 160, 166));
+        hint.setFont(hint.getFont().deriveFont(Font.PLAIN, 10f));
+        hint.setAlignmentY(Component.CENTER_ALIGNMENT);
+        hint.putClientProperty("isHint", Boolean.TRUE);
+
+        initPerHintAutoSize(hint);
+        return hint;
+    }
+
+
+
+    private int measureHintWidth(JLabel lbl) {
+        FontMetrics fm = lbl.getFontMetrics(lbl.getFont());
+        int w = fm.stringWidth(lbl.getText());
+        Insets in = lbl.getInsets();
+        if (in != null) w += in.left + in.right;
+        w += HINT_PADDING;
+        return Math.max(HINT_MIN_W, Math.min(HINT_MAX_W, w));
+    }
+
+    private void sizeAndLockHint(JLabel hint) {
+        int w = measureHintWidth(hint);
+        Dimension d = new Dimension(w, 18);
+        hint.setPreferredSize(d);
+        hint.setMaximumSize(d);
+    }
+
+    private void initPerHintAutoSize(final JLabel hint) {
+        sizeAndLockHint(hint);
+
+        hint.addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0 && hint.isShowing()) {
+                SwingUtilities.invokeLater(() -> sizeAndLockHint(hint));
+            }
+        });
+
+        hint.addPropertyChangeListener(new java.beans.PropertyChangeListener() {
+            @Override public void propertyChange(java.beans.PropertyChangeEvent evt) {
+                String n = evt.getPropertyName();
+                if ("text".equals(n) || "font".equals(n)) {
+                    sizeAndLockHint(hint);
+                }
+            }
+        });
+    }
+    private JPanel checkWithHint(JCheckBox box, String hintText) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
+
+        box.setAlignmentY(Component.CENTER_ALIGNMENT);
+        row.add(box);
+        row.add(Box.createRigidArea(new Dimension(8, 0)));
+
+        JLabel hintLabel = makeHint(hintText);
+        hintLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        row.add(hintLabel);
+        row.add(Box.createHorizontalGlue());
+        return row;
+    }
+
+    private JPanel indent(JComponent comp, int px) {
+        JPanel p = new JPanel();
+        p.setLayout(new BoxLayout(p, BoxLayout.X_AXIS));
+        p.setAlignmentX(Component.LEFT_ALIGNMENT);
+        p.add(Box.createRigidArea(new Dimension(px, 0)));
+        p.add(comp);
+        return p;
     }
 
     private void showCard(String name) {
-        CardLayout cl = (CardLayout) rightCards.getLayout();
-        cl.show(rightCards, name);
+        ((CardLayout) rightCards.getLayout()).show(rightCards, name);
     }
 
-    // ------------------------ Row Helpers ------------------------
-
-    private int addPathRow(JPanel form, GridBagConstraints c, int row, String label, JTextField field, Runnable browse) {
-        c.gridx = 0;
-        c.gridy = row;
-        c.weightx = 0;
-        c.gridwidth = 1;
-        form.add(new JLabel(label), c);
-        c.gridx = 1;
-        c.gridy = row;
-        c.weightx = 1;
-        form.add(field, c);
-        JButton btn = new JButton("Browse");
-        btn.addActionListener(e -> browse.run());
-        c.gridx = 2;
-        c.gridy = row;
-        c.weightx = 0;
-        form.add(btn, c);
-        return row + 1;
-    }
-
-    private int addFieldRow(JPanel form, GridBagConstraints c, int row, String label, JTextField field) {
-        c.gridx = 0;
-        c.gridy = row;
-        c.weightx = 0;
-        c.gridwidth = 1;
-        form.add(new JLabel(label), c);
-        c.gridx = 1;
-        c.gridy = row;
-        c.weightx = 1;
-        c.gridwidth = 2;
-        form.add(field, c);
-        c.gridwidth = 1;
-        return row + 1;
-    }
-
-    // ------------------------ Native/System Pickers ------------------------
+    // ------------------------ Pickers ------------------------
 
     private File getExistingDir(String path) {
         if (path == null || path.trim().isEmpty()) return null;
@@ -290,24 +488,20 @@ public class ObfuscatorFrame extends JFrame {
     private File guessStartDirForJarChooser() {
         File byJar = getExistingDir(jarField.getText());
         if (byJar != null) return byJar;
-
         File byOut = getExistingDir(outDirField.getText());
         if (byOut != null) return byOut;
         File byLibs = getExistingDir(libsDirField.getText());
         if (byLibs != null) return byLibs;
-
         String lastJarDir = prefs.get(PREF_LAST_JAR_DIR, null);
         File byPrefJar = getExistingDir(lastJarDir);
         if (byPrefJar != null) return byPrefJar;
-
         String lastAnyDir = prefs.get(PREF_LAST_ANY_DIR, null);
         File byPrefAny = getExistingDir(lastAnyDir);
         if (byPrefAny != null) return byPrefAny;
-
         if (isWindows()) {
             String[] candidates = {"D:\\", "E:\\", "F:\\", "C:\\"};
-            for (String p : candidates) {
-                File root = new File(p);
+            for (String candidate : candidates) {
+                File root = new File(candidate);
                 if (root.exists() && root.isDirectory()) return root;
             }
         }
@@ -318,30 +512,22 @@ public class ObfuscatorFrame extends JFrame {
         return System.getProperty("os.name", "").toLowerCase().contains("win");
     }
 
-
     private void browseFileJar() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Select input JAR");
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
-
         File startDir = guessStartDirForJarChooser();
-        if (startDir.isDirectory()) {
-            chooser.setCurrentDirectory(startDir);
-        }
-
+        if (startDir.isDirectory()) chooser.setCurrentDirectory(startDir);
         chooser.setAcceptAllFileFilterUsed(true);
         chooser.setFileFilter(new javax.swing.filechooser.FileNameExtensionFilter("Java Archives (*.jar)", "jar"));
-
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File f = chooser.getSelectedFile();
             jarField.setText(f.getAbsolutePath());
-
             File parent = f.getParentFile();
             if (parent != null) {
                 prefs.put(PREF_LAST_JAR_DIR, parent.getAbsolutePath());
                 prefs.put(PREF_LAST_ANY_DIR, parent.getAbsolutePath());
             }
-
             if (outDirField.getText().trim().isEmpty() && parent != null) {
                 outDirField.setText(new File(parent, "native-output").getAbsolutePath());
             }
@@ -350,44 +536,28 @@ public class ObfuscatorFrame extends JFrame {
 
     private void browseDir() {
         File dir = openDirectoryDialogSwing();
-        if (dir != null) {
-            outDirField.setText(dir.getAbsolutePath());
-        }
+        if (dir != null) outDirField.setText(dir.getAbsolutePath());
     }
 
     private void browseDirOptional() {
         File dir = openDirectoryDialogSwing();
-        if (dir != null) {
-            libsDirField.setText(dir.getAbsolutePath());
-        }
+        if (dir != null) libsDirField.setText(dir.getAbsolutePath());
     }
 
     private void browseFileTxt(JTextField targetField) {
-        File f = openNativeFileDialog(this, "Select text file", new String[]{".txt"});
-        if (f != null) {
-            targetField.setText(f.getAbsolutePath());
-        }
+        File f = openNativeFileDialog(this, new String[]{".txt"});
+        if (f != null) targetField.setText(f.getAbsolutePath());
     }
 
-    /**
-     * Native file dialog (AWT FileDialog) for files to leverage OS search / look & feel.
-     *
-     * @param parent     parent frame
-     * @param title      dialog title
-     * @param extensions allowed extensions (lowercase, with dot), or null for all
-     */
-    private static File openNativeFileDialog(Frame parent, String title, String[] extensions) {
-        FileDialog fd = new FileDialog(parent, title, FileDialog.LOAD);
+    private static File openNativeFileDialog(Frame parent, String[] extensions) {
+        FileDialog fd = new FileDialog(parent, "Select text file", FileDialog.LOAD);
         if (extensions != null && extensions.length > 0) {
-            fd.setFilenameFilter(new FilenameFilter() {
-                @Override
-                public boolean accept(File dir, String name) {
-                    String lower = name.toLowerCase();
-                    for (String ext : extensions) {
-                        if (lower.endsWith(ext)) return true;
-                    }
-                    return false;
+            fd.setFilenameFilter((dir, name) -> {
+                String lower = name.toLowerCase();
+                for (String ext : extensions) {
+                    if (lower.endsWith(ext)) return true;
                 }
+                return false;
             });
         }
         fd.setVisible(true);
@@ -395,19 +565,13 @@ public class ObfuscatorFrame extends JFrame {
         return new File(fd.getDirectory(), fd.getFile());
     }
 
-    /**
-     * Directory chooser (JFileChooser with DIRECTORIES_ONLY).
-     * JFileChooser is used for folders as AWT FileDialog has limited directory-only support.
-     */
     private File openDirectoryDialogSwing() {
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Select directory");
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         chooser.setAcceptAllFileFilterUsed(false);
         int ret = chooser.showOpenDialog(this);
-        if (ret == JFileChooser.APPROVE_OPTION) {
-            return chooser.getSelectedFile();
-        }
+        if (ret == JFileChooser.APPROVE_OPTION) return chooser.getSelectedFile();
         return null;
     }
 
@@ -423,7 +587,6 @@ public class ObfuscatorFrame extends JFrame {
             showCard(CARD_IMPORT);
             return;
         }
-
         File jarFile = new File(jarPath);
         if (!jarFile.isFile()) {
             JOptionPane.showMessageDialog(this, "Input JAR does not exist.",
@@ -433,23 +596,19 @@ public class ObfuscatorFrame extends JFrame {
             return;
         }
 
-        showCard(CARD_RUN);
         leftNav.setSelectedIndex(2);
+        showCard(CARD_RUN);
         setFormEnabled(false);
         progressBar.setVisible(true);
         appendLog("Starting obfuscation...\n");
 
         SwingWorker<Integer, String> worker = new SwingWorker<Integer, String>() {
-            @Override
-            protected Integer doInBackground() throws Exception {
-                List<Path> libs = new ArrayList<>();
+            @Override protected Integer doInBackground() throws Exception {
+                List<Path> libs = new ArrayList<Path>();
                 String libsDir = libsDirField.getText().trim();
                 if (!libsDir.isEmpty()) {
                     Path start = Paths.get(libsDir);
-                    if (!Files.isDirectory(start)) {
-                        throw new IOException("Libraries directory not found: " + libsDir);
-                    }
-
+                    if (!Files.isDirectory(start)) throw new IOException("Libraries directory not found: " + libsDir);
                     Files.walk(start, FileVisitOption.FOLLOW_LINKS)
                             .filter(p -> {
                                 String s = p.toString().toLowerCase();
@@ -457,46 +616,43 @@ public class ObfuscatorFrame extends JFrame {
                             })
                             .forEach(libs::add);
                 }
-
                 List<String> blackList = new ArrayList<>();
                 String blk = blacklistField.getText().trim();
-                if (!blk.isEmpty()) {
-                    blackList = Files.readAllLines(Paths.get(blk), StandardCharsets.UTF_8)
-                            .stream().map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
-                }
-
+                if (!blk.isEmpty())
+                    blackList = Files.readAllLines(Paths.get(blk), StandardCharsets.UTF_8).stream()
+                            .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
                 List<String> whiteList = null;
                 String wht = whitelistField.getText().trim();
-                if (!wht.isEmpty()) {
-                    whiteList = Files.readAllLines(Paths.get(wht), StandardCharsets.UTF_8)
-                            .stream().map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
-                }
+                if (!wht.isEmpty())
+                    whiteList = Files.readAllLines(Paths.get(wht), StandardCharsets.UTF_8).stream()
+                            .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
 
                 String plainName = emptyToNull(plainLibNameField.getText());
                 String customDir = emptyToNull(customLibDirField.getText());
                 Platform platform = (Platform) platformCombo.getSelectedItem();
                 boolean useAnnotations = useAnnotationsBox.isSelected();
                 boolean debug = debugJarBox.isSelected();
+                boolean enableVirtualization = enableVirtualizationBox.isSelected();
+                boolean enableJit = enableJitBox.isSelected();
+                boolean flattenControlFlow = flattenControlFlowBox.isSelected();
+
+                publish("Protection settings:");
+                publish("  VM Virtualization: " + (enableVirtualization ? "Enabled" : "Disabled"));
+                if (enableVirtualization)
+                    publish("  JIT Compilation: " + (enableJit ? "Enabled" : "Disabled"));
+                publish("  Control Flow Flattening: " + (flattenControlFlow ? "Enabled" : "Disabled"));
+                publish("");
 
                 NativeObfuscator obfuscator = new NativeObfuscator();
+                Path dir = Paths.get(outDir);
                 obfuscator.process(
-                        jarFile.toPath(),
-                        Paths.get(outDir),
-                        libs,
-                        blackList,
-                        whiteList,
-                        plainName,
-                        customDir,
-                        platform,
-                        useAnnotations,
-                        debug
-                );
+                        jarFile.toPath(), dir, libs, blackList, whiteList,
+                        plainName, customDir, platform, useAnnotations, debug,
+                        enableVirtualization, enableJit, flattenControlFlow);
 
-                // After obfuscation, automatically run cmake and package the built library into the jar
                 if (plainName == null && packageBox.isSelected()) {
                     Path cppDir = Paths.get(outDir, "cpp");
-                    runCmakeAndPackage(cppDir, Paths.get(outDir),
-                            new File(outDir, jarFile.getName()).toPath(), obfuscator.getNativeDir());
+                    runCmakeAndPackage(cppDir, new File(outDir, jarFile.getName()).toPath(), obfuscator.getNativeDir());
                 } else if (plainName != null) {
                     appendLog("Plain library mode selected; skipping jar packaging.\n");
                 } else {
@@ -505,19 +661,19 @@ public class ObfuscatorFrame extends JFrame {
                 return 0;
             }
 
-            @Override
-            protected void done() {
+            @Override protected void process(java.util.List<String> chunks) {
+                for (String chunk : chunks) appendLog(chunk + "\n");
+            }
+
+            @Override protected void done() {
                 try {
                     get();
                     appendLog("Done. Output at: " + outDir + "\n");
-                    JOptionPane.showMessageDialog(ObfuscatorFrame.this,
-                            "Obfuscation completed.", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.showMessageDialog(ObfuscatorFrame.this, "Obfuscation completed.", "Success", JOptionPane.INFORMATION_MESSAGE);
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     appendLogError(cause);
-                    JOptionPane.showMessageDialog(ObfuscatorFrame.this,
-                            cause.getMessage() == null ? cause.toString() : cause.getMessage(),
-                            "Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(ObfuscatorFrame.this, cause.getMessage() == null ? cause.toString() : cause.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 } finally {
@@ -526,7 +682,6 @@ public class ObfuscatorFrame extends JFrame {
                 }
             }
         };
-
         worker.execute();
     }
 
@@ -540,7 +695,6 @@ public class ObfuscatorFrame extends JFrame {
 
     private void setFormEnabled(boolean enabled) {
         leftNav.setEnabled(enabled);
-
         jarField.setEnabled(enabled);
         outDirField.setEnabled(enabled);
         libsDirField.setEnabled(enabled);
@@ -552,6 +706,9 @@ public class ObfuscatorFrame extends JFrame {
         useAnnotationsBox.setEnabled(enabled);
         debugJarBox.setEnabled(enabled);
         packageBox.setEnabled(enabled);
+        enableVirtualizationBox.setEnabled(enabled);
+        enableJitBox.setEnabled(enabled && enableVirtualizationBox.isSelected());
+        flattenControlFlowBox.setEnabled(enabled);
         runButton.setEnabled(enabled);
     }
 
@@ -566,48 +723,33 @@ public class ObfuscatorFrame extends JFrame {
         String msg = (t.getMessage() == null) ? t.toString() : t.getMessage();
         StringBuilder sb = new StringBuilder();
         sb.append("ERROR: ").append(msg).append('\n');
-        for (StackTraceElement el : t.getStackTrace()) {
-            sb.append("    at ").append(el).append('\n');
-        }
+        for (StackTraceElement el : t.getStackTrace()) sb.append("    at ").append(el).append('\n');
         appendLog(sb.toString());
     }
 
-    private void runCmakeAndPackage(Path cppDir, Path outDir, Path outJar, String nativeDir) throws IOException, InterruptedException {
-        if (!Files.isDirectory(cppDir)) {
-            throw new IOException("C++ output directory not found: " + cppDir);
-        }
+    private void savePreferences() {
+        prefs.put(PREF_LAST_JAR_DIR, new File(jarField.getText().trim()).getParent());
+        prefs.put(PREF_LAST_ANY_DIR, new File(outDirField.getText().trim()).getParent());
+        JOptionPane.showMessageDialog(this, "Defaults saved.");
+    }
 
+    private void runCmakeAndPackage(Path cppDir, Path outJar, String nativeDir) throws IOException, InterruptedException {
+        if (!Files.isDirectory(cppDir)) throw new IOException("C++ output directory not found: " + cppDir);
         appendLog("\nConfiguring CMake...\n");
         runProcess(new String[]{"cmake", "."}, cppDir.toFile());
-
         appendLog("\nBuilding native library (Release)...\n");
         runProcess(new String[]{"cmake", "--build", ".", "--config", "Release"}, cppDir.toFile());
-
         Path libDir = cppDir.resolve("build").resolve("lib");
-        if (!Files.isDirectory(libDir)) {
-            throw new IOException("Native lib dir not found: " + libDir);
-        }
-
-        File libFile = Files.list(libDir)
-                .filter(p -> {
-                    String n = p.getFileName().toString().toLowerCase();
-                    return n.endsWith(".dll") || n.endsWith(".so") || n.endsWith(".dylib");
-                })
-                .map(Path::toFile)
-                .findFirst()
-                .orElse(null);
-        if (libFile == null) {
-            throw new IOException("No native library (.dll/.so/.dylib) found in " + libDir);
-        }
-
-        if (!Files.exists(outJar)) {
-            throw new IOException("Output JAR not found: " + outJar);
-        }
-
+        if (!Files.isDirectory(libDir)) throw new IOException("Native lib dir not found: " + libDir);
+        File libFile = Files.list(libDir).filter(p -> {
+            String n = p.getFileName().toString().toLowerCase();
+            return n.endsWith(".dll") || n.endsWith(".so") || n.endsWith(".dylib");
+        }).map(Path::toFile).findFirst().orElse(null);
+        if (libFile == null) throw new IOException("No native library (.dll/.so/.dylib) found in " + libDir);
+        if (!Files.exists(outJar)) throw new IOException("Output JAR not found: " + outJar);
         String arch = System.getProperty("os.arch").toLowerCase();
         String os = System.getProperty("os.name").toLowerCase();
         String entryPath = getEntryPath(nativeDir, arch, os);
-
         appendLog("\nPackaging native lib into jar at /" + entryPath + "...\n");
         packageIntoJar(outJar, libFile.toPath(), entryPath);
         appendLog("Packaging completed.\n");
@@ -615,21 +757,11 @@ public class ObfuscatorFrame extends JFrame {
 
     private static String getEntryPath(String nativeDir, String arch, String os) {
         String platformTypeName;
-        switch (arch) {
-            case "x86_64":
-            case "amd64":
-                platformTypeName = "x64";
-                break;
-            case "aarch64":
-                platformTypeName = "arm64";
-                break;
-            case "x86":
-                platformTypeName = "x86";
-                break;
-            default:
-                platformTypeName = arch.startsWith("arm") ? "arm32" : ("raw" + arch);
-        }
-        String osTypeName = (os.contains("win")) ? "windows.dll" : (os.contains("mac") ? "macos.dylib" : "linux.so");
+        if ("x86_64".equals(arch) || "amd64".equals(arch)) platformTypeName = "x64";
+        else if ("aarch64".equals(arch)) platformTypeName = "arm64";
+        else if ("x86".equals(arch)) platformTypeName = "x86";
+        else platformTypeName = arch.startsWith("arm") ? "arm32" : ("raw" + arch);
+        String osTypeName = os.contains("win") ? "windows.dll" : (os.contains("mac") ? "macos.dylib" : "linux.so");
         return nativeDir + "/" + platformTypeName + "-" + osTypeName;
     }
 
@@ -637,33 +769,25 @@ public class ObfuscatorFrame extends JFrame {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(workDir);
         pb.redirectErrorStream(true);
-        Process p = pb.start();
+        final Process p = pb.start();
         Thread t = new Thread(() -> {
             try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()))) {
                 String line;
-                while ((line = r.readLine()) != null) {
-                    appendLog(line + "\n");
-                }
-            } catch (IOException ignored) {
-            }
+                while ((line = r.readLine()) != null) appendLog(line + "\n");
+            } catch (IOException ignored) { }
         });
-        t.setDaemon(true);
-        t.start();
+        t.setDaemon(true); t.start();
         int code = p.waitFor();
-        if (code != 0) {
-            throw new IOException("Command failed (" + String.join(" ", cmd) + ") with exit code " + code);
-        }
+        if (code != 0) throw new IOException("Command failed (" + String.join(" ", cmd) + ") with exit code " + code);
     }
 
     private void packageIntoJar(Path jarPath, Path fileToAdd, String entryPath) throws IOException {
-        java.net.URI uri = java.net.URI.create("jar:" + jarPath.toUri().toString());
+        java.net.URI uri = java.net.URI.create("jar:" + jarPath.toUri());
         java.util.Map<String, String> env = new java.util.HashMap<>();
         env.put("create", "false");
         try (java.nio.file.FileSystem fs = java.nio.file.FileSystems.newFileSystem(uri, env)) {
             Path inside = fs.getPath("/" + entryPath);
-            if (inside.getParent() != null) {
-                Files.createDirectories(inside.getParent());
-            }
+            if (inside.getParent() != null) Files.createDirectories(inside.getParent());
             Files.copy(fileToAdd, inside, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
     }

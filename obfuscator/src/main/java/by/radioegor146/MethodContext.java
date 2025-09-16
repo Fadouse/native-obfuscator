@@ -44,6 +44,9 @@ public class MethodContext {
     // and skip generating/registering any native implementation for it.
     public boolean skipNative;
 
+    // Protection configuration settings
+    public ProtectionConfig protectionConfig;
+
     // Heuristics flags used to safely rewrite enum-switch bytecode patterns
     // that utilize the synthetic "$SwitchMap$..." int[] array. When the pattern
     // "GETSTATIC $SwitchMap...; ALOAD <enum>; INVOKEVIRTUAL ordinal()I; IALOAD; TABLESWITCH" is
@@ -53,12 +56,13 @@ public class MethodContext {
     public boolean lastWasEnumOrdinal;
 
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
-                         int classIndex) {
+                         int classIndex, ProtectionConfig protectionConfig) {
         this.obfuscator = obfuscator;
         this.method = method;
         this.methodIndex = methodIndex;
         this.clazz = clazz;
         this.classIndex = classIndex;
+        this.protectionConfig = protectionConfig;
 
         this.output = new StringBuilder();
         this.nativeMethods = new StringBuilder();

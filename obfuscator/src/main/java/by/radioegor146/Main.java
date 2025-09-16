@@ -52,6 +52,15 @@ public class Main {
         @CommandLine.Option(names = {"--debug"}, description = "Enable generation of debug .jar file (non-executable)")
         private boolean generateDebugJar;
 
+        @CommandLine.Option(names = {"--enable-virtualization"}, description = "Enable VM-based code virtualization for enhanced protection")
+        private boolean enableVirtualization;
+
+        @CommandLine.Option(names = {"--enable-jit"}, description = "Enable JIT compilation in virtualized methods for better performance")
+        private boolean enableJit;
+
+        @CommandLine.Option(names = {"--flatten-control-flow"}, description = "Enable control flow flattening in native methods")
+        private boolean flattenControlFlow;
+
         @Override
         public Integer call() throws Exception {
             List<Path> libs = new ArrayList<>();
@@ -72,7 +81,8 @@ public class Main {
             }
 
             new NativeObfuscator().process(jarFile.toPath(), Paths.get(outputDirectory),
-                    libs, blackList, whiteList, libraryName, customLibraryDirectory, platform, useAnnotations, generateDebugJar);
+                    libs, blackList, whiteList, libraryName, customLibraryDirectory, platform, useAnnotations, generateDebugJar,
+                    enableVirtualization, enableJit, flattenControlFlow);
 
             return 0;
         }

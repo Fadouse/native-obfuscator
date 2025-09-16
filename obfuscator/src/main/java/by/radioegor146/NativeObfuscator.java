@@ -96,7 +96,9 @@ public class NativeObfuscator {
     public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
                         List<String> blackList, List<String> whiteList, String plainLibName,
                         String customLibraryDirectory,
-                        Platform platform, boolean useAnnotations, boolean generateDebugJar) throws IOException {
+                        Platform platform, boolean useAnnotations, boolean generateDebugJar,
+                        boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow) throws IOException {
+        ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
             throw new RuntimeException("Input jar can't be in the same directory as output directory");
         }
@@ -269,7 +271,7 @@ public class NativeObfuscator {
                                 continue;
                             }
 
-                            MethodContext context = new MethodContext(this, method, i, classNode, currentClassId);
+                            MethodContext context = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
                             methodProcessor.processMethod(context);
                             instructions.append(context.output.toString().replace("\n", "\n    "));
 
