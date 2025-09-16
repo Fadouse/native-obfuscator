@@ -274,6 +274,8 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.LNEG:
             case Opcodes.INEG:
             case Opcodes.SWAP:
+            case Opcodes.LALOAD:
+            case Opcodes.DALOAD:
                 return currentStackPointer;
             case Opcodes.ACONST_NULL:
             case Opcodes.F2D:
@@ -303,6 +305,11 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.LCONST_1:
                 return currentStackPointer + 2;
             case Opcodes.IALOAD:
+            case Opcodes.FALOAD:
+            case Opcodes.AALOAD:
+            case Opcodes.BALOAD:
+            case Opcodes.CALOAD:
+            case Opcodes.SALOAD:
             case Opcodes.MONITOREXIT:
             case Opcodes.MONITORENTER:
             case Opcodes.ARETURN:
@@ -334,11 +341,6 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.FADD:
             case Opcodes.IADD:
             case Opcodes.POP:
-            case Opcodes.SALOAD:
-            case Opcodes.CALOAD:
-            case Opcodes.BALOAD:
-            case Opcodes.AALOAD:
-            case Opcodes.FALOAD:
             case Opcodes.ATHROW:
                 return currentStackPointer - 1;
             case Opcodes.IASTORE:
