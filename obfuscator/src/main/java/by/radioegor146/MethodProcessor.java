@@ -204,8 +204,45 @@ public class MethodProcessor {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
                     VmTranslator.serialize(vmCode)));
             output.append(String.format("    jlong __ngen_vm_locals[%d] = {0};\n", Math.max(1, method.maxLocals)));
-            for (int i = 0; i < argNames.size(); i++) {
-                output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, argNames.get(i)));
+            // Initialize VM locals with exact bit patterns for primitives and raw pointers for refs
+            for (int i = 0; i < context.argTypes.size(); i++) {
+                final int sort = context.argTypes.get(i).getSort();
+                final String aname = argNames.get(i);
+                switch (sort) {
+                    case Type.BOOLEAN:
+                    case Type.CHAR:
+                    case Type.BYTE:
+                    case Type.SHORT:
+                    case Type.INT: {
+                        output.append(String.format("    __ngen_vm_locals[%d] = (jlong)(jint)%s;\n", i, aname));
+                        break;
+                    }
+                    case Type.LONG: {
+                        output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, aname));
+                        break;
+                    }
+                    case Type.FLOAT: {
+                        output.append(String.format(
+                                "    { jint __fbits = 0; std::memcpy(&__fbits, &%s, sizeof(jfloat)); __ngen_vm_locals[%d] = (jlong)__fbits; }\n",
+                                aname, i));
+                        break;
+                    }
+                    case Type.DOUBLE: {
+                        output.append(String.format(
+                                "    { jlong __dbits = 0; std::memcpy(&__dbits, &%s, sizeof(jdouble)); __ngen_vm_locals[%d] = __dbits; }\n",
+                                aname, i));
+                        break;
+                    }
+                    case Type.ARRAY:
+                    case Type.OBJECT: {
+                        output.append(String.format("    __ngen_vm_locals[%d] = (jlong)%s;\n", i, aname));
+                        break;
+                    }
+                    default: {
+                        output.append(String.format("    __ngen_vm_locals[%d] = 0;\n", i));
+                        break;
+                    }
+                }
             }
             if (!fieldRefs.isEmpty()) {
                 output.append("    native_jvm::vm::FieldRef __ngen_vm_fields[] = {");
@@ -266,7 +303,9 @@ public class MethodProcessor {
                             break;
                         case FLOAT:
                             output.append(String.format("TYPE_FLOAT;\n"));
-                            output.append(String.format("    __ngen_vm_constants[%d].f_value = %ff;\n", i, (Float)cp.value));
+                            // Print with enough precision to round-trip single-precision values
+                            output.append(String.format(java.util.Locale.ROOT,
+                                    "    __ngen_vm_constants[%d].f_value = %.9gF;\n", i, (Float)cp.value));
                             break;
                         case LONG:
                             output.append(String.format("TYPE_LONG;\n"));
@@ -274,7 +313,9 @@ public class MethodProcessor {
                             break;
                         case DOUBLE:
                             output.append(String.format("TYPE_DOUBLE;\n"));
-                            output.append(String.format("    __ngen_vm_constants[%d].d_value = %f;\n", i, (Double)cp.value));
+                            // Print with enough precision to round-trip double-precision values
+                            output.append(String.format(java.util.Locale.ROOT,
+                                    "    __ngen_vm_constants[%d].d_value = %.17g;\n", i, (Double)cp.value));
                             break;
                         case STRING:
                             output.append(String.format("TYPE_STRING;\n"));
