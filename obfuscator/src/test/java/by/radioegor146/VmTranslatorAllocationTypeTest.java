@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class VmTranslatorAllocationTypeTest {
 
-    private Object run(Instruction[] code, Object[] locals, List<Class<?>> classes) throws Exception {
+    private Object run(Instruction[] code, Object[] locals, List<Class<?>> classes, List<VmTranslator.MultiArrayRefInfo> multiArrayRefs) throws Exception {
         Object[] stack = new Object[256];
         int sp = 0;
         int pc = 0;
@@ -63,13 +63,13 @@ public class VmTranslatorAllocationTypeTest {
                     break;
                 }
                 case VmOpcodes.OP_MULTIANEWARRAY: {
-                    int dims = (int) (ins.operand & 0xFFFFFFFFL);
-                    int classIdx = (int) (ins.operand >>> 32);
+                    VmTranslator.MultiArrayRefInfo refInfo = multiArrayRefs.get((int) ins.operand);
+                    int dims = refInfo.dims;
                     int[] sizes = new int[dims];
                     for (int i = dims - 1; i >= 0; --i) {
                         sizes[i] = (int) (long) stack[--sp];
                     }
-                    Class<?> base = classes.get(classIdx);
+                    Class<?> base = getArrayElementType(refInfo.desc);
                     Object arr = Array.newInstance(base, sizes);
                     stack[sp++] = arr;
                     break;
@@ -142,6 +142,14 @@ public class VmTranslatorAllocationTypeTest {
         }
     }
 
+    private Class<?> getArrayElementType(String desc) throws ClassNotFoundException {
+        Type type = Type.getType(desc);
+        while (type.getSort() == Type.ARRAY) {
+            type = type.getElementType();
+        }
+        return classForType(type);
+    }
+
     @Test
     public void testAllocations() throws Exception {
         VmTranslator translator = new VmTranslator();
@@ -154,7 +162,7 @@ public class VmTranslatorAllocationTypeTest {
         Instruction[] codeNew = translator.translate(mnNew);
         assertNotNull(codeNew);
         assertTrue(Arrays.stream(codeNew).anyMatch(i -> i.opcode == VmOpcodes.OP_NEW));
-        Object resNew = run(codeNew, new Object[0], collectClasses(mnNew));
+        Object resNew = run(codeNew, new Object[0], collectClasses(mnNew), new ArrayList<>());
         assertNotNull(resNew);
 
         // ANEWARRAY
@@ -166,7 +174,7 @@ public class VmTranslatorAllocationTypeTest {
         Instruction[] codeA = translator.translate(mnA);
         assertNotNull(codeA);
         assertTrue(Arrays.stream(codeA).anyMatch(i -> i.opcode == VmOpcodes.OP_ANEWARRAY));
-        Object arrA = run(codeA, new Object[]{2L}, collectClasses(mnA));
+        Object arrA = run(codeA, new Object[]{2L}, collectClasses(mnA), new ArrayList<>());
         assertEquals(2, Array.getLength(arrA));
 
         // NEWARRAY
@@ -178,7 +186,7 @@ public class VmTranslatorAllocationTypeTest {
         Instruction[] codeN = translator.translate(mnN);
         assertNotNull(codeN);
         assertTrue(Arrays.stream(codeN).anyMatch(i -> i.opcode == VmOpcodes.OP_NEWARRAY));
-        Object arrN = run(codeN, new Object[]{3L}, collectClasses(mnN));
+        Object arrN = run(codeN, new Object[]{3L}, collectClasses(mnN), new ArrayList<>());
         assertEquals(3, Array.getLength(arrN));
 
         // MULTIANEWARRAY
@@ -191,7 +199,7 @@ public class VmTranslatorAllocationTypeTest {
         Instruction[] codeM = translator.translate(mnM);
         assertNotNull(codeM);
         assertTrue(Arrays.stream(codeM).anyMatch(i -> i.opcode == VmOpcodes.OP_MULTIANEWARRAY));
-        Object arrM = run(codeM, new Object[]{2L,3L}, collectClasses(mnM));
+        Object arrM = run(codeM, new Object[]{2L,3L}, collectClasses(mnM), translator.getMultiArrayRefs());
         assertEquals(2, Array.getLength(arrM));
     }
 
@@ -209,9 +217,9 @@ public class VmTranslatorAllocationTypeTest {
         assertNotNull(codeC);
         assertTrue(Arrays.stream(codeC).anyMatch(i -> i.opcode == VmOpcodes.OP_CHECKCAST));
         List<Class<?>> classesC = collectClasses(mnC);
-        Object castRes = run(codeC, new Object[]{"x"}, classesC);
+        Object castRes = run(codeC, new Object[]{"x"}, classesC, new ArrayList<>());
         assertEquals("x", castRes);
-        assertThrows(ClassCastException.class, () -> run(codeC, new Object[]{new Object()}, classesC));
+        assertThrows(ClassCastException.class, () -> run(codeC, new Object[]{new Object()}, classesC, new ArrayList<>()));
 
         // INSTANCEOF
         MethodNode mnI = new MethodNode(Opcodes.ACC_STATIC, "m", "(Ljava/lang/Object;)I", null, null);
@@ -223,8 +231,8 @@ public class VmTranslatorAllocationTypeTest {
         assertNotNull(codeI);
         assertTrue(Arrays.stream(codeI).anyMatch(i -> i.opcode == VmOpcodes.OP_INSTANCEOF));
         List<Class<?>> classesI = collectClasses(mnI);
-        long inst1 = (long) run(codeI, new Object[]{"x"}, classesI);
-        long inst2 = (long) run(codeI, new Object[]{new Object()}, classesI);
+        long inst1 = (long) run(codeI, new Object[]{"x"}, classesI, new ArrayList<>());
+        long inst2 = (long) run(codeI, new Object[]{new Object()}, classesI, new ArrayList<>());
         assertEquals(1L, inst1);
         assertEquals(0L, inst2);
     }
