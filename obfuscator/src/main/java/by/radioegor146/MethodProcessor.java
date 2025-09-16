@@ -468,7 +468,8 @@ public class MethodProcessor {
                     String methodContent = methodBody.substring(methodStart, methodEnd);
                     String methodClosing = methodBody.substring(methodEnd);
 
-                    String flattenedContent = ControlFlowFlattener.flattenControlFlow(methodContent, method.name);
+                    String returnType = CPP_TYPES[context.ret.getSort()];
+                    String flattenedContent = ControlFlowFlattener.flattenControlFlow(methodContent, method.name, returnType);
                     output.setLength(0);
                     output.append(methodSignature).append(flattenedContent).append(methodClosing);
                 }
@@ -699,7 +700,8 @@ public class MethodProcessor {
                 String methodContent = methodBody.substring(methodStart, methodEnd);
                 String methodClosing = methodBody.substring(methodEnd);
 
-                String flattenedContent = ControlFlowFlattener.flattenControlFlow(methodContent, method.name);
+                String returnType = CPP_TYPES[context.ret.getSort()];
+                String flattenedContent = ControlFlowFlattener.flattenControlFlow(methodContent, method.name, returnType);
                 output.setLength(0);
                 output.append(methodSignature).append(flattenedContent).append(methodClosing);
             }
