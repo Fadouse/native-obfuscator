@@ -8,6 +8,97 @@ struct Program {
     std::vector<DecodedInstruction> ins;
 };
 
+static bool is_supported_for_jit(OpCode op) {
+    switch (op) {
+        case OP_PUSH:
+        case OP_LDC:
+        case OP_LDC_W:
+        case OP_LDC2_W:
+        case OP_ADD:
+        case OP_SUB:
+        case OP_MUL:
+        case OP_DIV:
+        case OP_PRINT:
+        case OP_NOP:
+        case OP_JUNK1:
+        case OP_JUNK2:
+        case OP_SWAP:
+        case OP_DUP:
+        case OP_DUP_X1:
+        case OP_DUP_X2:
+        case OP_DUP2:
+        case OP_DUP2_X1:
+        case OP_DUP2_X2:
+        case OP_ATHROW:
+        case OP_TRY_START:
+        case OP_CATCH_HANDLER:
+        case OP_FINALLY_HANDLER:
+        case OP_EXCEPTION_CHECK:
+        case OP_EXCEPTION_CLEAR:
+        case OP_LOAD:
+        case OP_LLOAD:
+        case OP_FLOAD:
+        case OP_DLOAD:
+        case OP_STORE:
+        case OP_LSTORE:
+        case OP_FSTORE:
+        case OP_DSTORE:
+        case OP_IF_ICMPEQ:
+        case OP_IF_ICMPNE:
+        case OP_GOTO:
+        case OP_AND:
+        case OP_OR:
+        case OP_XOR:
+        case OP_SHL:
+        case OP_SHR:
+        case OP_USHR:
+        case OP_IF_ICMPLT:
+        case OP_IF_ICMPLE:
+        case OP_IF_ICMPGT:
+        case OP_IF_ICMPGE:
+        case OP_I2L:
+        case OP_I2B:
+        case OP_I2C:
+        case OP_I2S:
+        case OP_I2F:
+        case OP_I2D:
+        case OP_L2I:
+        case OP_L2F:
+        case OP_L2D:
+        case OP_F2I:
+        case OP_F2L:
+        case OP_F2D:
+        case OP_D2I:
+        case OP_D2L:
+        case OP_D2F:
+        case OP_NEG:
+        case OP_ALOAD:
+        case OP_ASTORE:
+        case OP_AALOAD:
+        case OP_AASTORE:
+        case OP_IALOAD:
+        case OP_BALOAD:
+        case OP_CALOAD:
+        case OP_SALOAD:
+        case OP_IASTORE:
+        case OP_BASTORE:
+        case OP_CASTORE:
+        case OP_SASTORE:
+        case OP_INVOKESTATIC:
+        case OP_FCONST_0:
+        case OP_FCONST_1:
+        case OP_FCONST_2:
+        case OP_DCONST_0:
+        case OP_DCONST_1:
+        case OP_LCONST_0:
+        case OP_LCONST_1:
+        case OP_HALT:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                            uint64_t /*seed*/, void* ctx) {
     auto* prog = reinterpret_cast<Program*>(ctx);
@@ -452,6 +543,12 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
 JitCompiled compile(const Instruction* code, size_t length, uint64_t seed) {
     auto* prog = new Program();
     decode_for_jit(code, length, seed, prog->ins);
+    for (const auto& ins : prog->ins) {
+        if (!is_supported_for_jit(ins.op)) {
+            delete prog;
+            return {};
+        }
+    }
     return { run_program, prog };
 }
 
