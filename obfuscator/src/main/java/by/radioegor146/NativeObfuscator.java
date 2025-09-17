@@ -1,6 +1,8 @@
 package by.radioegor146;
 
 import by.radioegor146.bytecode.PreprocessorRunner;
+import by.radioegor146.javaobf.JavaObfuscationConfig;
+import by.radioegor146.javaobf.JavaObfuscator;
 import by.radioegor146.source.CMakeFilesBuilder;
 import by.radioegor146.source.ClassSourceBuilder;
 import by.radioegor146.source.MainSourceBuilder;
@@ -98,13 +100,57 @@ public class NativeObfuscator {
                         String customLibraryDirectory,
                         Platform platform, boolean useAnnotations, boolean generateDebugJar,
                         boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow) throws IOException {
+        // Default Java obfuscation disabled, native obfuscation enabled
+        process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
+                platform, useAnnotations, generateDebugJar, enableVirtualization, enableJit, flattenControlFlow,
+                false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true);
+    }
+
+    public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
+                        List<String> blackList, List<String> whiteList, String plainLibName,
+                        String customLibraryDirectory,
+                        Platform platform, boolean useAnnotations, boolean generateDebugJar,
+                        boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow,
+                        boolean enableJavaObfuscation, String javaObfuscationStrength,
+                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation) throws IOException {
         ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
             throw new RuntimeException("Input jar can't be in the same directory as output directory");
         }
 
+        // Step 1: Apply Java obfuscation if enabled
+        Path processedJarPath = inputJarPath;
+        if (enableJavaObfuscation) {
+            logger.info("Starting Java-layer obfuscation...");
+            JavaObfuscationConfig.Strength strength;
+            try {
+                strength = JavaObfuscationConfig.Strength.valueOf(javaObfuscationStrength.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                logger.warn("Invalid Java obfuscation strength '{}', using MEDIUM", javaObfuscationStrength);
+                strength = JavaObfuscationConfig.Strength.MEDIUM;
+            }
+
+            JavaObfuscationConfig javaConfig = new JavaObfuscationConfig(true, strength, javaBlackList, javaWhiteList);
+            JavaObfuscator javaObfuscator = new JavaObfuscator();
+
+            Path javaObfOutputDir = outputDir.resolve("java-obf-temp");
+            processedJarPath = javaObfuscator.process(inputJarPath, javaObfOutputDir, inputLibs, javaConfig, useAnnotations);
+            logger.info("Java-layer obfuscation completed. Output: {}", processedJarPath);
+        }
+
+        // Step 2: Check if native obfuscation is disabled
+        if (!enableNativeObfuscation) {
+            logger.info("Native obfuscation disabled. Copying final JAR to output directory...");
+            Path finalOutputJar = outputDir.resolve(processedJarPath.getFileName().toString());
+            Files.createDirectories(outputDir);
+            Files.deleteIfExists(finalOutputJar);
+            Files.copy(processedJarPath, finalOutputJar);
+            logger.info("Processing completed. Output: {}", finalOutputJar);
+            return;
+        }
+
         List<Path> libs = new ArrayList<>(inputLibs);
-        libs.add(inputJarPath);
+        libs.add(processedJarPath);
         ClassMethodFilter classMethodFilter = new ClassMethodFilter(ClassMethodList.parse(blackList), ClassMethodList.parse(whiteList), useAnnotations);
         ClassMetadataReader metadataReader = new ClassMetadataReader(libs.stream().map(x -> {
             try {
@@ -147,7 +193,7 @@ public class NativeObfuscator {
 
         MainSourceBuilder mainSourceBuilder = new MainSourceBuilder();
 
-        File jarFile = inputJarPath.toAbsolutePath().toFile();
+        File jarFile = processedJarPath.toAbsolutePath().toFile();
         try (JarFile jar = new JarFile(jarFile);
              ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(outputDir.resolve(jarFile.getName())));
              ZipOutputStream debug = generateDebugJar ? new ZipOutputStream(

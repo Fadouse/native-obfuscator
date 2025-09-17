@@ -2,6 +2,7 @@ package by.radioegor146.ui;
 
 import by.radioegor146.NativeObfuscator;
 import by.radioegor146.Platform;
+import by.radioegor146.javaobf.JavaObfuscationConfig;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -37,6 +38,7 @@ public class ObfuscatorFrame extends JFrame {
     // LEFT NAV SECTIONS
     private static final String CARD_IMPORT = "import";
     private static final String CARD_SETTINGS = "settings";
+    private static final String CARD_JAVA_OBF = "java_obf";
     private static final String CARD_RUN = "run";
 
     // Shared controls (across cards)
@@ -53,9 +55,16 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox packageBox = new JCheckBox("Package native lib into JAR", true);
 
     // Protection feature checkboxes
+    private final JCheckBox enableNativeObfuscationBox = new JCheckBox("Enable native obfuscation", true);
     private final JCheckBox enableVirtualizationBox = new JCheckBox("Enable VM virtualization");
     private final JCheckBox enableJitBox = new JCheckBox("Enable JIT compilation");
     private final JCheckBox flattenControlFlowBox = new JCheckBox("Enable control flow flattening");
+
+    // Java obfuscation controls
+    private final JCheckBox enableJavaObfuscationBox = new JCheckBox("Enable Java-layer obfuscation");
+    private final JComboBox<JavaObfuscationConfig.Strength> javaObfStrengthCombo = new JComboBox<>(JavaObfuscationConfig.Strength.values());
+    private final JTextField javaBlacklistField = new JTextField();
+    private final JTextField javaWhitelistField = new JTextField();
     private final JButton runButton = new JButton("▶ Run Obfuscation");
     private final JTextArea logArea = new JTextArea();
     private final JProgressBar progressBar = new JProgressBar();
@@ -103,6 +112,7 @@ public class ObfuscatorFrame extends JFrame {
         rightCards = new JPanel(new CardLayout());
         rightCards.add(buildImportCard(), CARD_IMPORT);
         rightCards.add(buildSettingsCard(), CARD_SETTINGS);
+        rightCards.add(buildJavaObfCard(), CARD_JAVA_OBF);
         rightCards.add(buildRunCard(), CARD_RUN);
         rightCards.setMinimumSize(new Dimension(520, 400));
 
@@ -120,8 +130,23 @@ public class ObfuscatorFrame extends JFrame {
         runButton.addActionListener(this::runObfuscation);
 
         // Feature interactions
+        enableNativeObfuscationBox.addActionListener(e -> {
+            boolean enabled = enableNativeObfuscationBox.isSelected();
+            enableVirtualizationBox.setEnabled(enabled);
+            enableJitBox.setEnabled(enabled && enableVirtualizationBox.isSelected());
+            flattenControlFlowBox.setEnabled(enabled);
+            packageBox.setEnabled(enabled);
+            plainLibNameField.setEnabled(enabled);
+            customLibDirField.setEnabled(enabled);
+            if (!enabled) {
+                enableVirtualizationBox.setSelected(false);
+                enableJitBox.setSelected(false);
+                flattenControlFlowBox.setSelected(false);
+            }
+        });
+
         enableVirtualizationBox.addActionListener(e -> {
-            enableJitBox.setEnabled(enableVirtualizationBox.isSelected());
+            enableJitBox.setEnabled(enableNativeObfuscationBox.isSelected() && enableVirtualizationBox.isSelected());
             if (!enableVirtualizationBox.isSelected()) enableJitBox.setSelected(false);
         });
 
@@ -129,10 +154,12 @@ public class ObfuscatorFrame extends JFrame {
         jarField.putClientProperty("JTextComponent.placeholderText", "📦 Select input .jar");
         outDirField.putClientProperty("JTextComponent.placeholderText", "📁 Choose output directory");
         libsDirField.putClientProperty("JTextComponent.placeholderText", "📂 Optional libraries directory");
-        whitelistField.putClientProperty("JTextComponent.placeholderText", "✅ Optional whitelist.txt");
-        blacklistField.putClientProperty("JTextComponent.placeholderText", "❌ Optional blacklist.txt");
+        whitelistField.putClientProperty("JTextComponent.placeholderText", "✅ Optional native whitelist.txt");
+        blacklistField.putClientProperty("JTextComponent.placeholderText", "❌ Optional native blacklist.txt");
         plainLibNameField.putClientProperty("JTextComponent.placeholderText", "📝 Specify to skip packaging");
         customLibDirField.putClientProperty("JTextComponent.placeholderText", "📁 e.g. native/win64 — inside output JAR");
+        javaBlacklistField.putClientProperty("JTextComponent.placeholderText", "❌ Optional Java blacklist.txt");
+        javaWhitelistField.putClientProperty("JTextComponent.placeholderText", "✅ Optional Java whitelist.txt");
     }
 
     // ------------------------ ICON CREATION ------------------------
@@ -178,6 +205,7 @@ public class ObfuscatorFrame extends JFrame {
         DefaultListModel<String> model = new DefaultListModel<>();
         model.addElement("📁 Import Files");
         model.addElement("⚙️ Native Settings");
+        model.addElement("☕ Java Obfuscation");
         model.addElement("🚀 Run & Logs");
 
         final JList<String> list = new JList<>(model);
@@ -191,7 +219,8 @@ public class ObfuscatorFrame extends JFrame {
                 switch (list.getSelectedIndex()) {
                     case 0: showCard(CARD_IMPORT); break;
                     case 1: showCard(CARD_SETTINGS); break;
-                    case 2: showCard(CARD_RUN); break;
+                    case 2: showCard(CARD_JAVA_OBF); break;
+                    case 3: showCard(CARD_RUN); break;
                     default: break;
                 }
             }
@@ -242,7 +271,7 @@ public class ObfuscatorFrame extends JFrame {
         card.add(form, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton next = new JButton("Next → Settings ⚙");
+        JButton next = new JButton("Next → Native Settings ⚙");
         next.addActionListener(e -> { leftNav.setSelectedIndex(1); showCard(CARD_SETTINGS); });
         footer.add(next);
         card.add(footer, BorderLayout.SOUTH);
@@ -320,15 +349,17 @@ public class ObfuscatorFrame extends JFrame {
         protectionPanel.setLayout(new BoxLayout(protectionPanel, BoxLayout.Y_AXIS));
         protectionPanel.setBorder(new TitledBorder("🛡️ Protection Features"));
         protectionPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        protectionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
+        protectionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 220));
 
-        protectionPanel.add(checkWithHint(enableVirtualizationBox,
-                "Translate selected methods to a custom VM; strongest protection"));
+        protectionPanel.add(checkWithHint(enableNativeObfuscationBox,
+                "Enable transpilation of Java methods to native C++ code"));
+        protectionPanel.add(indent(checkWithHint(enableVirtualizationBox,
+                "Translate selected methods to a custom VM; strongest protection"), 20));
         enableJitBox.setEnabled(false);
         protectionPanel.add(indent(checkWithHint(enableJitBox,
-                "JIT for virtualized methods; improves runtime performance"), 20));
-        protectionPanel.add(checkWithHint(flattenControlFlowBox,
-                "State-machine style CFG flattening for native methods"));
+                "JIT for virtualized methods; improves runtime performance"), 40));
+        protectionPanel.add(indent(checkWithHint(flattenControlFlowBox,
+                "State-machine style CFG flattening for native methods"), 20));
 
         form.add(protectionPanel);
         form.add(Box.createVerticalGlue());
@@ -344,10 +375,114 @@ public class ObfuscatorFrame extends JFrame {
         back.addActionListener(e -> { leftNav.setSelectedIndex(0); showCard(CARD_IMPORT); });
         JButton saveDefaults = new JButton("💾 Save as Defaults");
         saveDefaults.addActionListener(e -> savePreferences());
-        JButton goRun = new JButton("Continue → Run 🚀");
-        goRun.addActionListener(e -> { leftNav.setSelectedIndex(2); showCard(CARD_RUN); });
+        JButton goJava = new JButton("Continue → Java Obfuscation ☕");
+        goJava.addActionListener(e -> { leftNav.setSelectedIndex(2); showCard(CARD_JAVA_OBF); });
         footer.add(back);
         footer.add(saveDefaults);
+        footer.add(goJava);
+        card.add(footer, BorderLayout.SOUTH);
+
+        return card;
+    }
+
+    private JPanel buildJavaObfCard() {
+        JPanel card = new JPanel(new BorderLayout());
+        card.setBorder(new EmptyBorder(4, 0, 0, 0));
+
+        JPanel form = new JPanel();
+        form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
+
+        // Java Obfuscation Enable/Disable
+        JPanel enablePanel = new JPanel();
+        enablePanel.setLayout(new BoxLayout(enablePanel, BoxLayout.Y_AXIS));
+        enablePanel.setBorder(new TitledBorder("☕ Java-Layer Obfuscation"));
+        enablePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        enablePanel.add(checkWithHint(enableJavaObfuscationBox,
+                "Enable control flow flattening for Java bytecode"));
+
+        // Strength selection
+        JPanel strengthPanel = new JPanel();
+        strengthPanel.setLayout(new BoxLayout(strengthPanel, BoxLayout.X_AXIS));
+        strengthPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        strengthPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+
+        JLabel strengthLabel = new JLabel("🎯 Obfuscation Strength");
+        strengthLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        strengthLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        strengthLabel.setVerticalAlignment(SwingConstants.CENTER);
+        strengthPanel.add(strengthLabel);
+
+        javaObfStrengthCombo.setMaximumSize(new Dimension(200, FIELD_H));
+        javaObfStrengthCombo.setAlignmentY(Component.CENTER_ALIGNMENT);
+        javaObfStrengthCombo.setSelectedItem(JavaObfuscationConfig.Strength.MEDIUM);
+        strengthPanel.add(javaObfStrengthCombo);
+
+        // Tooltip for combo box
+        javaObfStrengthCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                JLabel c = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof JavaObfuscationConfig.Strength) {
+                    JavaObfuscationConfig.Strength strength = (JavaObfuscationConfig.Strength) value;
+                    c.setToolTipText(strength.getDescription());
+                }
+                return c;
+            }
+        });
+
+        strengthPanel.add(Box.createRigidArea(new Dimension(8, 0)));
+        JLabel strengthHint = makeHint("Choose complexity level for state machine obfuscation");
+        strengthPanel.add(strengthHint);
+        strengthPanel.add(Box.createHorizontalGlue());
+
+        enablePanel.add(Box.createRigidArea(new Dimension(0, 8)));
+        enablePanel.add(strengthPanel);
+
+        form.add(enablePanel);
+        form.add(Box.createRigidArea(new Dimension(0, 12)));
+
+        // Java Filter Files
+        JPanel filterPanel = new JPanel();
+        filterPanel.setLayout(new BoxLayout(filterPanel, BoxLayout.Y_AXIS));
+        filterPanel.setBorder(new TitledBorder("🎯 Java Obfuscation Filtering"));
+        filterPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        filterPanel.add(createPathRowPanel("❌ Java Blacklist File", javaBlacklistField, () -> browseFileTxt(javaBlacklistField),
+                "Exclude classes/packages from Java obfuscation"));
+        filterPanel.add(Box.createRigidArea(new Dimension(0, 8)));
+
+        filterPanel.add(createPathRowPanel("✅ Java Whitelist File", javaWhitelistField, () -> browseFileTxt(javaWhitelistField),
+                "Allow-only list for Java obfuscation; overrides blacklist"));
+
+        form.add(filterPanel);
+        form.add(Box.createVerticalGlue());
+
+        // Enable/disable strength combo based on checkbox
+        enableJavaObfuscationBox.addActionListener(e -> {
+            boolean enabled = enableJavaObfuscationBox.isSelected();
+            javaObfStrengthCombo.setEnabled(enabled);
+            javaBlacklistField.setEnabled(enabled);
+            javaWhitelistField.setEnabled(enabled);
+        });
+
+        // Initially disable components
+        javaObfStrengthCombo.setEnabled(false);
+        javaBlacklistField.setEnabled(false);
+        javaWhitelistField.setEnabled(false);
+
+        JScrollPane sc = new JScrollPane(form);
+        sc.setBorder(null);
+        sc.getVerticalScrollBar().setUnitIncrement(16);
+        sc.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        card.add(sc, BorderLayout.CENTER);
+
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton back = new JButton("← Back ⚙️");
+        back.addActionListener(e -> { leftNav.setSelectedIndex(1); showCard(CARD_SETTINGS); });
+        JButton goRun = new JButton("Continue → Run 🚀");
+        goRun.addActionListener(e -> { leftNav.setSelectedIndex(3); showCard(CARD_RUN); });
+        footer.add(back);
         footer.add(goRun);
         card.add(footer, BorderLayout.SOUTH);
 
@@ -678,15 +813,38 @@ public class ObfuscatorFrame extends JFrame {
                 Platform platform = (Platform) platformCombo.getSelectedItem();
                 boolean useAnnotations = useAnnotationsBox.isSelected();
                 boolean debug = debugJarBox.isSelected();
+                boolean enableNativeObfuscation = enableNativeObfuscationBox.isSelected();
                 boolean enableVirtualization = enableVirtualizationBox.isSelected();
                 boolean enableJit = enableJitBox.isSelected();
                 boolean flattenControlFlow = flattenControlFlowBox.isSelected();
 
+                // Java obfuscation settings
+                boolean enableJavaObfuscation = enableJavaObfuscationBox.isSelected();
+                String javaObfStrength = javaObfStrengthCombo.getSelectedItem().toString();
+                List<String> javaBlackList = new ArrayList<>();
+                List<String> javaWhiteList = new ArrayList<>();
+
+                String javaBlackListPath = emptyToNull(javaBlacklistField.getText());
+                if (javaBlackListPath != null) {
+                    javaBlackList = Files.readAllLines(Paths.get(javaBlackListPath), StandardCharsets.UTF_8).stream()
+                            .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
+                }
+
+                String javaWhiteListPath = emptyToNull(javaWhitelistField.getText());
+                if (javaWhiteListPath != null) {
+                    javaWhiteList = Files.readAllLines(Paths.get(javaWhiteListPath), StandardCharsets.UTF_8).stream()
+                            .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
+                }
+
                 publish("🛡️ Protection settings:");
-                publish("  🖥️ VM Virtualization: " + (enableVirtualization ? "✅ Enabled" : "❌ Disabled"));
-                if (enableVirtualization)
-                    publish("  ⚡ JIT Compilation: " + (enableJit ? "✅ Enabled" : "❌ Disabled"));
-                publish("  🌀 Control Flow Flattening: " + (flattenControlFlow ? "✅ Enabled" : "❌ Disabled"));
+                publish("  🔧 Native Obfuscation: " + (enableNativeObfuscation ? "✅ Enabled" : "❌ Disabled"));
+                if (enableNativeObfuscation) {
+                    publish("  🖥️ VM Virtualization: " + (enableVirtualization ? "✅ Enabled" : "❌ Disabled"));
+                    if (enableVirtualization)
+                        publish("  ⚡ JIT Compilation: " + (enableJit ? "✅ Enabled" : "❌ Disabled"));
+                    publish("  🌀 Native Control Flow Flattening: " + (flattenControlFlow ? "✅ Enabled" : "❌ Disabled"));
+                }
+                publish("  ☕ Java Obfuscation: " + (enableJavaObfuscation ? "✅ Enabled (" + javaObfStrength + ")" : "❌ Disabled"));
                 publish("");
 
                 NativeObfuscator obfuscator = new NativeObfuscator();
@@ -694,13 +852,17 @@ public class ObfuscatorFrame extends JFrame {
                 obfuscator.process(
                         jarFile.toPath(), dir, libs, blackList, whiteList,
                         plainName, customDir, platform, useAnnotations, debug,
-                        enableVirtualization, enableJit, flattenControlFlow);
+                        enableVirtualization, enableJit, flattenControlFlow,
+                        enableJavaObfuscation, javaObfStrength,
+                        javaBlackList, javaWhiteList, enableNativeObfuscation);
 
-                if (plainName == null && packageBox.isSelected()) {
+                if (enableNativeObfuscation && plainName == null && packageBox.isSelected()) {
                     Path cppDir = Paths.get(outDir, "cpp");
                     runCmakeAndPackage(cppDir, new File(outDir, jarFile.getName()).toPath(), obfuscator.getNativeDir());
-                } else if (plainName != null) {
+                } else if (enableNativeObfuscation && plainName != null) {
                     appendLog("📝 Plain library mode selected; skipping jar packaging.\n");
+                } else if (!enableNativeObfuscation) {
+                    appendLog("🔧 Native obfuscation disabled; no C++ compilation needed.\n");
                 } else {
                     appendLog("❌ Packaging disabled by user.\n");
                 }
@@ -751,10 +913,18 @@ public class ObfuscatorFrame extends JFrame {
         platformCombo.setEnabled(enabled);
         useAnnotationsBox.setEnabled(enabled);
         debugJarBox.setEnabled(enabled);
-        packageBox.setEnabled(enabled);
-        enableVirtualizationBox.setEnabled(enabled);
-        enableJitBox.setEnabled(enabled && enableVirtualizationBox.isSelected());
-        flattenControlFlowBox.setEnabled(enabled);
+        packageBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected());
+        enableNativeObfuscationBox.setEnabled(enabled);
+        enableVirtualizationBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected());
+        enableJitBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected() && enableVirtualizationBox.isSelected());
+        flattenControlFlowBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected());
+
+        // Java obfuscation controls
+        enableJavaObfuscationBox.setEnabled(enabled);
+        javaObfStrengthCombo.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaBlacklistField.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaWhitelistField.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+
         runButton.setEnabled(enabled);
     }
 

@@ -61,6 +61,21 @@ public class Main {
         @CommandLine.Option(names = {"--flatten-control-flow"}, description = "Enable control flow flattening in native methods")
         private boolean flattenControlFlow;
 
+        @CommandLine.Option(names = {"--enable-java-obfuscation"}, description = "Enable Java-layer obfuscation with control flow flattening")
+        private boolean enableJavaObfuscation;
+
+        @CommandLine.Option(names = {"--java-obf-strength"}, defaultValue = "MEDIUM", description = "Java obfuscation strength: LOW, MEDIUM, HIGH")
+        private String javaObfuscationStrength;
+
+        @CommandLine.Option(names = {"-jb", "--java-black-list"}, description = "File with a list of blacklist classes/methods for Java obfuscation")
+        private File javaBlackListFile;
+
+        @CommandLine.Option(names = {"-jw", "--java-white-list"}, description = "File with a list of whitelist classes/methods for Java obfuscation")
+        private File javaWhiteListFile;
+
+        @CommandLine.Option(names = {"--enable-native-obfuscation"}, defaultValue = "true", description = "Enable native obfuscation (default: true)")
+        private boolean enableNativeObfuscation;
+
         @Override
         public Integer call() throws Exception {
             List<Path> libs = new ArrayList<>();
@@ -80,9 +95,21 @@ public class Main {
                 whiteList = Files.readAllLines(whiteListFile.toPath(), StandardCharsets.UTF_8);
             }
 
+            // Java obfuscation configuration
+            List<String> javaBlackList = new ArrayList<>();
+            if (javaBlackListFile != null) {
+                javaBlackList = Files.readAllLines(javaBlackListFile.toPath(), StandardCharsets.UTF_8);
+            }
+
+            List<String> javaWhiteList = new ArrayList<>();
+            if (javaWhiteListFile != null) {
+                javaWhiteList = Files.readAllLines(javaWhiteListFile.toPath(), StandardCharsets.UTF_8);
+            }
+
             new NativeObfuscator().process(jarFile.toPath(), Paths.get(outputDirectory),
                     libs, blackList, whiteList, libraryName, customLibraryDirectory, platform, useAnnotations, generateDebugJar,
-                    enableVirtualization, enableJit, flattenControlFlow);
+                    enableVirtualization, enableJit, flattenControlFlow, enableJavaObfuscation, javaObfuscationStrength,
+                    javaBlackList, javaWhiteList, enableNativeObfuscation);
 
             return 0;
         }
