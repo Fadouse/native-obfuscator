@@ -72,19 +72,24 @@ public class ControlFlowFlattener {
 
         @Override
         public void appendPrologue(StringBuilder out, String indent) {
-            out.append(indent).append("const jint __ngen_state_mask = ")
-                    .append(String.format("0x%08X", xorMask)).append(";\n");
-            out.append(indent).append("const jint __ngen_state_mul = ")
-                    .append(String.format("0x%08X", multiplier)).append(";\n");
-            out.append(indent).append("const jint __ngen_state_bias = ")
-                    .append(String.format("0x%08X", bias)).append(";\n");
-            out.append(indent).append("const jint __ngen_state_rot = ")
-                    .append(rotation).append(";\n");
+            out.append(indent)
+                    .append("alignas(16) static volatile jint __ngen_state_params[4] = { ")
+                    .append(String.format("static_cast<jint>(0x%08X)", xorMask)).append(", ")
+                    .append(String.format("static_cast<jint>(0x%08X)", multiplier)).append(", ")
+                    .append(String.format("static_cast<jint>(0x%08X)", bias)).append(", ")
+                    .append(rotation)
+                    .append(" };\n");
             out.append(indent).append("auto __ngen_encode_state = [&](int __ngen_raw_state) -> int {\n");
+            out.append(indent).append("    volatile const jint* __ngen_params = __ngen_state_params;\n");
             out.append(indent).append("    uint32_t __ngen_val = static_cast<uint32_t>(__ngen_raw_state);\n");
-            out.append(indent).append("    __ngen_val = (__ngen_val * static_cast<uint32_t>(__ngen_state_mul)) ^ static_cast<uint32_t>(__ngen_state_mask);\n");
-            out.append(indent).append("    __ngen_val = (__ngen_val << __ngen_state_rot) | (__ngen_val >> (32 - __ngen_state_rot));\n");
-            out.append(indent).append("    __ngen_val ^= static_cast<uint32_t>(__ngen_state_bias);\n");
+            out.append(indent).append("    uint32_t __ngen_mul = static_cast<uint32_t>(__ngen_params[1]);\n");
+            out.append(indent).append("    uint32_t __ngen_mask = static_cast<uint32_t>(__ngen_params[0]);\n");
+            out.append(indent).append("    uint32_t __ngen_bias = static_cast<uint32_t>(__ngen_params[2]);\n");
+            out.append(indent).append("    uint32_t __ngen_rot = static_cast<uint32_t>(__ngen_params[3]) & 31U;\n");
+            out.append(indent).append("    __ngen_val = (__ngen_val * __ngen_mul) ^ __ngen_mask;\n");
+            out.append(indent).append("    uint32_t __ngen_left = __ngen_val << __ngen_rot;\n");
+            out.append(indent).append("    uint32_t __ngen_right = (__ngen_rot == 0U) ? __ngen_val : (__ngen_val >> (32U - __ngen_rot));\n");
+            out.append(indent).append("    __ngen_val = (__ngen_left | __ngen_right) ^ __ngen_bias;\n");
             out.append(indent).append("    return static_cast<int>(__ngen_val);\n");
             out.append(indent).append("};\n");
         }
