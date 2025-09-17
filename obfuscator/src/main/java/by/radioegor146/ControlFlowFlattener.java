@@ -1,5 +1,7 @@
 package by.radioegor146;
 
+
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -54,9 +56,14 @@ public class ControlFlowFlattener {
 
     private static final class DefaultStateObfuscation implements StateObfuscation {
         private final int xorMask;
-        private final int multiplier;
+        private final int primaryMultiplier;
+        private final int addend;
+        private final int rotationA;
+        private final int rotationB;
+        private final int secondaryMultiplier;
         private final int bias;
-        private final int rotation;
+        private final int rotationC;
+        private final Map<Integer, Integer> stateSalts = new HashMap<>();
 
         private DefaultStateObfuscation() {
             ThreadLocalRandom random = ThreadLocalRandom.current();
@@ -65,32 +72,67 @@ public class ControlFlowFlattener {
             do {
                 candidate = random.nextInt();
             } while ((candidate & 1) == 0);
-            this.multiplier = candidate;
+            this.primaryMultiplier = candidate;
+            do {
+                candidate = random.nextInt();
+            } while ((candidate & 1) == 0);
+            this.secondaryMultiplier = candidate;
+            this.addend = random.nextInt();
             this.bias = random.nextInt();
-            this.rotation = 1 + random.nextInt(31);
+            this.rotationA = 1 + random.nextInt(31);
+            this.rotationB = 1 + random.nextInt(31);
+            this.rotationC = 1 + random.nextInt(31);
         }
 
         @Override
         public void appendPrologue(StringBuilder out, String indent) {
             out.append(indent)
-                    .append("alignas(16) static volatile jint __ngen_state_params[4] = { ")
+                    .append("alignas(32) static volatile jint __ngen_state_params[8] = { ")
                     .append(String.format("static_cast<jint>(0x%08X)", xorMask)).append(", ")
-                    .append(String.format("static_cast<jint>(0x%08X)", multiplier)).append(", ")
+                    .append(String.format("static_cast<jint>(0x%08X)", primaryMultiplier)).append(", ")
+                    .append(String.format("static_cast<jint>(0x%08X)", addend)).append(", ")
+                    .append(rotationA).append(", ")
+                    .append(rotationB).append(", ")
+                    .append(String.format("static_cast<jint>(0x%08X)", secondaryMultiplier)).append(", ")
                     .append(String.format("static_cast<jint>(0x%08X)", bias)).append(", ")
-                    .append(rotation)
+                    .append(rotationC)
                     .append(" };\n");
-            out.append(indent).append("auto __ngen_encode_state = [&](int __ngen_raw_state) -> int {\n");
+            out.append(indent).append("auto __ngen_rotl = [](uint32_t __ngen_value, uint32_t __ngen_amount) -> uint32_t {\n");
+            out.append(indent).append("    __ngen_amount &= 31U;\n");
+            out.append(indent).append("    return (__ngen_value << __ngen_amount) | (__ngen_value >> ((32U - __ngen_amount) & 31U));\n");
+            out.append(indent).append("};\n");
+            out.append(indent).append("auto __ngen_mix_columns = [&](uint32_t __ngen_left, uint32_t __ngen_right, volatile const jint* __ngen_params) -> uint32_t {\n");
+            out.append("#if defined(NGEN_STATE_MIX_FN)\n");
+            out.append("    return NGEN_STATE_MIX_FN(__ngen_left, __ngen_right, __ngen_params);\n");
+            out.append("#else\n");
+            out.append(indent).append("    uint32_t __ngen_mix = __ngen_left ^ __ngen_right;\n");
+            out.append(indent).append("    __ngen_mix ^= __ngen_rotl(__ngen_mix, 7U);\n");
+            out.append(indent).append("    __ngen_mix += (__ngen_left & __ngen_right) ^ static_cast<uint32_t>(__ngen_params[6]);\n");
+            out.append(indent).append("    __ngen_mix ^= (__ngen_mix >> 13U);\n");
+            out.append(indent).append("    __ngen_mix *= ((__ngen_left | 1U) ^ static_cast<uint32_t>(__ngen_params[5]));\n");
+            out.append(indent).append("    __ngen_mix ^= (__ngen_mix >> 17U);\n");
+            out.append(indent).append("    return __ngen_mix;\n");
+            out.append("#endif\n");
+            out.append(indent).append("};\n");
+            out.append(indent).append("auto __ngen_encode_state = [&](int __ngen_raw_state, uint32_t __ngen_salt) -> int {\n");
             out.append(indent).append("    volatile const jint* __ngen_params = __ngen_state_params;\n");
             out.append(indent).append("    uint32_t __ngen_val = static_cast<uint32_t>(__ngen_raw_state);\n");
-            out.append(indent).append("    uint32_t __ngen_mul = static_cast<uint32_t>(__ngen_params[1]);\n");
             out.append(indent).append("    uint32_t __ngen_mask = static_cast<uint32_t>(__ngen_params[0]);\n");
-            out.append(indent).append("    uint32_t __ngen_bias = static_cast<uint32_t>(__ngen_params[2]);\n");
-            out.append(indent).append("    uint32_t __ngen_rot = static_cast<uint32_t>(__ngen_params[3]) & 31U;\n");
-            out.append(indent).append("    __ngen_val = (__ngen_val * __ngen_mul) ^ __ngen_mask;\n");
-            out.append(indent).append("    uint32_t __ngen_left = __ngen_val << __ngen_rot;\n");
-            out.append(indent).append("    uint32_t __ngen_right = (__ngen_rot == 0U) ? __ngen_val : (__ngen_val >> (32U - __ngen_rot));\n");
-            out.append(indent).append("    __ngen_val = (__ngen_left | __ngen_right) ^ __ngen_bias;\n");
-            out.append(indent).append("    return static_cast<int>(__ngen_val);\n");
+            out.append(indent).append("    uint32_t __ngen_mul_primary = static_cast<uint32_t>(__ngen_params[1]) | 1U;\n");
+            out.append(indent).append("    uint32_t __ngen_addend = static_cast<uint32_t>(__ngen_params[2]);\n");
+            out.append(indent).append("    uint32_t __ngen_rot_a = static_cast<uint32_t>(__ngen_params[3]) & 31U;\n");
+            out.append(indent).append("    uint32_t __ngen_rot_b = static_cast<uint32_t>(__ngen_params[4]) & 31U;\n");
+            out.append(indent).append("    uint32_t __ngen_mul_secondary = static_cast<uint32_t>(__ngen_params[5]) | 1U;\n");
+            out.append(indent).append("    uint32_t __ngen_bias = static_cast<uint32_t>(__ngen_params[6]);\n");
+            out.append(indent).append("    uint32_t __ngen_rot_c = static_cast<uint32_t>(__ngen_params[7]) & 31U;\n");
+            out.append(indent).append("    uint32_t __ngen_salted = (__ngen_val ^ __ngen_mask) + (__ngen_salt | 1U);\n");
+            out.append(indent).append("    uint64_t __ngen_wide = static_cast<uint64_t>(__ngen_salted) * static_cast<uint64_t>(__ngen_mul_primary);\n");
+            out.append(indent).append("    uint32_t __ngen_fold = static_cast<uint32_t>(__ngen_wide) ^ static_cast<uint32_t>(__ngen_wide >> 32);\n");
+            out.append(indent).append("    __ngen_fold = __ngen_rotl(__ngen_fold + __ngen_addend, __ngen_rot_a);\n");
+            out.append(indent).append("    uint32_t __ngen_sbox = __ngen_rotl(((__ngen_salt ^ __ngen_bias) * __ngen_mul_secondary), __ngen_rot_b) + __ngen_mask;\n");
+            out.append(indent).append("    uint32_t __ngen_mixed = __ngen_mix_columns(__ngen_fold, __ngen_sbox, __ngen_params);\n");
+            out.append(indent).append("    uint32_t __ngen_final = __ngen_rotl(__ngen_mixed ^ (__ngen_sbox + __ngen_bias), __ngen_rot_c) ^ __ngen_addend;\n");
+            out.append(indent).append("    return static_cast<int>(__ngen_final);\n");
             out.append(indent).append("};\n");
         }
 
@@ -101,19 +143,74 @@ public class ControlFlowFlattener {
 
         @Override
         public String generateEncodeExpression(int rawState) {
-            return "__ngen_encode_state(" + rawState + ")";
+            int salt = getSalt(rawState);
+            return "__ngen_encode_state(" + rawState + ", static_cast<uint32_t>(0x" + String.format("%08X", salt) + "))";
+        }
+
+        @Override
+        public void appendStateAssignment(StringBuilder out, String indent, String stateVarName, int rawState) {
+            int salt = getSalt(rawState);
+            out.append(indent).append("{\n");
+            out.append(indent).append("    volatile const jint* __ngen_params = __ngen_state_params;\n");
+            out.append(indent).append("    uint32_t __ngen_next = static_cast<uint32_t>(__ngen_encode_state(")
+                    .append(rawState)
+                    .append(", static_cast<uint32_t>(0x")
+                    .append(String.format("%08X", salt))
+                    .append(")));\n");
+            out.append(indent).append("    uint32_t __ngen_shadow = __ngen_next ^ static_cast<uint32_t>(__ngen_params[6]);\n");
+            out.append(indent).append("    ")
+                    .append(stateVarName)
+                    .append(" = static_cast<int>(__ngen_shadow ^ static_cast<uint32_t>(__ngen_params[6]));\n");
+            out.append(indent).append("}\n");
         }
 
         private int encodeInternal(int rawState) {
-            long value = Integer.toUnsignedLong(rawState);
-            long mul = Integer.toUnsignedLong(multiplier);
-            long mask = Integer.toUnsignedLong(xorMask);
-            long biasValue = Integer.toUnsignedLong(bias);
-            value = (value * mul) & 0xFFFFFFFFL;
-            value ^= mask;
-            int rotated = Integer.rotateLeft((int) value, rotation);
-            long result = Integer.toUnsignedLong(rotated) ^ biasValue;
-            return (int) result;
+            int salt = getSalt(rawState);
+            long rawUnsigned = Integer.toUnsignedLong(rawState);
+            long saltUnsigned = Integer.toUnsignedLong(salt);
+            long maskUnsigned = Integer.toUnsignedLong(xorMask);
+            long addendUnsigned = Integer.toUnsignedLong(addend);
+            long biasUnsigned = Integer.toUnsignedLong(bias);
+            long primaryMulUnsigned = Integer.toUnsignedLong(primaryMultiplier) | 1L;
+            long secondaryMulUnsigned = Integer.toUnsignedLong(secondaryMultiplier) | 1L;
+            int rotA = rotationA & 31;
+            int rotB = rotationB & 31;
+            int rotC = rotationC & 31;
+
+            long salted = (rawUnsigned ^ maskUnsigned) + ((saltUnsigned | 1L) & 0xFFFFFFFFL);
+            salted &= 0xFFFFFFFFL;
+            long wide = salted * primaryMulUnsigned;
+            long fold = (wide & 0xFFFFFFFFL) ^ (wide >>> 32);
+            fold = (fold + addendUnsigned) & 0xFFFFFFFFL;
+            fold = Integer.toUnsignedLong(Integer.rotateLeft((int) fold, rotA));
+
+            long sbox = (saltUnsigned ^ biasUnsigned) & 0xFFFFFFFFL;
+            sbox = (sbox * secondaryMulUnsigned) & 0xFFFFFFFFL;
+            sbox = Integer.toUnsignedLong(Integer.rotateLeft((int) sbox, rotB));
+            sbox = (sbox + maskUnsigned) & 0xFFFFFFFFL;
+
+            int mixed = mixColumns((int) fold, (int) sbox);
+            long mixedUnsigned = Integer.toUnsignedLong(mixed);
+            long finalValue = mixedUnsigned ^ ((sbox + biasUnsigned) & 0xFFFFFFFFL);
+            finalValue = Integer.toUnsignedLong(Integer.rotateLeft((int) finalValue, rotC));
+            finalValue ^= addendUnsigned;
+            return (int) finalValue;
+        }
+
+        private int mixColumns(int left, int right) {
+            long mix = Integer.toUnsignedLong(left ^ right);
+            mix ^= Integer.toUnsignedLong(Integer.rotateLeft((int) mix, 7));
+            long biasPart = Integer.toUnsignedLong(left & right) ^ Integer.toUnsignedLong(bias);
+            mix = (mix + biasPart) & 0xFFFFFFFFL;
+            mix ^= (mix >>> 13);
+            long multiplier = (Integer.toUnsignedLong(left) | 1L) ^ Integer.toUnsignedLong(secondaryMultiplier);
+            mix = (mix * (multiplier & 0xFFFFFFFFL)) & 0xFFFFFFFFL;
+            mix ^= (mix >>> 17);
+            return (int) mix;
+        }
+
+        private int getSalt(int rawState) {
+            return stateSalts.computeIfAbsent(rawState, ignored -> ThreadLocalRandom.current().nextInt());
         }
     }
 
