@@ -25,20 +25,20 @@ public class LookupSwitchHandler extends GenericInstructionHandler<LookupSwitchI
     }
 
     private static String getStart(MethodContext context) {
-        return context.getSnippets().getSnippet("LOOKUPSWITCH_START", Util.createMap(
+        return context.getSnippet("LOOKUPSWITCH_START", Util.createMap(
                 "stackindexm1", String.valueOf(context.stackPointer - 1)
         ));
     }
 
     private static String getPart(MethodContext context, int key, Label label) {
-        return context.getSnippets().getSnippet("LOOKUPSWITCH_PART", Util.createMap(
+        return context.getSnippet("LOOKUPSWITCH_PART", Util.createMap(
                 "key", key,
                 "label", context.getLabelPool().getName(label)
         ));
     }
 
     private static String getDefault(MethodContext context, Label label) {
-        return context.getSnippets().getSnippet("LOOKUPSWITCH_DEFAULT", Util.createMap(
+        return context.getSnippet("LOOKUPSWITCH_DEFAULT", Util.createMap(
                 "label", context.getLabelPool().getName(label)
         ));
     }
