@@ -60,7 +60,7 @@ public class VmGetPutFieldPipelineTest {
 
         new NativeObfuscator().process(inputJar, out, Collections.emptyList(),
                 Collections.emptyList(), null, "native_library", null,
-                Platform.HOTSPOT, false, false);
+                Platform.HOTSPOT, false, false, true, true, true);
 
         Path cppDir = out.resolve("cpp");
         ProcessHelper.run(cppDir, 120_000, Arrays.asList("cmake", "."))

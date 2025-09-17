@@ -565,7 +565,7 @@ public class MethodProcessor {
         int localIndex = 0;
         for (int i = 0; i < context.argTypes.size(); ++i) {
             Type current = context.argTypes.get(i);
-            output.append("    ").append(obfuscator.getSnippets().getSnippet(
+            output.append("    ").append(context.getSnippet(
                     "LOCAL_LOAD_ARG_" + current.getSort(), Util.createMap(
                             "index", localIndex,
                             "arg", argNames.get(i)
@@ -592,29 +592,44 @@ public class MethodProcessor {
             specialMethodProcessor.postProcess(context);
             return;
         }
+
         int[] states = new int[instructionCount];
         for (int i = 0; i < instructionCount; i++) {
             states[i] = context.getLabelPool().generateStandaloneState();
-            AbstractInsnNode n = method.instructions.get(i);
-            if (n instanceof LabelNode) {
-                context.getLabelPool().setState(((LabelNode) n).getLabel(), states[i]);
+            AbstractInsnNode node = method.instructions.get(i);
+            if (node instanceof LabelNode) {
+                context.getLabelPool().setState(((LabelNode) node).getLabel(), states[i]);
             }
         }
         int fakeState = context.getLabelPool().generateStandaloneState();
 
-        output.append(String.format("    int __ngen_state = %d;\n", states[0]));
-        output.append("    while (true) {\n");
-        output.append("        switch (__ngen_state) {\n");
+        ControlFlowFlattener.StateObfuscation stateObfuscation = ControlFlowFlattener.createObfuscation(method.name);
+        context.stateObfuscation = stateObfuscation;
+
+        LinkedHashMap<Integer, StringBuilder> stateBlocks = new LinkedHashMap<>();
 
         for (int instruction = 0; instruction < instructionCount; ++instruction) {
             AbstractInsnNode node = method.instructions.get(instruction);
-            output.append(String.format("        case %d: {\n", states[instruction]));
-            context.output.append("        // ").append(Util.escapeCommentString(handlers[node.getType()]
-                    .insnToString(context, node))).append("; Stack: ").append(context.stackPointer).append("\n");
-            context.output.append("        ");
+            int stateId = states[instruction];
+            StringBuilder block = stateBlocks.computeIfAbsent(stateId, k -> new StringBuilder());
+
+            block.append("        // ")
+                    .append(Util.escapeCommentString(handlers[node.getType()].insnToString(context, node)))
+                    .append("; Stack: ")
+                    .append(context.stackPointer)
+                    .append("\n");
+
+            block.append("        ");
+            int baseLength = output.length();
             handlers[node.getType()].accept(context, node);
-            context.stackPointer = handlers[node.getType()].getNewStackPointer(node, context.stackPointer);
-            context.output.append("        // New stack: ").append(context.stackPointer).append("\n");
+            String handlerCode = output.substring(baseLength);
+            output.setLength(baseLength);
+            block.append(handlerCode);
+
+            int newStackPointer = handlers[node.getType()].getNewStackPointer(node, context.stackPointer);
+            block.append("        // New stack: ").append(newStackPointer).append("\n");
+            context.stackPointer = newStackPointer;
+
             boolean changesFlow = node instanceof JumpInsnNode || node instanceof LookupSwitchInsnNode
                     || node instanceof TableSwitchInsnNode;
             int opcode = node.getOpcode();
@@ -622,17 +637,14 @@ public class MethodProcessor {
             if (opcode == Opcodes.ATHROW) changesFlow = true;
             if (!changesFlow) {
                 int nextState = (instruction + 1 < instructionCount) ? states[instruction + 1] : fakeState;
-                context.output.append("            __ngen_state = ").append(String.valueOf(nextState)).append("; break;\n");
+                ControlFlowFlattener.appendStateTransition(block, "            ", "__ngen_state", nextState, stateObfuscation);
             }
-            context.output.append("        }\n");
         }
 
-        output.append(String.format("        case %d: { // fake block\n", fakeState));
-        output.append(String.format("            __ngen_state = %d; break;\n", states[0]));
-        output.append("        }\n");
+        StringBuilder fakeBlock = stateBlocks.computeIfAbsent(fakeState, k -> new StringBuilder());
+        ControlFlowFlattener.appendStateTransition(fakeBlock, "            ", "__ngen_state", states[0], stateObfuscation);
 
         boolean hasAddedNewBlocks = true;
-
         Set<CatchesBlock> proceedBlocks = new HashSet<>();
 
         while (hasAddedNewBlocks) {
@@ -642,30 +654,29 @@ public class MethodProcessor {
                     continue;
                 }
                 proceedBlocks.add(catchBlock);
-                output.append("        case ").append(context.catches.get(catchBlock)).append(": {\n");
+                int catchState = Integer.parseInt(context.catches.get(catchBlock));
+                StringBuilder catchBody = stateBlocks.computeIfAbsent(catchState, k -> new StringBuilder());
                 CatchesBlock.CatchBlock currentCatchBlock = catchBlock.getCatches().get(0);
                 if (currentCatchBlock.getClazz() == null) {
-                    output.append("            ")
-                            .append(context.getSnippets().getSnippet("TRYCATCH_ANY_L", Util.createMap(
+                    catchBody.append("            ")
+                            .append(context.getSnippet("TRYCATCH_ANY_L", Util.createMap(
                                     "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
                             )))
                             .append("\n");
-                    output.append("        }\n");
                     continue;
                 }
-                output.append("            ")
-                        .append(context.getSnippets().getSnippet("TRYCATCH_CHECK_STACK", Util.createMap(
+                catchBody.append("            ")
+                        .append(context.getSnippet("TRYCATCH_CHECK_STACK", Util.createMap(
                                 "exception_class_ptr", context.getCachedClasses().getPointer(currentCatchBlock.getClazz()),
                                 "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
                         )))
                         .append("\n");
                 if (catchBlock.getCatches().size() == 1) {
-                    output.append("            ")
-                            .append(context.getSnippets().getSnippet("TRYCATCH_END_STACK", Util.createMap(
+                    catchBody.append("            ")
+                            .append(context.getSnippet("TRYCATCH_END_STACK", Util.createMap(
                                     "rettype", CPP_TYPES[context.ret.getSort()]
                             )))
                             .append("\n");
-                    output.append("        }\n");
                     continue;
                 }
                 CatchesBlock nextCatchesBlock = new CatchesBlock(catchBlock.getCatches().stream().skip(1).collect(Collectors.toList()));
@@ -673,39 +684,27 @@ public class MethodProcessor {
                     context.catches.put(nextCatchesBlock, String.valueOf(context.getLabelPool().generateStandaloneState()));
                     hasAddedNewBlocks = true;
                 }
-                output.append("            ")
-                        .append(context.getSnippets().getSnippet("TRYCATCH_ANY_L", Util.createMap(
+                catchBody.append("            ")
+                        .append(context.getSnippet("TRYCATCH_ANY_L", Util.createMap(
                                 "handler_block", context.catches.get(nextCatchesBlock)
                         )))
                         .append("\n");
-                output.append("        }\n");
             }
         }
 
-        output.append(String.format("        default: return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]));
-        output.append("        }\n");
-        output.append("    }\n\n");
-
+        String defaultBlock = String.format("            return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]);
+        String stateMachine = ControlFlowFlattener.generateStateMachine(
+                method.name,
+                CPP_TYPES[context.ret.getSort()],
+                states[0],
+                stateBlocks,
+                defaultBlock,
+                stateObfuscation
+        );
+        output.append(stateMachine);
         output.append("}\n");
 
-        // Apply control flow flattening if enabled
-        if (context.protectionConfig.isControlFlowFlatteningEnabled()) {
-            String methodBody = output.toString();
-            // Find the method body (between the opening brace and closing brace)
-            int methodStart = methodBody.indexOf(") {\n") + 4;
-            int methodEnd = methodBody.lastIndexOf("}\n");
-
-            if (methodStart > 3 && methodEnd > methodStart) {
-                String methodSignature = methodBody.substring(0, methodStart);
-                String methodContent = methodBody.substring(methodStart, methodEnd);
-                String methodClosing = methodBody.substring(methodEnd);
-
-                String returnType = CPP_TYPES[context.ret.getSort()];
-                String flattenedContent = ControlFlowFlattener.flattenControlFlow(methodContent, method.name, returnType);
-                output.setLength(0);
-                output.append(methodSignature).append(flattenedContent).append(methodClosing);
-            }
-        }
+        context.stateObfuscation = null;
 
         method.localVariables.clear();
         method.tryCatchBlocks.clear();

@@ -25,20 +25,20 @@ public class TableSwitchHandler extends GenericInstructionHandler<TableSwitchIns
     }
 
     private static String getStart(MethodContext context) {
-        return context.getSnippets().getSnippet("TABLESWITCH_START", Util.createMap(
+        return context.getSnippet("TABLESWITCH_START", Util.createMap(
                 "stackindexm1", String.valueOf(context.stackPointer - 1)
         ));
     }
 
     private static String getPart(MethodContext context, int index, Label label) {
-        return context.getSnippets().getSnippet("TABLESWITCH_PART", Util.createMap(
+        return context.getSnippet("TABLESWITCH_PART", Util.createMap(
                 "index", index,
                 "label", context.getLabelPool().getName(label)
         ));
     }
 
     private static String getDefault(MethodContext context, Label label) {
-        return context.getSnippets().getSnippet("TABLESWITCH_DEFAULT", Util.createMap(
+        return context.getSnippet("TABLESWITCH_DEFAULT", Util.createMap(
                 "label", context.getLabelPool().getName(label)
         ));
     }
