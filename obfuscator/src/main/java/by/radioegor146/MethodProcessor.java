@@ -13,6 +13,8 @@ import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MethodProcessor {
 
@@ -53,6 +55,9 @@ public class MethodProcessor {
 
     private final NativeObfuscator obfuscator;
     private final InstructionHandlerContainer<?>[] handlers;
+
+    private static final Pattern STATE_ASSIGNMENT_PATTERN = Pattern.compile("__ngen_state\\s*=\\s*(-?\\d+);\\s*break;");
+    private static final Pattern STANDALONE_BREAK_PATTERN = Pattern.compile("(?m)^\\s*break;\\s*$");
 
     public MethodProcessor(NativeObfuscator obfuscator) {
         this.obfuscator = obfuscator;
@@ -588,6 +593,7 @@ public class MethodProcessor {
 
         context.stackPointer = 0;
         context.dispatcherMode = true;
+        boolean flattenControlFlow = context.protectionConfig.isControlFlowFlatteningEnabled();
 
         int instructionCount = method.instructions.size();
         if (instructionCount == 0) {
@@ -613,7 +619,10 @@ public class MethodProcessor {
         }
         int fakeState = context.getLabelPool().generateStandaloneState();
 
-        ControlFlowFlattener.StateObfuscation stateObfuscation = ControlFlowFlattener.createObfuscation(method.name);
+        ControlFlowFlattener.StateObfuscation stateObfuscation = null;
+        if (flattenControlFlow) {
+            stateObfuscation = ControlFlowFlattener.createObfuscation(method.name);
+        }
         context.stateObfuscation = stateObfuscation;
 
         LinkedHashMap<Integer, StringBuilder> stateBlocks = new LinkedHashMap<>();
@@ -647,12 +656,12 @@ public class MethodProcessor {
             if (opcode == Opcodes.ATHROW) changesFlow = true;
             if (!changesFlow) {
                 int nextState = (instruction + 1 < instructionCount) ? states[instruction + 1] : fakeState;
-                ControlFlowFlattener.appendStateTransition(block, "            ", "__ngen_state", nextState, stateObfuscation);
+                appendStateTransition(flattenControlFlow, block, "            ", nextState, stateObfuscation);
             }
         }
 
         StringBuilder fakeBlock = stateBlocks.computeIfAbsent(fakeState, k -> new StringBuilder());
-        ControlFlowFlattener.appendStateTransition(fakeBlock, "            ", "__ngen_state", states[0], stateObfuscation);
+        appendStateTransition(flattenControlFlow, fakeBlock, "            ", states[0], stateObfuscation);
 
         boolean hasAddedNewBlocks = true;
         Set<CatchesBlock> proceedBlocks = new HashSet<>();
@@ -703,15 +712,19 @@ public class MethodProcessor {
         }
 
         String defaultBlock = String.format("            return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]);
-        String stateMachine = ControlFlowFlattener.generateStateMachine(
-                method.name,
-                CPP_TYPES[context.ret.getSort()],
-                states[0],
-                stateBlocks,
-                defaultBlock,
-                stateObfuscation
-        );
-        output.append(stateMachine);
+        if (flattenControlFlow) {
+            String stateMachine = ControlFlowFlattener.generateStateMachine(
+                    method.name,
+                    CPP_TYPES[context.ret.getSort()],
+                    states[0],
+                    stateBlocks,
+                    defaultBlock,
+                    stateObfuscation
+            );
+            output.append(stateMachine);
+        } else {
+            output.append(buildLinearControlFlow(stateBlocks, defaultBlock));
+        }
         output.append("}\n");
 
         context.stateObfuscation = null;
@@ -724,6 +737,79 @@ public class MethodProcessor {
 
     public static String nameFromNode(MethodNode m, ClassNode cn) {
         return cn.name + '#' + m.name + '!' + m.desc;
+    }
+
+    private static void appendStateTransition(boolean flattenEnabled, StringBuilder block, String indent,
+                                               int rawState, ControlFlowFlattener.StateObfuscation obfuscation) {
+        if (flattenEnabled) {
+            ControlFlowFlattener.appendStateTransition(block, indent, "__ngen_state", rawState, obfuscation);
+        } else {
+            block.append(indent)
+                    .append("__ngen_state = ")
+                    .append(rawState)
+                    .append("; break;\n");
+        }
+    }
+
+    private static String buildLinearControlFlow(LinkedHashMap<Integer, StringBuilder> stateBlocks, String defaultBlock) {
+        StringBuilder linear = new StringBuilder();
+        boolean firstBlock = true;
+        for (Map.Entry<Integer, StringBuilder> entry : stateBlocks.entrySet()) {
+            if (!firstBlock) {
+                linear.append('\n');
+            }
+            firstBlock = false;
+            linear.append("    ").append(getLinearLabelName(entry.getKey())).append(":\n");
+            String blockContent = linearizeStateAssignments(entry.getValue().toString());
+            if (!blockContent.isEmpty()) {
+                linear.append(blockContent);
+                if (blockContent.charAt(blockContent.length() - 1) != '\n') {
+                    linear.append('\n');
+                }
+            }
+        }
+        String fallback = linearizeStateAssignments(defaultBlock);
+        if (!fallback.isEmpty()) {
+            if (linear.length() > 0 && linear.charAt(linear.length() - 1) != '\n') {
+                linear.append('\n');
+            }
+            linear.append(fallback);
+            if (linear.charAt(linear.length() - 1) != '\n') {
+                linear.append('\n');
+            }
+        }
+        return linear.toString();
+    }
+
+    private static String linearizeStateAssignments(String code) {
+        if (code == null || code.isEmpty()) {
+            return "";
+        }
+        Matcher matcher = STATE_ASSIGNMENT_PATTERN.matcher(code);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            String rawState = matcher.group(1);
+            matcher.appendReplacement(sb, Matcher.quoteReplacement("goto " + getLinearLabelName(rawState) + ";"));
+        }
+        matcher.appendTail(sb);
+        return STANDALONE_BREAK_PATTERN.matcher(sb.toString()).replaceAll("");
+    }
+
+    private static String getLinearLabelName(int state) {
+        return getLinearLabelName(Integer.toString(state));
+    }
+
+    private static String getLinearLabelName(String rawState) {
+        if (rawState == null || rawState.isEmpty()) {
+            return "__ngen_label_0";
+        }
+        boolean negative = rawState.startsWith("-");
+        String digits = negative ? rawState.substring(1) : rawState;
+        String sanitized = digits.replaceAll("[^0-9]", "_");
+        if (sanitized.isEmpty()) {
+            sanitized = "0";
+        }
+        return negative ? "__ngen_label_m" + sanitized : "__ngen_label_" + sanitized;
     }
 
 }
