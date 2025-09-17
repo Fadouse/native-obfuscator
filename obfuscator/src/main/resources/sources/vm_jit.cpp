@@ -21,7 +21,7 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
             case OP_LDC:
             case OP_LDC_W:
             case OP_LDC2_W:
-                if (sp < 256) stack[sp++] = ins.operand;
+                if (sp + 1 <= 256) stack[sp++] = ins.operand;
                 break;
             case OP_ADD:
                 if (sp >= 2) { stack[sp-2] += stack[sp-1]; --sp; }
@@ -34,13 +34,14 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 break;
             case OP_DIV:
                 if (sp >= 2) {
-                    int64_t b = stack[--sp];
-                    int64_t a = stack[sp-1];
+                    int64_t b = stack[sp-1];
+                    int64_t a = stack[sp-2];
                     if (b == 0) {
                         env->ThrowNew(env->FindClass("java/lang/ArithmeticException"), "/ by zero");
                         return 0;
                     }
-                    stack[sp-1] = a / b;
+                    stack[sp-2] = a / b;
+                    --sp;
                 }
                 break;
             case OP_PRINT:
@@ -54,10 +55,10 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 if (sp >= 2) std::swap(stack[sp-1], stack[sp-2]);
                 break;
             case OP_DUP:
-                if (sp >= 1 && sp < 256) stack[sp++] = stack[sp-1];
+                if (sp >= 1 && sp + 1 <= 256) stack[sp++] = stack[sp-1];
                 break;
             case OP_DUP_X1:
-                if (sp >= 2 && sp < 256) {
+                if (sp >= 2 && sp + 1 <= 256) {
                     int64_t value1 = stack[sp - 1];
                     int64_t value2 = stack[sp - 2];
                     stack[sp - 2] = value1;
@@ -66,7 +67,7 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 }
                 break;
             case OP_DUP_X2:
-                if (sp >= 3 && sp < 256) {
+                if (sp >= 3 && sp + 1 <= 256) {
                     int64_t value1 = stack[sp - 1];
                     int64_t value2 = stack[sp - 2];
                     int64_t value3 = stack[sp - 3];
@@ -77,7 +78,7 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 }
                 break;
             case OP_DUP2:
-                if (sp >= 2 && sp + 1 < 256) {
+                if (sp >= 2 && sp + 2 <= 256) {
                     int64_t value1 = stack[sp - 1];
                     int64_t value2 = stack[sp - 2];
                     stack[sp++] = value2;
@@ -85,7 +86,7 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 }
                 break;
             case OP_DUP2_X1:
-                if (sp >= 3 && sp + 1 < 256) {
+                if (sp >= 3 && sp + 2 <= 256) {
                     int64_t value1 = stack[sp - 1];
                     int64_t value2 = stack[sp - 2];
                     int64_t value3 = stack[sp - 3];
@@ -97,7 +98,7 @@ static int64_t run_program(JNIEnv* env, int64_t* locals, size_t locals_len,
                 }
                 break;
             case OP_DUP2_X2:
-                if (sp >= 4 && sp + 1 < 256) {
+                if (sp >= 4 && sp + 2 <= 256) {
                     int64_t value1 = stack[sp - 1];
                     int64_t value2 = stack[sp - 2];
                     int64_t value3 = stack[sp - 3];

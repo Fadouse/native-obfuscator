@@ -178,33 +178,43 @@ public class MethodProcessor {
             output.append("    env->DeleteLocalRef(ignored_hidden);\n");
         }
 
-        long vmKeySeed = ThreadLocalRandom.current().nextLong();
-        output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
-
-        boolean useJit = context.protectionConfig.isJitEnabled();
-        VmTranslator vmTranslator = new VmTranslator(useJit);
         VmTranslator.Instruction[] vmCode = null;
+        List<VmTranslator.FieldRefInfo> fieldRefs = new ArrayList<>();
+        List<String> classRefs = new ArrayList<>();
+        List<VmTranslator.MultiArrayRefInfo> multiArrayRefs = new ArrayList<>();
+        List<VmTranslator.MethodRefInfo> methodRefs = new ArrayList<>();
+        List<VmTranslator.ConstantPoolEntry> constantPool = new ArrayList<>();
+        VmTranslator vmTranslator = null;
+        long vmKeySeed = 0;
 
         // Only use VM translation if virtualization is enabled
         if (context.protectionConfig.isVirtualizationEnabled()) {
+            vmKeySeed = ThreadLocalRandom.current().nextLong();
+            output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
+
+            boolean useJit = context.protectionConfig.isJitEnabled();
+            vmTranslator = new VmTranslator(useJit);
             vmCode = vmTranslator.translate(method);
             // Avoid VM translation for interface methods to reduce risk of mismatched
             // dispatch (default/interface semantics) across JVM versions.
             if ((context.clazz.access & Opcodes.ACC_INTERFACE) != 0) {
                 vmCode = null;
             }
+
+            if (vmCode != null) {
+                fieldRefs = vmTranslator.getFieldRefs();
+                classRefs = vmTranslator.getClassRefs();
+                multiArrayRefs = vmTranslator.getMultiArrayRefs();
+                methodRefs = vmTranslator.getMethodRefs();
+                // Be conservative: if the VM-translated method performs any method calls,
+                // fall back to the regular state-machine codegen to avoid operand decode
+                // mismatches across JVMs. Arithmetic/stack-only methods still benefit.
+                if (!methodRefs.isEmpty()) {
+                    vmCode = null;
+                }
+                constantPool = vmTranslator.getConstantPool();
+            }
         }
-        List<VmTranslator.FieldRefInfo> fieldRefs = vmTranslator.getFieldRefs();
-        List<String> classRefs = vmTranslator.getClassRefs();
-        List<VmTranslator.MultiArrayRefInfo> multiArrayRefs = vmTranslator.getMultiArrayRefs();
-        List<VmTranslator.MethodRefInfo> methodRefs = vmTranslator.getMethodRefs();
-        // Be conservative: if the VM-translated method performs any method calls,
-        // fall back to the regular state-machine codegen to avoid operand decode
-        // mismatches across JVMs. Arithmetic/stack-only methods still benefit.
-        if (vmCode != null && !methodRefs.isEmpty()) {
-            vmCode = null;
-        }
-        List<VmTranslator.ConstantPoolEntry> constantPool = vmTranslator.getConstantPool();
         if (vmCode != null && vmCode.length > 0) {
             output.append(String.format("    native_jvm::vm::Instruction __ngen_vm_code[] = %s;\n",
                     VmTranslator.serialize(vmCode)));
@@ -411,7 +421,7 @@ public class MethodProcessor {
             // - long/double use all 64 bits (double is raw IEEE754 bits)
             // - object/array are stored as their pointer cast to int64
             String vmCallFmt;
-            if (vmTranslator.isUseJit()) {
+            if (vmTranslator != null && vmTranslator.isUseJit()) {
                 vmCallFmt = String.format(
                         "    auto __ngen_vm_ret = native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
                         vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize);
