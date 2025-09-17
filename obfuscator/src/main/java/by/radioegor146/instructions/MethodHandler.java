@@ -66,7 +66,7 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
             }
 
             for (int i = 0; i < argOffsets.size(); i++) {
-                argsBuilder.append(", ").append(context.getSnippets().getSnippet("INVOKE_ARG_" + args[i].getSort(),
+                argsBuilder.append(", ").append(context.getSnippet("INVOKE_ARG_" + args[i].getSort(),
                         Util.createMap("index", argOffsets.get(i))));
             }
 
@@ -169,7 +169,7 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
         int objectOffset = isStatic ? 0 : 1;
 
         for (int i = 0; i < argOffsets.size(); i++) {
-            argsBuilder.append(", ").append(context.getSnippets().getSnippet("INVOKE_ARG_" + args[i].getSort(),
+            argsBuilder.append(", ").append(context.getSnippet("INVOKE_ARG_" + args[i].getSort(),
                     Util.createMap("index", argOffsets.get(i))));
         }
 

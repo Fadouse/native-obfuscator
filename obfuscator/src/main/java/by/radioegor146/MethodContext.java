@@ -20,6 +20,13 @@ public class MethodContext {
     public final StringBuilder output;
     public final StringBuilder nativeMethods;
 
+    /**
+     * Strategy used to encode/decode control-flow states for the currently processed method.
+     * This is populated by {@link MethodProcessor} when control-flow flattening is active so that
+     * instruction handlers can emit state updates through the shared {@link ControlFlowFlattener} logic.
+     */
+    public ControlFlowFlattener.StateObfuscation stateObfuscation;
+
     public Type ret;
     public ArrayList<Type> argTypes;
 
@@ -100,5 +107,14 @@ public class MethodContext {
 
     public LabelPool getLabelPool() {
         return labelPool;
+    }
+
+    public String getSnippet(String key) {
+        return getSnippet(key, Util.createMap());
+    }
+
+    public String getSnippet(String key, Map<String, String> tokens) {
+        String snippet = obfuscator.getSnippets().getSnippet(key, tokens);
+        return ControlFlowFlattener.obfuscateStateAssignments(snippet, stateObfuscation);
     }
 }
