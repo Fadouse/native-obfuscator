@@ -1,6 +1,7 @@
 package by.radioegor146.instructions;
 
 import by.radioegor146.CatchesBlock;
+import by.radioegor146.ControlFlowFlattener;
 import by.radioegor146.MethodContext;
 import by.radioegor146.MethodProcessor;
 import by.radioegor146.Util;
@@ -37,14 +38,15 @@ public abstract class GenericInstructionHandler<T extends AbstractInsnNode> impl
             String tryCatchLabelName = context.catches.computeIfAbsent(new CatchesBlock(tryCatchBlockNodeList.stream().map(item ->
                     new CatchesBlock.CatchBlock(item.type, item.handler)).collect(Collectors.toList())),
                     key -> String.valueOf(context.getLabelPool().generateStandaloneState()));
-            tryCatch.append(context.getSnippets().getSnippet("TRYCATCH_START"));
-            tryCatch.append(" __ngen_state = ").append(tryCatchLabelName).append("; break; }");
+            tryCatch.append(context.getSnippet("TRYCATCH_START"));
+            String stateJump = " __ngen_state = " + tryCatchLabelName + "; break; }";
+            tryCatch.append(ControlFlowFlattener.obfuscateStateAssignments(stateJump, context.stateObfuscation));
         } else {
-            tryCatch.append(context.getSnippets().getSnippet("TRYCATCH_EMPTY", Util.createMap(
+            tryCatch.append(context.getSnippet("TRYCATCH_EMPTY", Util.createMap(
                     "rettype", MethodProcessor.CPP_TYPES[context.ret.getSort()]
             )));
         }
-        props.put("trycatchhandler", tryCatch.toString());
+            props.put("trycatchhandler", tryCatch.toString());
         props.put("rettype", MethodProcessor.CPP_TYPES[context.ret.getSort()]);
         trimmedTryCatchBlock = tryCatch.toString().trim().replace('\n', ' ');
 
@@ -56,7 +58,7 @@ public abstract class GenericInstructionHandler<T extends AbstractInsnNode> impl
         process(context, node);
 
         if (instructionName != null) {
-            context.output.append(context.obfuscator.getSnippets().getSnippet(instructionName, props));
+            context.output.append(context.getSnippet(instructionName, props));
         }
         context.output.append("\n");
     }
