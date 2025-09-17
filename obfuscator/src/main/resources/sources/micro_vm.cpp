@@ -2130,13 +2130,31 @@ int64_t execute_jit(JNIEnv* env, const Instruction* code, size_t length,
     ensure_init(seed);
     auto it = jit_cache.find(code);
     if (it != jit_cache.end()) {
-        return it->second.func(env, locals, locals_length, seed, it->second.ctx);
+        if (it->second.func != nullptr) {
+            return it->second.func(env, locals, locals_length, seed, it->second.ctx);
+        }
+        return execute(env, code, length, locals, locals_length, seed,
+                       constant_pool, constant_pool_size,
+                       method_refs, method_refs_size,
+                       field_refs, field_refs_size,
+                       multi_refs, multi_refs_size,
+                       table_refs, table_refs_size,
+                       lookup_refs, lookup_refs_size);
     }
     size_t& cnt = exec_counts[code];
     if (++cnt > HOT_THRESHOLD) {
         JitCompiled compiled = compile(code, length, seed);
         it = jit_cache.emplace(code, compiled).first;
-        return it->second.func(env, locals, locals_length, seed, it->second.ctx);
+        if (it->second.func != nullptr) {
+            return it->second.func(env, locals, locals_length, seed, it->second.ctx);
+        }
+        return execute(env, code, length, locals, locals_length, seed,
+                       constant_pool, constant_pool_size,
+                       method_refs, method_refs_size,
+                       field_refs, field_refs_size,
+                       multi_refs, multi_refs_size,
+                       table_refs, table_refs_size,
+                       lookup_refs, lookup_refs_size);
     }
     return execute(env, code, length, locals, locals_length, seed, constant_pool, constant_pool_size, method_refs, method_refs_size, field_refs, field_refs_size, multi_refs, multi_refs_size, table_refs, table_refs_size, lookup_refs, lookup_refs_size);
 }
