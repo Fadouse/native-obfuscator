@@ -9,6 +9,7 @@ import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.HierarchyEvent;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -47,15 +48,15 @@ public class ObfuscatorFrame extends JFrame {
     private final JTextField plainLibNameField = new JTextField();
     private final JTextField customLibDirField = new JTextField();
     private final JComboBox<Platform> platformCombo = new JComboBox<>(Platform.values());
-    private final JCheckBox useAnnotationsBox = new JCheckBox("Use annotations");
-    private final JCheckBox debugJarBox = new JCheckBox("Generate debug jar");
-    private final JCheckBox packageBox = new JCheckBox("Package native lib into JAR", true);
+    private final JCheckBox useAnnotationsBox = new JCheckBox("📝 Use annotations");
+    private final JCheckBox debugJarBox = new JCheckBox("🐛 Generate debug jar");
+    private final JCheckBox packageBox = new JCheckBox("📦 Package native lib into JAR", true);
 
     // Protection feature checkboxes
-    private final JCheckBox enableVirtualizationBox = new JCheckBox("Enable VM virtualization");
-    private final JCheckBox enableJitBox = new JCheckBox("Enable JIT compilation");
-    private final JCheckBox flattenControlFlowBox = new JCheckBox("Enable control flow flattening");
-    private final JButton runButton = new JButton("Run");
+    private final JCheckBox enableVirtualizationBox = new JCheckBox("🖥️ Enable VM virtualization");
+    private final JCheckBox enableJitBox = new JCheckBox("⚡ Enable JIT compilation");
+    private final JCheckBox flattenControlFlowBox = new JCheckBox("🌀 Enable control flow flattening");
+    private final JButton runButton = new JButton("▶️ Run Obfuscation");
     private final JTextArea logArea = new JTextArea();
     private final JProgressBar progressBar = new JProgressBar();
 
@@ -78,6 +79,13 @@ public class ObfuscatorFrame extends JFrame {
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(980, 620));
         setLocationRelativeTo(null);
+
+        // Set application icon
+        try {
+            setIconImage(createApplicationIcon());
+        } catch (Exception e) {
+            // Ignore if icon creation fails
+        }
 
         JPanel root = new JPanel(new BorderLayout());
         root.setBorder(new EmptyBorder(12, 12, 12, 12));
@@ -118,22 +126,59 @@ public class ObfuscatorFrame extends JFrame {
         });
 
         // Placeholders (FlatLaf)
-        jarField.putClientProperty("JTextComponent.placeholderText", "Select input .jar");
-        outDirField.putClientProperty("JTextComponent.placeholderText", "Choose output directory");
-        libsDirField.putClientProperty("JTextComponent.placeholderText", "Optional libraries directory");
-        whitelistField.putClientProperty("JTextComponent.placeholderText", "Optional whitelist.txt");
-        blacklistField.putClientProperty("JTextComponent.placeholderText", "Optional blacklist.txt");
-        plainLibNameField.putClientProperty("JTextComponent.placeholderText", "Specify to skip packaging");
-        customLibDirField.putClientProperty("JTextComponent.placeholderText", "e.g. native/win64 — inside output JAR");
+        jarField.putClientProperty("JTextComponent.placeholderText", "📦 Select input .jar");
+        outDirField.putClientProperty("JTextComponent.placeholderText", "📁 Choose output directory");
+        libsDirField.putClientProperty("JTextComponent.placeholderText", "📂 Optional libraries directory");
+        whitelistField.putClientProperty("JTextComponent.placeholderText", "✅ Optional whitelist.txt");
+        blacklistField.putClientProperty("JTextComponent.placeholderText", "❌ Optional blacklist.txt");
+        plainLibNameField.putClientProperty("JTextComponent.placeholderText", "📝 Specify to skip packaging");
+        customLibDirField.putClientProperty("JTextComponent.placeholderText", "📁 e.g. native/win64 — inside output JAR");
+    }
+
+    // ------------------------ ICON CREATION ------------------------
+
+    /**
+     * Creates a simple application icon programmatically
+     */
+    private Image createApplicationIcon() {
+        int size = 32;
+        BufferedImage icon = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2d = icon.createGraphics();
+
+        // Enable anti-aliasing
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        // Background circle
+        g2d.setColor(new Color(64, 128, 192));
+        g2d.fillOval(2, 2, size-4, size-4);
+
+        // Lock symbol
+        g2d.setColor(Color.WHITE);
+        g2d.setStroke(new BasicStroke(2f));
+
+        // Lock body
+        g2d.fillRoundRect(10, 16, 12, 10, 2, 2);
+
+        // Lock shackle
+        g2d.setColor(Color.WHITE);
+        g2d.drawArc(12, 8, 8, 10, 0, 180);
+
+        // Keyhole
+        g2d.setColor(new Color(64, 128, 192));
+        g2d.fillOval(14, 18, 4, 4);
+        g2d.fillRect(15, 20, 2, 4);
+
+        g2d.dispose();
+        return icon;
     }
 
     // ------------------------ UI BUILDERS ------------------------
 
     private JList<String> buildLeftNav() {
         DefaultListModel<String> model = new DefaultListModel<>();
-        model.addElement("Import Files");
-        model.addElement("Native Settings");
-        model.addElement("Run & Logs");
+        model.addElement("📁 Import Files");
+        model.addElement("⚙️ Native Settings");
+        model.addElement("🚀 Run & Logs");
 
         final JList<String> list = new JList<>(model);
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
@@ -171,23 +216,23 @@ public class ObfuscatorFrame extends JFrame {
         JPanel form = new JPanel();
         form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
 
-        form.add(createPathRowPanel("Input JAR", jarField, this::browseFileJar,
-                ""));
+        form.add(createPathRowPanel("📦 Input JAR", jarField, this::browseFileJar,
+                "Select the Java archive to obfuscate"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
 
-        form.add(createPathRowPanel("Output Directory", outDirField, this::browseDir,
-                ""));
+        form.add(createPathRowPanel("📁 Output Directory", outDirField, this::browseDir,
+                "Destination folder for obfuscated files"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
 
-        form.add(createPathRowPanel("Libraries Directory", libsDirField, this::browseDirOptional,
-                ""));
+        form.add(createPathRowPanel("📂 Libraries Directory", libsDirField, this::browseDirOptional,
+                "Additional JAR/ZIP dependencies"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
 
-        form.add(createPathRowPanel("Blacklist File", blacklistField, () -> browseFileTxt(blacklistField),
-                "Exclude classes/packages"));
+        form.add(createPathRowPanel("❌ Blacklist File", blacklistField, () -> browseFileTxt(blacklistField),
+                "Exclude classes/packages from obfuscation"));
         form.add(Box.createRigidArea(new Dimension(0, 8)));
 
-        form.add(createPathRowPanel("Whitelist File", whitelistField, () -> browseFileTxt(whitelistField),
+        form.add(createPathRowPanel("✅ Whitelist File", whitelistField, () -> browseFileTxt(whitelistField),
                 "Allow-only list; overrides blacklist"));
 
 
@@ -197,7 +242,7 @@ public class ObfuscatorFrame extends JFrame {
         card.add(form, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton next = new JButton("Next → Settings");
+        JButton next = new JButton("Next → Settings ⚙️");
         next.addActionListener(e -> { leftNav.setSelectedIndex(1); showCard(CARD_SETTINGS); });
         footer.add(next);
         card.add(footer, BorderLayout.SOUTH);
@@ -218,11 +263,11 @@ public class ObfuscatorFrame extends JFrame {
         upperHintsScope.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         // Plain Library Name
-        upperHintsScope.add(createFieldRowPanel("Plain Library Name", plainLibNameField, "Specify to skip packaging into JAR"));
+        upperHintsScope.add(createFieldRowPanel("📝 Plain Library Name", plainLibNameField, "Specify to skip packaging into JAR"));
         upperHintsScope.add(Box.createRigidArea(new Dimension(0, 8)));
 
         // Custom Library Dir
-        upperHintsScope.add(createFieldRowPanel("Custom Library Dir (in jar)", customLibDirField, "e.g. native/win64 — inside output JAR"));
+        upperHintsScope.add(createFieldRowPanel("📁 Custom Library Dir (in jar)", customLibDirField, "e.g. native/win64 — inside output JAR"));
         upperHintsScope.add(Box.createRigidArea(new Dimension(0, 8)));
 
         form.add(upperHintsScope);
@@ -233,7 +278,7 @@ public class ObfuscatorFrame extends JFrame {
         platformPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         platformPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
 
-        JLabel platformLabel = new JLabel("Platform");
+        JLabel platformLabel = new JLabel("💻 Platform");
         platformLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
         platformLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
         platformLabel.setVerticalAlignment(SwingConstants.CENTER);
@@ -250,7 +295,7 @@ public class ObfuscatorFrame extends JFrame {
         // Build Options
         JPanel buildOpts = new JPanel();
         buildOpts.setLayout(new BoxLayout(buildOpts, BoxLayout.Y_AXIS));
-        buildOpts.setBorder(new TitledBorder("Build Options"));
+        buildOpts.setBorder(new TitledBorder("🔧 Build Options"));
         buildOpts.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JPanel line1 = new JPanel();
@@ -273,17 +318,17 @@ public class ObfuscatorFrame extends JFrame {
         // Protection Features：单独 scope，单独计算 hint 宽度
         JPanel protectionPanel = new JPanel();
         protectionPanel.setLayout(new BoxLayout(protectionPanel, BoxLayout.Y_AXIS));
-        protectionPanel.setBorder(new TitledBorder("Protection Features"));
+        protectionPanel.setBorder(new TitledBorder("🛡️ Protection Features"));
         protectionPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         protectionPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
 
         protectionPanel.add(checkWithHint(enableVirtualizationBox,
-                "Translate selected methods to a custom VM; strongest protection"));
+                "🛡️ Translate selected methods to a custom VM; strongest protection"));
         enableJitBox.setEnabled(false);
         protectionPanel.add(indent(checkWithHint(enableJitBox,
-                "JIT for virtualized methods; improves runtime performance"), 20));
+                "⚡ JIT for virtualized methods; improves runtime performance"), 20));
         protectionPanel.add(checkWithHint(flattenControlFlowBox,
-                "State-machine style CFG flattening for native methods"));
+                "🌀 State-machine style CFG flattening for native methods"));
 
         form.add(protectionPanel);
         form.add(Box.createVerticalGlue());
@@ -295,11 +340,11 @@ public class ObfuscatorFrame extends JFrame {
         card.add(sc, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton back = new JButton("← Back");
+        JButton back = new JButton("← Back 📁");
         back.addActionListener(e -> { leftNav.setSelectedIndex(0); showCard(CARD_IMPORT); });
-        JButton saveDefaults = new JButton("Save as Defaults");
+        JButton saveDefaults = new JButton("💾 Save as Defaults");
         saveDefaults.addActionListener(e -> savePreferences());
-        JButton goRun = new JButton("Continue → Run");
+        JButton goRun = new JButton("Continue → Run 🚀");
         goRun.addActionListener(e -> { leftNav.setSelectedIndex(2); showCard(CARD_RUN); });
         footer.add(back);
         footer.add(saveDefaults);
@@ -319,7 +364,7 @@ public class ObfuscatorFrame extends JFrame {
         top.add(actions, BorderLayout.EAST);
 
         progressBar.setIndeterminate(true);
-        progressBar.setString("Running...");
+        progressBar.setString("⏳ Processing obfuscation...");
         progressBar.setStringPainted(true);
         progressBar.setVisible(false);
         top.add(progressBar, BorderLayout.SOUTH);
@@ -327,6 +372,7 @@ public class ObfuscatorFrame extends JFrame {
         logArea.setEditable(false);
         logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         JScrollPane logScroll = new JScrollPane(logArea);
+        logScroll.setBorder(new TitledBorder("📜 Output Log"));
 
         card.add(top, BorderLayout.NORTH);
         card.add(logScroll, BorderLayout.CENTER);
@@ -356,7 +402,7 @@ public class ObfuscatorFrame extends JFrame {
 
         // Gap + Browse column (fixed width)
         row.add(Box.createRigidArea(new Dimension(8, 0)));
-        JButton browseBtn = new JButton("Browse");
+        JButton browseBtn = new JButton("📂 Browse");
         browseBtn.setPreferredSize(new Dimension(BROWSE_W, FIELD_H));
         browseBtn.setMaximumSize(new Dimension(BROWSE_W, FIELD_H));
         browseBtn.setAlignmentY(Component.CENTER_ALIGNMENT);
@@ -600,7 +646,7 @@ public class ObfuscatorFrame extends JFrame {
         showCard(CARD_RUN);
         setFormEnabled(false);
         progressBar.setVisible(true);
-        appendLog("Starting obfuscation...\n");
+        appendLog("🚀 Starting obfuscation...\n");
 
         SwingWorker<Integer, String> worker = new SwingWorker<Integer, String>() {
             @Override protected Integer doInBackground() throws Exception {
@@ -636,11 +682,11 @@ public class ObfuscatorFrame extends JFrame {
                 boolean enableJit = enableJitBox.isSelected();
                 boolean flattenControlFlow = flattenControlFlowBox.isSelected();
 
-                publish("Protection settings:");
-                publish("  VM Virtualization: " + (enableVirtualization ? "Enabled" : "Disabled"));
+                publish("🛡️ Protection settings:");
+                publish("  🖥️ VM Virtualization: " + (enableVirtualization ? "✅ Enabled" : "❌ Disabled"));
                 if (enableVirtualization)
-                    publish("  JIT Compilation: " + (enableJit ? "Enabled" : "Disabled"));
-                publish("  Control Flow Flattening: " + (flattenControlFlow ? "Enabled" : "Disabled"));
+                    publish("  ⚡ JIT Compilation: " + (enableJit ? "✅ Enabled" : "❌ Disabled"));
+                publish("  🌀 Control Flow Flattening: " + (flattenControlFlow ? "✅ Enabled" : "❌ Disabled"));
                 publish("");
 
                 NativeObfuscator obfuscator = new NativeObfuscator();
@@ -654,9 +700,9 @@ public class ObfuscatorFrame extends JFrame {
                     Path cppDir = Paths.get(outDir, "cpp");
                     runCmakeAndPackage(cppDir, new File(outDir, jarFile.getName()).toPath(), obfuscator.getNativeDir());
                 } else if (plainName != null) {
-                    appendLog("Plain library mode selected; skipping jar packaging.\n");
+                    appendLog("📝 Plain library mode selected; skipping jar packaging.\n");
                 } else {
-                    appendLog("Packaging disabled by user.\n");
+                    appendLog("❌ Packaging disabled by user.\n");
                 }
                 return 0;
             }
@@ -668,12 +714,12 @@ public class ObfuscatorFrame extends JFrame {
             @Override protected void done() {
                 try {
                     get();
-                    appendLog("Done. Output at: " + outDir + "\n");
-                    JOptionPane.showMessageDialog(ObfuscatorFrame.this, "Obfuscation completed.", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    appendLog("✅ Done. Output at: " + outDir + "\n");
+                    JOptionPane.showMessageDialog(ObfuscatorFrame.this, "✅ Obfuscation completed successfully!", "✨ Success", JOptionPane.INFORMATION_MESSAGE);
                 } catch (ExecutionException ex) {
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     appendLogError(cause);
-                    JOptionPane.showMessageDialog(ObfuscatorFrame.this, cause.getMessage() == null ? cause.toString() : cause.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(ObfuscatorFrame.this, "❌ " + (cause.getMessage() == null ? cause.toString() : cause.getMessage()), "⚠️ Error", JOptionPane.ERROR_MESSAGE);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 } finally {
@@ -722,7 +768,7 @@ public class ObfuscatorFrame extends JFrame {
     private void appendLogError(Throwable t) {
         String msg = (t.getMessage() == null) ? t.toString() : t.getMessage();
         StringBuilder sb = new StringBuilder();
-        sb.append("ERROR: ").append(msg).append('\n');
+        sb.append("❌ ERROR: ").append(msg).append('\n');
         for (StackTraceElement el : t.getStackTrace()) sb.append("    at ").append(el).append('\n');
         appendLog(sb.toString());
     }
@@ -730,14 +776,14 @@ public class ObfuscatorFrame extends JFrame {
     private void savePreferences() {
         prefs.put(PREF_LAST_JAR_DIR, new File(jarField.getText().trim()).getParent());
         prefs.put(PREF_LAST_ANY_DIR, new File(outDirField.getText().trim()).getParent());
-        JOptionPane.showMessageDialog(this, "Defaults saved.");
+        JOptionPane.showMessageDialog(this, "💾 Defaults saved successfully!");
     }
 
     private void runCmakeAndPackage(Path cppDir, Path outJar, String nativeDir) throws IOException, InterruptedException {
         if (!Files.isDirectory(cppDir)) throw new IOException("C++ output directory not found: " + cppDir);
-        appendLog("\nConfiguring CMake...\n");
+        appendLog("\n🔧 Configuring CMake...\n");
         runProcess(new String[]{"cmake", "."}, cppDir.toFile());
-        appendLog("\nBuilding native library (Release)...\n");
+        appendLog("\n🔨 Building native library (Release)...\n");
         runProcess(new String[]{"cmake", "--build", ".", "--config", "Release"}, cppDir.toFile());
         Path libDir = cppDir.resolve("build").resolve("lib");
         if (!Files.isDirectory(libDir)) throw new IOException("Native lib dir not found: " + libDir);
@@ -750,9 +796,9 @@ public class ObfuscatorFrame extends JFrame {
         String arch = System.getProperty("os.arch").toLowerCase();
         String os = System.getProperty("os.name").toLowerCase();
         String entryPath = getEntryPath(nativeDir, arch, os);
-        appendLog("\nPackaging native lib into jar at /" + entryPath + "...\n");
+        appendLog("\n📦 Packaging native lib into jar at /" + entryPath + "...\n");
         packageIntoJar(outJar, libFile.toPath(), entryPath);
-        appendLog("Packaging completed.\n");
+        appendLog("✅ Packaging completed.\n");
     }
 
     private static String getEntryPath(String nativeDir, String arch, String os) {
