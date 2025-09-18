@@ -1,48 +1,41 @@
 package by.radioegor146.javaobf;
 
-import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Random;
+import java.util.*;
 
 /**
- * Basic Java bytecode-level control-flow flattener.
+ * Robust Java bytecode-level control-flow flattener.
  *
- * It wraps the original method body into a while-switch state machine with
- * a configurable transition strategy to simulate varying strengths:
- *  - LOW: direct state constants
- *  - MEDIUM: arithmetic-mixed constants
- *  - HIGH: extra dummy states and arithmetic mixing
+ * Key guarantees:
+ *  - Skips <init> and <clinit> to avoid super() and clinit ordering violations.
+ *  - Preserves and remaps try/catch blocks (and local variables) via label map.
+ *  - Avoids state-key collisions across LOW/MEDIUM/HIGH encoding.
+ *  - Delegates frame/max computation to ASM (use ClassWriter with COMPUTE_FRAMES|COMPUTE_MAXS).
  *
- * This implementation preserves original try/catch blocks and does not
- * restructure the original body — it is placed into a single state branch.
+ * Strength:
+ *  - LOW: direct integer state values.
+ *  - MEDIUM: affine-mixed integer encoding.
+ *  - HIGH: extra dummy states + VM-like arithmetic mixing/diffusion.
  */
 public final class JavaControlFlowFlattener {
 
     private JavaControlFlowFlattener() {}
 
     public static boolean canProcess(MethodNode mn) {
-        // Only skip truly unprocessable methods
+        if (mn == null) return false;
         if ((mn.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_NATIVE)) != 0) return false;
         if (mn.instructions == null || mn.instructions.size() == 0) return false;
 
-        // Skip constructors only if they are too simple (just super() calls)
-        if ("<init>".equals(mn.name) && mn.instructions.size() <= 4) return false;
+        // Never flatten constructors or class initializers (keep JVM rules on super() and clinit order)
+        if ("<init>".equals(mn.name) || "<clinit>".equals(mn.name)) return false;
 
-        // Check for truly problematic instructions only
-        for (AbstractInsnNode insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-            switch (insn.getOpcode()) {
-                case Opcodes.JSR:
-                case Opcodes.RET:
-                    // JSR/RET are deprecated and complex to handle
-                    return false;
-            }
+        // Avoid JSR/RET (legacy)
+        for (AbstractInsnNode p = mn.instructions.getFirst(); p != null; p = p.getNext()) {
+            int op = p.getOpcode();
+            if (op == Opcodes.JSR || op == Opcodes.RET) return false;
         }
-
         return true;
     }
 
@@ -51,128 +44,152 @@ public final class JavaControlFlowFlattener {
         Objects.requireNonNull(strength, "strength");
         if (!canProcess(mn)) return;
 
-        // Copy original instructions with proper label mapping
-        InsnList original = mn.instructions;
-        InsnList bodyCopy = new InsnList();
-        Map<LabelNode, LabelNode> labelMap = new HashMap<>();
+        // === 1) Clone original body with label mapping ===
+        final InsnList original = mn.instructions;
+        final InsnList bodyCopy = new InsnList();
+        final Map<LabelNode, LabelNode> labelMap = new IdentityHashMap<>();
 
-        // First pass: create mapping for all label nodes
+        // Map all original labels
         for (AbstractInsnNode insn = original.getFirst(); insn != null; insn = insn.getNext()) {
             if (insn instanceof LabelNode) {
                 labelMap.put((LabelNode) insn, new LabelNode());
             }
         }
-
-        // Second pass: clone instructions with label mapping
+        // Clone body
         for (AbstractInsnNode insn = original.getFirst(); insn != null; insn = insn.getNext()) {
             bodyCopy.add(insn.clone(labelMap));
         }
 
-        // Reset instructions and clear exception handlers as they may not be valid after transformation
-        mn.instructions = new InsnList();
-        mn.tryCatchBlocks.clear();
-        if (mn.localVariables != null) {
-            mn.localVariables.clear();
+        // Remap try/catch blocks
+        final List<TryCatchBlockNode> oldTcbs = mn.tryCatchBlocks == null ? Collections.emptyList() : mn.tryCatchBlocks;
+        final List<TryCatchBlockNode> newTcbs = new ArrayList<>(oldTcbs.size());
+        for (TryCatchBlockNode tcb : oldTcbs) {
+            LabelNode start = labelMap.get(tcb.start);
+            LabelNode end   = labelMap.get(tcb.end);
+            LabelNode handler = labelMap.get(tcb.handler);
+            // Some tools create handler labels lazily; if missing, keep original
+            if (start == null) start = tcb.start;
+            if (end == null) end = tcb.end;
+            if (handler == null) handler = tcb.handler;
+            newTcbs.add(new TryCatchBlockNode(start, end, handler, tcb.type));
         }
 
-        // Allocate a new local variable for the state machine
-        int stateLocal = mn.maxLocals;
-        mn.maxLocals += 2; // reserve 2: state + scratch
+        // Remap local variables (debug info)
+        final List<LocalVariableNode> oldLvs = mn.localVariables == null ? Collections.emptyList() : mn.localVariables;
+        final List<LocalVariableNode> newLvs = new ArrayList<>(oldLvs.size());
+        for (LocalVariableNode lv : oldLvs) {
+            LabelNode start = labelMap.get(lv.start);
+            LabelNode end   = labelMap.get(lv.end);
+            if (start == null) start = lv.start;
+            if (end == null) end = lv.end;
+            newLvs.add(new LocalVariableNode(lv.name, lv.desc, lv.signature, start, end, lv.index));
+        }
 
-        // Labels for switch dispatch
-        LabelNode lblLoop = new LabelNode(new Label());
-        LabelNode lblSwitch = new LabelNode(new Label());
-        LabelNode lblCase0 = new LabelNode(new Label());
-        LabelNode lblCase1 = new LabelNode(new Label());
-        LabelNode lblDefault = new LabelNode(new Label());
+        // === 2) Reset method body (but replace with state machine wrapper) ===
+        mn.instructions = new InsnList();
+        mn.tryCatchBlocks = newTcbs;      // preserve ranges into the cloned body
+        mn.localVariables = newLvs;       // preserve debug info
 
-        // Additional dummy case labels (for HIGH)
-        LabelNode[] dummyCases;
-        int dummyCount = strength == JavaObfuscationConfig.Strength.HIGH ? 3 : (strength == JavaObfuscationConfig.Strength.MEDIUM ? 1 : 0);
-        dummyCases = new LabelNode[dummyCount];
-        for (int i = 0; i < dummyCases.length; i++) dummyCases[i] = new LabelNode(new Label());
+        // === 3) Allocate locals for state ===
+        final int stateLocal = mn.maxLocals;       // 1 slot int
+        mn.maxLocals = Math.max(mn.maxLocals, stateLocal + 1);
 
-        // Deterministic seeds from method identity
-        int seed = methodId.hashCode();
-        Random rnd = new Random(seed * 1103515245L + 12345L);
-        int mask = rnd.nextInt() | 1;
-        int mul = (rnd.nextInt() | 1);
-        int add = rnd.nextInt();
+        // === 4) Build deterministic, collision-free encoded states ===
+        final int dummyCount = (strength == JavaObfuscationConfig.Strength.HIGH ? 3
+                : strength == JavaObfuscationConfig.Strength.MEDIUM ? 1 : 0);
 
-        // Encoders for state values depending on strength
-        int enc0 = encodeState(0, mask, mul, add, strength);
-        int enc1 = encodeState(1, mask, mul, add, strength);
-        int[] encDummy = new int[dummyCases.length];
-        for (int i = 0; i < encDummy.length; i++) encDummy[i] = encodeState(100 + i, mask, mul, add, strength);
+        // Derive seed from method identity
+        int seed = (methodId == null ? (mn.name + mn.desc) : methodId).hashCode();
+        Random rnd = new Random((((long) seed) * 1103515245L + 12345L) ^ 0x9E3779B9L);
 
-        // prologue: set initial state
-        mn.instructions.add(new LabelNode(new Label()));
+        // Choose parameters; ensure uniqueness of encodings
+        int mask, mul, add;
+        int enc0, enc1;
+        int[] encDummy = new int[dummyCount];
+        outer:
+        while (true) {
+            mask = rnd.nextInt() | 1;
+            mul  = rnd.nextInt() | 1;
+            add  = rnd.nextInt();
+
+            enc0 = encodeState(0, mask, mul, add, strength);
+            enc1 = encodeState(1, mask, mul, add, strength);
+
+            if (enc0 == enc1) continue;
+
+            boolean ok = true;
+            for (int i = 0; i < dummyCount; i++) {
+                encDummy[i] = encodeState(100 + i, mask, mul, add, strength);
+            }
+            // all unique?
+            Set<Integer> uniq = new HashSet<>();
+            if (!uniq.add(enc0) || !uniq.add(enc1)) continue;
+            for (int v : encDummy) if (!uniq.add(v)) { ok = false; break; }
+            if (ok) break outer;
+        }
+
+        // === 5) Labels ===
+        final LabelNode L_LOOP     = new LabelNode();
+        final LabelNode L_CASE0    = new LabelNode();
+        final LabelNode L_CASE1    = new LabelNode();
+        final LabelNode L_DEFAULT  = new LabelNode();
+        final LabelNode[] L_DUMMIES = new LabelNode[dummyCount];
+        for (int i = 0; i < dummyCount; i++) L_DUMMIES[i] = new LabelNode();
+
+        // === 6) Prologue: init state ===
         pushConst(mn.instructions, enc0);
         mn.instructions.add(new VarInsnNode(Opcodes.ISTORE, stateLocal));
 
-        // loop begin
-        mn.instructions.add(lblLoop);
-        mn.instructions.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
-
-        // dispatch
+        // === 7) Dispatch loop ===
+        mn.instructions.add(L_LOOP);
         mn.instructions.add(new VarInsnNode(Opcodes.ILOAD, stateLocal));
-        // Build lookupswitch: default -> lblDefault
-        // Keys must be sorted in ascending order for LookupSwitchInsnNode
-        int[] keys = new int[2 + dummyCases.length];
-        LabelNode[] labels = new LabelNode[2 + dummyCases.length];
-        int idx = 0;
-        keys[idx] = enc0; labels[idx++] = lblCase0;
-        keys[idx] = enc1; labels[idx++] = lblCase1;
-        for (int i = 0; i < dummyCases.length; i++) {
-            keys[idx] = encDummy[i]; labels[idx++] = dummyCases[i];
-        }
 
-        // Sort keys and corresponding labels together
+        // Build sorted lookup switch
+        final int total = 2 + dummyCount;
+        int[] keys = new int[total];
+        LabelNode[] labels = new LabelNode[total];
+        int k = 0;
+        keys[k] = enc0; labels[k++] = L_CASE0;
+        keys[k] = enc1; labels[k++] = L_CASE1;
+        for (int i = 0; i < dummyCount; i++) {
+            keys[k] = encDummy[i]; labels[k++] = L_DUMMIES[i];
+        }
+        // sort keys + labels together
         for (int i = 0; i < keys.length - 1; i++) {
             for (int j = i + 1; j < keys.length; j++) {
-                if (keys[i] > keys[j]) {
-                    // Swap keys
-                    int tempKey = keys[i];
-                    keys[i] = keys[j];
-                    keys[j] = tempKey;
-                    // Swap corresponding labels
-                    LabelNode tempLabel = labels[i];
-                    labels[i] = labels[j];
-                    labels[j] = tempLabel;
+                if (Integer.compare(keys[i], keys[j]) > 0) {
+                    int tk = keys[i]; keys[i] = keys[j]; keys[j] = tk;
+                    LabelNode tl = labels[i]; labels[i] = labels[j]; labels[j] = tl;
                 }
             }
         }
+        mn.instructions.add(new LookupSwitchInsnNode(L_DEFAULT, keys, labels));
 
-        mn.instructions.add(new LookupSwitchInsnNode(lblDefault, keys, labels));
-
-        // case 0: transition to state 1
-        mn.instructions.add(lblCase0);
+        // case 0 -> go to state 1
+        mn.instructions.add(L_CASE0);
         emitTransition(mn.instructions, stateLocal, 1, mask, mul, add, strength);
-        mn.instructions.add(new JumpInsnNode(Opcodes.GOTO, lblLoop));
+        mn.instructions.add(new JumpInsnNode(Opcodes.GOTO, L_LOOP));
 
-        // case 1: original body
-        mn.instructions.add(lblCase1);
-        mn.instructions.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
-        // place the original body as-is
+        // case 1 -> original body
+        mn.instructions.add(L_CASE1);
+        // Insert cloned body; its try/catch ranges were remapped and already attached to mn.tryCatchBlocks.
         mn.instructions.add(bodyCopy);
 
-        // dummy cases (HIGH/MEDIUM)
-        for (int i = 0; i < dummyCases.length; i++) {
-            mn.instructions.add(dummyCases[i]);
-            // noise arithmetic without side-effects
+        // dummy cases (noise then steer to state 1)
+        for (int i = 0; i < dummyCount; i++) {
+            mn.instructions.add(L_DUMMIES[i]);
             pushConst(mn.instructions, rnd.nextInt());
             mn.instructions.add(new InsnNode(Opcodes.POP));
-            // eventually steer to state 1
             emitTransition(mn.instructions, stateLocal, 1, mask, mul, add, strength);
-            mn.instructions.add(new JumpInsnNode(Opcodes.GOTO, lblLoop));
+            mn.instructions.add(new JumpInsnNode(Opcodes.GOTO, L_LOOP));
         }
 
-        // default: fallback to state 1
-        mn.instructions.add(lblDefault);
+        // default -> recover to state 1
+        mn.instructions.add(L_DEFAULT);
         emitTransition(mn.instructions, stateLocal, 1, mask, mul, add, strength);
-        mn.instructions.add(new JumpInsnNode(Opcodes.GOTO, lblLoop));
+        mn.instructions.add(new JumpInsnNode(Opcodes.GOTO, L_LOOP));
 
-        // Let ASM recompute max stack/frames
+        // Let ClassWriter compute maxs/frames.
         mn.maxStack = Math.max(mn.maxStack, 4);
     }
 
@@ -183,7 +200,7 @@ public final class JavaControlFlowFlattener {
             case MEDIUM:
                 return (raw ^ mask) * mul + add;
             case HIGH: {
-                int v = raw ^ (Integer.rotateLeft(mask, 7));
+                int v = raw ^ Integer.rotateLeft(mask, 7);
                 v = Integer.rotateLeft(v * (mul | 1), 3) + add;
                 v ^= (v >>> 13);
                 return v;
@@ -193,7 +210,8 @@ public final class JavaControlFlowFlattener {
         }
     }
 
-    private static void emitTransition(InsnList il, int stateLocal, int nextRaw, int mask, int mul, int add, JavaObfuscationConfig.Strength s) {
+    private static void emitTransition(InsnList il, int stateLocal, int nextRaw, int mask, int mul, int add,
+                                       JavaObfuscationConfig.Strength s) {
         switch (s) {
             case LOW: {
                 pushConst(il, nextRaw);
@@ -213,13 +231,14 @@ public final class JavaControlFlowFlattener {
                 return;
             }
             case HIGH: {
-                // A few mixed operations emulating a tiny VM-like transform
+                // VM-like transform with rotl and diffusion x ^= (x >>> 13)
                 pushConst(il, nextRaw);
                 pushConst(il, Integer.rotateLeft(mask, 7));
                 il.add(new InsnNode(Opcodes.IXOR));
                 pushConst(il, (mul | 1));
                 il.add(new InsnNode(Opcodes.IMUL));
-                // rotl by 3 -> (x << 3) | (x >>> 29)
+
+                // rotl(x, 3): (x << 3) | (x >>> 29)
                 il.add(new InsnNode(Opcodes.DUP));
                 pushConst(il, 3);
                 il.add(new InsnNode(Opcodes.ISHL));
@@ -227,9 +246,10 @@ public final class JavaControlFlowFlattener {
                 pushConst(il, 29);
                 il.add(new InsnNode(Opcodes.IUSHR));
                 il.add(new InsnNode(Opcodes.IOR));
+
                 pushConst(il, add);
                 il.add(new InsnNode(Opcodes.IADD));
-                // xor with shifted value to add diffusion
+
                 il.add(new InsnNode(Opcodes.DUP));
                 pushConst(il, 13);
                 il.add(new InsnNode(Opcodes.IUSHR));
@@ -242,8 +262,17 @@ public final class JavaControlFlowFlattener {
 
     private static void pushConst(InsnList il, int v) {
         if (v >= -1 && v <= 5) {
-            il.add(new InsnNode(Opcodes.ICONST_0 + v));
-        } else if (v >= Byte.MIN_VALUE && v <= Byte.MAX_VALUE) {
+            switch (v) {
+                case -1: il.add(new InsnNode(Opcodes.ICONST_M1)); return;
+                case 0:  il.add(new InsnNode(Opcodes.ICONST_0));  return;
+                case 1:  il.add(new InsnNode(Opcodes.ICONST_1));  return;
+                case 2:  il.add(new InsnNode(Opcodes.ICONST_2));  return;
+                case 3:  il.add(new InsnNode(Opcodes.ICONST_3));  return;
+                case 4:  il.add(new InsnNode(Opcodes.ICONST_4));  return;
+                case 5:  il.add(new InsnNode(Opcodes.ICONST_5));  return;
+            }
+        }
+        if (v >= Byte.MIN_VALUE && v <= Byte.MAX_VALUE) {
             il.add(new IntInsnNode(Opcodes.BIPUSH, v));
         } else if (v >= Short.MIN_VALUE && v <= Short.MAX_VALUE) {
             il.add(new IntInsnNode(Opcodes.SIPUSH, v));
@@ -252,4 +281,3 @@ public final class JavaControlFlowFlattener {
         }
     }
 }
-
