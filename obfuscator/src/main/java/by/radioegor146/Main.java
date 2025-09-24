@@ -76,6 +76,21 @@ public class Main {
         @CommandLine.Option(names = {"--enable-native-obfuscation"}, defaultValue = "true", description = "Enable native obfuscation (default: true)")
         private boolean enableNativeObfuscation;
 
+        @CommandLine.Option(names = {"--enable-anti-debug"}, description = "Enable anti-debug protection")
+        private boolean enableAntiDebug;
+
+        @CommandLine.Option(names = {"--ghot-struct-nullification"}, description = "Enable gHotSpotVMStructs nullification")
+        private boolean gHotStructNullification;
+
+        @CommandLine.Option(names = {"--debugger-detection"}, description = "Enable debugger detection")
+        private boolean debuggerDetection;
+
+        @CommandLine.Option(names = {"--vm-protection"}, description = "Enable VM protection")
+        private boolean vmProtection;
+
+        @CommandLine.Option(names = {"--anti-tamper"}, description = "Enable anti-tamper checks")
+        private boolean antiTamper;
+
         @Override
         public Integer call() throws Exception {
             List<Path> libs = new ArrayList<>();
@@ -106,10 +121,39 @@ public class Main {
                 javaWhiteList = Files.readAllLines(javaWhiteListFile.toPath(), StandardCharsets.UTF_8);
             }
 
-            new NativeObfuscator().process(jarFile.toPath(), Paths.get(outputDirectory),
-                    libs, blackList, whiteList, libraryName, customLibraryDirectory, platform, useAnnotations, generateDebugJar,
-                    enableVirtualization, enableJit, flattenControlFlow, enableJavaObfuscation, javaObfuscationStrength,
-                    javaBlackList, javaWhiteList, enableNativeObfuscation);
+            // Create protection configuration
+            ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
+
+            // Create anti-debug configuration
+            AntiDebugConfig antiDebugConfig = new AntiDebugConfig(
+                    gHotStructNullification, debuggerDetection, vmProtection, antiTamper);
+
+            // Create comprehensive configuration
+            ObfuscatorConfig config = new ObfuscatorConfig.Builder()
+                    .setInputJarPath(jarFile.toPath())
+                    .setOutputDir(Paths.get(outputDirectory))
+                    .setInputLibs(libs)
+                    .setBlackList(blackList)
+                    .setWhiteList(whiteList)
+                    .setPlainLibName(libraryName)
+                    .setCustomLibraryDirectory(customLibraryDirectory)
+                    .setPlatform(platform)
+                    .setUseAnnotations(useAnnotations)
+                    .setGenerateDebugJar(generateDebugJar)
+                    .setProtectionConfig(protectionConfig)
+                    .setAntiDebugConfig(antiDebugConfig)
+                    .setEnableJavaObfuscation(enableJavaObfuscation)
+                    .setJavaObfuscationStrength(javaObfuscationStrength)
+                    .setJavaBlackList(javaBlackList)
+                    .setJavaWhiteList(javaWhiteList)
+                    .setEnableNativeObfuscation(enableNativeObfuscation)
+                    .build();
+
+            // Validate configuration
+            config.validateAndWarn();
+
+            // Process with new configuration structure
+            new NativeObfuscator().process(config);
 
             return 0;
         }

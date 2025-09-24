@@ -1,6 +1,7 @@
 #include "native_jvm.hpp"
 #include "native_jvm_output.hpp"
 #include "string_pool.hpp"
+#include "anti_debug.hpp"
 
 $includes
 
@@ -26,6 +27,8 @@ namespace native_jvm {
         utils::init_utils(env);
         if (env->ExceptionCheck())
             return;
+
+$anti_debug_init
 
         char* string_pool = string_pool::get_pool();
 

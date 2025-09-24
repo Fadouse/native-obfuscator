@@ -172,6 +172,8 @@ public class NativeObfuscator {
         Util.copyResource("sources/micro_vm.hpp", cppDir);
         Util.copyResource("sources/vm_jit.cpp", cppDir);
         Util.copyResource("sources/vm_jit.hpp", cppDir);
+        Util.copyResource("sources/anti_debug.cpp", cppDir);
+        Util.copyResource("sources/anti_debug.hpp", cppDir);
 
         String projectName = "native_library";
 
@@ -186,6 +188,8 @@ public class NativeObfuscator {
         cMakeBuilder.addMainFile("micro_vm.cpp");
         cMakeBuilder.addMainFile("vm_jit.hpp");
         cMakeBuilder.addMainFile("vm_jit.cpp");
+        cMakeBuilder.addMainFile("anti_debug.hpp");
+        cMakeBuilder.addMainFile("anti_debug.cpp");
 
         if (platform != Platform.ANDROID) {
             cMakeBuilder.addFlag("USE_HOTSPOT");
@@ -469,6 +473,122 @@ public class NativeObfuscator {
                 .getBytes(StandardCharsets.UTF_8));
 
         Files.write(cppDir.resolve("CMakeLists.txt"), cMakeBuilder.build().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Process JAR with comprehensive configuration object
+     * @param config Complete obfuscation configuration
+     * @throws IOException if processing fails
+     */
+    public void process(ObfuscatorConfig config) throws IOException {
+        processWithAntiDebug(config.getInputJarPath(), config.getOutputDir(), config.getInputLibs(),
+                config.getBlackList(), config.getWhiteList(), config.getPlainLibName(),
+                config.getCustomLibraryDirectory(), config.getPlatform(),
+                config.isUseAnnotations(), config.isGenerateDebugJar(),
+                config.getProtectionConfig(), config.getAntiDebugConfig(),
+                config.isEnableJavaObfuscation(), config.getJavaObfuscationStrength(),
+                config.getJavaBlackList(), config.getJavaWhiteList(), config.isEnableNativeObfuscation());
+    }
+
+    private void processWithAntiDebug(Path inputJarPath, Path outputDir, List<Path> inputLibs,
+                        List<String> blackList, List<String> whiteList, String plainLibName,
+                        String customLibraryDirectory,
+                        Platform platform, boolean useAnnotations, boolean generateDebugJar,
+                        ProtectionConfig protectionConfig, AntiDebugConfig antiDebugConfig,
+                        boolean enableJavaObfuscation, String javaObfuscationStrength,
+                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation) throws IOException {
+
+        // Call the existing process method but with extended functionality
+        process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
+                platform, useAnnotations, generateDebugJar,
+                protectionConfig.isVirtualizationEnabled(), protectionConfig.isJitEnabled(),
+                protectionConfig.isControlFlowFlatteningEnabled(), enableJavaObfuscation,
+                javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation);
+
+        // Generate anti-debug configuration header if any anti-debug features are enabled
+        if (antiDebugConfig.isAnyEnabled()) {
+            generateAntiDebugConfig(outputDir.resolve("cpp"), antiDebugConfig);
+
+            // Update the generated native_jvm_output.cpp to include anti-debug initialization
+            updateNativeJvmOutputWithAntiDebug(outputDir.resolve("cpp"), antiDebugConfig);
+        }
+    }
+
+    /**
+     * Generates anti-debug configuration header file
+     */
+    private void generateAntiDebugConfig(Path cppDir, AntiDebugConfig antiDebugConfig) throws IOException {
+        StringBuilder configBuilder = new StringBuilder();
+        configBuilder.append("#ifndef ANTI_DEBUG_CONFIG_HPP_GUARD\n");
+        configBuilder.append("#define ANTI_DEBUG_CONFIG_HPP_GUARD\n\n");
+        configBuilder.append("// Auto-generated anti-debug configuration\n");
+        configBuilder.append("namespace native_jvm::anti_debug::config {\n\n");
+
+        configBuilder.append("    constexpr bool ENABLE_GHOTSPOT_STRUCT_NULLIFICATION = ")
+                     .append(antiDebugConfig.isGHotSpotVMStructsNullificationEnabled() ? "true" : "false")
+                     .append(";\n");
+
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_DETECTION = ")
+                     .append(antiDebugConfig.isDebuggerDetectionEnabled() ? "true" : "false")
+                     .append(";\n");
+
+        configBuilder.append("    constexpr bool ENABLE_VM_PROTECTION = ")
+                     .append(antiDebugConfig.isVmProtectionEnabled() ? "true" : "false")
+                     .append(";\n");
+
+        configBuilder.append("    constexpr bool ENABLE_ANTI_TAMPER = ")
+                     .append(antiDebugConfig.isAntiTamperEnabled() ? "true" : "false")
+                     .append(";\n\n");
+
+        configBuilder.append("} // namespace native_jvm::anti_debug::config\n\n");
+        configBuilder.append("#endif // ANTI_DEBUG_CONFIG_HPP_GUARD\n");
+
+        Files.write(cppDir.resolve("anti_debug_config.hpp"), configBuilder.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Updates the generated native_jvm_output.cpp file to include anti-debug initialization
+     */
+    private void updateNativeJvmOutputWithAntiDebug(Path cppDir, AntiDebugConfig antiDebugConfig) throws IOException {
+        Path nativeJvmOutputFile = cppDir.resolve("native_jvm_output.cpp");
+        if (!Files.exists(nativeJvmOutputFile)) {
+            return; // File doesn't exist, nothing to update
+        }
+
+        // Read the existing file
+        String content = new String(Files.readAllBytes(nativeJvmOutputFile), StandardCharsets.UTF_8);
+
+        // Add anti-debug include if not present
+        if (!content.contains("#include \"anti_debug.hpp\"")) {
+            content = content.replace("#include \"string_pool.hpp\"",
+                    "#include \"string_pool.hpp\"\n#include \"anti_debug.hpp\"\n#include \"anti_debug_config.hpp\"");
+        }
+
+        // Generate anti-debug initialization code
+        String antiDebugInit = generateAntiDebugInitCode(antiDebugConfig);
+
+        // Insert anti-debug initialization after utils::init_utils
+        String searchPattern = "        utils::init_utils(env);\n        if (env->ExceptionCheck())\n            return;";
+        String replacement = searchPattern + "\n\n" + antiDebugInit;
+
+        content = content.replace(searchPattern, replacement);
+
+        // Write the updated content back to the file
+        Files.write(nativeJvmOutputFile, content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String generateAntiDebugInitCode(AntiDebugConfig antiDebugConfig) {
+        StringBuilder code = new StringBuilder();
+        code.append("        // Initialize anti-debug protection\n");
+        code.append("        anti_debug::init_anti_debug(env, ");
+        code.append(antiDebugConfig.isGHotSpotVMStructsNullificationEnabled() ? "true" : "false").append(", ");
+        code.append(antiDebugConfig.isDebuggerDetectionEnabled() ? "true" : "false").append(", ");
+        code.append(antiDebugConfig.isVmProtectionEnabled() ? "true" : "false").append(", ");
+        code.append(antiDebugConfig.isAntiTamperEnabled() ? "true" : "false");
+        code.append(");\n");
+        code.append("        if (env->ExceptionCheck())\n");
+        code.append("            return;");
+        return code.toString();
     }
 
     public Snippets getSnippets() {

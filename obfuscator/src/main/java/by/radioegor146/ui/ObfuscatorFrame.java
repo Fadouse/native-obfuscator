@@ -2,6 +2,9 @@ package by.radioegor146.ui;
 
 import by.radioegor146.NativeObfuscator;
 import by.radioegor146.Platform;
+import by.radioegor146.AntiDebugConfig;
+import by.radioegor146.ProtectionConfig;
+import by.radioegor146.ObfuscatorConfig;
 import by.radioegor146.javaobf.JavaObfuscationConfig;
 
 import javax.swing.*;
@@ -59,6 +62,13 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox enableVirtualizationBox = new JCheckBox("Enable VM virtualization");
     private final JCheckBox enableJitBox = new JCheckBox("Enable JIT compilation");
     private final JCheckBox flattenControlFlowBox = new JCheckBox("Enable control flow flattening");
+
+    // Anti-debug feature checkboxes
+    private final JCheckBox enableAntiDebugBox = new JCheckBox("Enable anti-debug protection");
+    private final JCheckBox gHotSpotVMStructsNullificationBox = new JCheckBox("gHotSpotVMStructs nullification");
+    private final JCheckBox debuggerDetectionBox = new JCheckBox("Debugger detection");
+    private final JCheckBox vmProtectionBox = new JCheckBox("VM protection");
+    private final JCheckBox antiTamperBox = new JCheckBox("Anti-tamper checks");
 
     // Java obfuscation controls
     private final JCheckBox enableJavaObfuscationBox = new JCheckBox("Enable Java-layer obfuscation");
@@ -149,6 +159,27 @@ public class ObfuscatorFrame extends JFrame {
             enableJitBox.setEnabled(enableNativeObfuscationBox.isSelected() && enableVirtualizationBox.isSelected());
             if (!enableVirtualizationBox.isSelected()) enableJitBox.setSelected(false);
         });
+
+        // Anti-debug feature interactions
+        enableAntiDebugBox.addActionListener(e -> {
+            boolean enabled = enableAntiDebugBox.isSelected();
+            gHotSpotVMStructsNullificationBox.setEnabled(enabled);
+            debuggerDetectionBox.setEnabled(enabled);
+            vmProtectionBox.setEnabled(enabled);
+            antiTamperBox.setEnabled(enabled);
+            if (!enabled) {
+                gHotSpotVMStructsNullificationBox.setSelected(false);
+                debuggerDetectionBox.setSelected(false);
+                vmProtectionBox.setSelected(false);
+                antiTamperBox.setSelected(false);
+            }
+        });
+
+        // Initially disable anti-debug sub-options
+        gHotSpotVMStructsNullificationBox.setEnabled(false);
+        debuggerDetectionBox.setEnabled(false);
+        vmProtectionBox.setEnabled(false);
+        antiTamperBox.setEnabled(false);
 
         // Placeholders (FlatLaf)
         jarField.putClientProperty("JTextComponent.placeholderText", "📦 Select input .jar");
@@ -362,6 +393,27 @@ public class ObfuscatorFrame extends JFrame {
                 "State-machine style CFG flattening for native methods"), 20));
 
         form.add(protectionPanel);
+        form.add(Box.createRigidArea(new Dimension(0, 12)));
+
+        // Anti-Debug Features: separate scope, separate calculations
+        JPanel antiDebugPanel = new JPanel();
+        antiDebugPanel.setLayout(new BoxLayout(antiDebugPanel, BoxLayout.Y_AXIS));
+        antiDebugPanel.setBorder(new TitledBorder("🛡️ Anti-Debug Protection"));
+        antiDebugPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        antiDebugPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180));
+
+        antiDebugPanel.add(checkWithHint(enableAntiDebugBox,
+                "Enable comprehensive anti-debugging and reverse engineering protection"));
+        antiDebugPanel.add(indent(checkWithHint(gHotSpotVMStructsNullificationBox,
+                "Nullify gHotSpotVMStructs to prevent HotSpot internal access"), 20));
+        antiDebugPanel.add(indent(checkWithHint(debuggerDetectionBox,
+                "Detect debugger presence and terminate if found"), 20));
+        antiDebugPanel.add(indent(checkWithHint(vmProtectionBox,
+                "Protect VM function table from tampering"), 20));
+        antiDebugPanel.add(indent(checkWithHint(antiTamperBox,
+                "Detect code tampering and modification attempts"), 20));
+
+        form.add(antiDebugPanel);
         form.add(Box.createVerticalGlue());
 
         JScrollPane sc = new JScrollPane(form);
@@ -818,6 +870,13 @@ public class ObfuscatorFrame extends JFrame {
                 boolean enableJit = enableJitBox.isSelected();
                 boolean flattenControlFlow = flattenControlFlowBox.isSelected();
 
+                // Anti-debug settings
+                boolean enableAntiDebug = enableAntiDebugBox.isSelected();
+                boolean enableGHotSpotVMStructsNullification = gHotSpotVMStructsNullificationBox.isSelected();
+                boolean enableDebuggerDetection = debuggerDetectionBox.isSelected();
+                boolean enableVmProtection = vmProtectionBox.isSelected();
+                boolean enableAntiTamper = antiTamperBox.isSelected();
+
                 // Java obfuscation settings
                 boolean enableJavaObfuscation = enableJavaObfuscationBox.isSelected();
                 String javaObfStrength = javaObfStrengthCombo.getSelectedItem().toString();
@@ -845,16 +904,49 @@ public class ObfuscatorFrame extends JFrame {
                     publish("  🌀 Native Control Flow Flattening: " + (flattenControlFlow ? "✅ Enabled" : "❌ Disabled"));
                 }
                 publish("  ☕ Java Obfuscation: " + (enableJavaObfuscation ? "✅ Enabled (" + javaObfStrength + ")" : "❌ Disabled"));
+                publish("  🛡️ Anti-Debug Protection: " + (enableAntiDebug ? "✅ Enabled" : "❌ Disabled"));
+                if (enableAntiDebug) {
+                    publish("    🔒 gHotSpotVMStructs Nullification: " + (enableGHotSpotVMStructsNullification ? "✅ Enabled" : "❌ Disabled"));
+                    publish("    🔍 Debugger Detection: " + (enableDebuggerDetection ? "✅ Enabled" : "❌ Disabled"));
+                    publish("    🛡️ VM Protection: " + (enableVmProtection ? "✅ Enabled" : "❌ Disabled"));
+                    publish("    🔐 Anti-Tamper: " + (enableAntiTamper ? "✅ Enabled" : "❌ Disabled"));
+                }
                 publish("");
 
+                // Create protection configuration
+                ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
+
+                // Create anti-debug configuration
+                AntiDebugConfig antiDebugConfig = new AntiDebugConfig(
+                        enableGHotSpotVMStructsNullification, enableDebuggerDetection,
+                        enableVmProtection, enableAntiTamper);
+
+                // Create comprehensive configuration
+                ObfuscatorConfig config = new ObfuscatorConfig.Builder()
+                        .setInputJarPath(jarFile.toPath())
+                        .setOutputDir(Paths.get(outDir))
+                        .setInputLibs(libs)
+                        .setBlackList(blackList)
+                        .setWhiteList(whiteList)
+                        .setPlainLibName(plainName)
+                        .setCustomLibraryDirectory(customDir)
+                        .setPlatform(platform)
+                        .setUseAnnotations(useAnnotations)
+                        .setGenerateDebugJar(debug)
+                        .setProtectionConfig(protectionConfig)
+                        .setAntiDebugConfig(antiDebugConfig)
+                        .setEnableJavaObfuscation(enableJavaObfuscation)
+                        .setJavaObfuscationStrength(javaObfStrength)
+                        .setJavaBlackList(javaBlackList)
+                        .setJavaWhiteList(javaWhiteList)
+                        .setEnableNativeObfuscation(enableNativeObfuscation)
+                        .build();
+
+                // Validate configuration
+                config.validateAndWarn();
+
                 NativeObfuscator obfuscator = new NativeObfuscator();
-                Path dir = Paths.get(outDir);
-                obfuscator.process(
-                        jarFile.toPath(), dir, libs, blackList, whiteList,
-                        plainName, customDir, platform, useAnnotations, debug,
-                        enableVirtualization, enableJit, flattenControlFlow,
-                        enableJavaObfuscation, javaObfStrength,
-                        javaBlackList, javaWhiteList, enableNativeObfuscation);
+                obfuscator.process(config);
 
                 if (enableNativeObfuscation && plainName == null && packageBox.isSelected()) {
                     Path cppDir = Paths.get(outDir, "cpp");
@@ -924,6 +1016,13 @@ public class ObfuscatorFrame extends JFrame {
         javaObfStrengthCombo.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaBlacklistField.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaWhitelistField.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+
+        // Anti-debug controls
+        enableAntiDebugBox.setEnabled(enabled);
+        gHotSpotVMStructsNullificationBox.setEnabled(enabled && enableAntiDebugBox.isSelected());
+        debuggerDetectionBox.setEnabled(enabled && enableAntiDebugBox.isSelected());
+        vmProtectionBox.setEnabled(enabled && enableAntiDebugBox.isSelected());
+        antiTamperBox.setEnabled(enabled && enableAntiDebugBox.isSelected());
 
         runButton.setEnabled(enabled);
     }
