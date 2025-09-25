@@ -61,15 +61,14 @@ public class MainSourceBuilder {
             return "";  // No anti-debug features enabled
         }
 
+        if (includes.indexOf("#include \"anti_debug_config.hpp\"") < 0) {
+            includes.append("#include \"anti_debug_config.hpp\"\n");
+        }
+
         StringBuilder antiDebugInit = new StringBuilder();
         antiDebugInit.append("        // Initialize anti-debug protection\n");
         antiDebugInit.append("        #ifdef ANTI_DEBUG_CONFIG_HPP_GUARD\n");
-        antiDebugInit.append("        anti_debug::init_anti_debug(env, ");
-        antiDebugInit.append(antiDebugConfig.isGHotSpotVMStructsNullificationEnabled() ? "true" : "false").append(", ");
-        antiDebugInit.append(antiDebugConfig.isDebuggerDetectionEnabled() ? "true" : "false").append(", ");
-        antiDebugInit.append(antiDebugConfig.isVmProtectionEnabled() ? "true" : "false").append(", ");
-        antiDebugInit.append(antiDebugConfig.isAntiTamperEnabled() ? "true" : "false");
-        antiDebugInit.append(");\n");
+        antiDebugInit.append("        anti_debug::init_anti_debug(env, native_jvm::anti_debug::config::create_runtime_config());\n");
         antiDebugInit.append("        if (env->ExceptionCheck())\n");
         antiDebugInit.append("            return;\n");
         antiDebugInit.append("        #endif\n\n");

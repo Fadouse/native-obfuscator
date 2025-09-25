@@ -5,6 +5,7 @@
 #include <psapi.h>
 #include <tlhelp32.h>
 #include <winternl.h>
+#include <stdlib.h>
 #pragma comment(lib, "psapi.lib")
 #pragma comment(lib, "ntdll.lib")
 #else
@@ -18,6 +19,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <sys/mman.h>
+#include <errno.h>
 #endif
 
 #include <cstdlib>
@@ -26,35 +28,32 @@
 #include <chrono>
 #include <random>
 #include <atomic>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <cctype>
+#include <fstream>
+#include <sstream>
+#include <cstring>
+#include <cstdio>
 
 namespace native_jvm::anti_debug {
 
     // Global anti-debug configuration
-    static bool g_ghot_struct_nullification = false;
-    static bool g_debugger_detection = false;
-    static bool g_vm_protection = false;
-    static bool g_anti_tamper = false;
+    static AntiDebugRuntimeConfig g_config{};
     static bool g_initialized = false;
     static bool g_jvmti_hooks_installed = false;
     static std::atomic<int> g_agent_attachment_attempts{0};
 
-    bool init_anti_debug(JNIEnv *env,
-                        bool enable_ghot_struct_nullification,
-                        bool enable_debugger_detection,
-                        bool enable_vm_protection,
-                        bool enable_anti_tamper) {
-
+    bool init_anti_debug(JNIEnv *env, const AntiDebugRuntimeConfig &config) {
         if (g_initialized) {
-            return true; // Already initialized
+            return true;
         }
 
-        g_ghot_struct_nullification = enable_ghot_struct_nullification;
-        g_debugger_detection = enable_debugger_detection;
-        g_vm_protection = enable_vm_protection;
-        g_anti_tamper = enable_anti_tamper;
+        g_config = config;
 
-        // Install JVMTI hooks early in initialization
-        if (env != nullptr) {
+        // Install JVMTI hooks early when agent blocking is enabled
+        if (env != nullptr && g_config.enableJvmtiAgentBlocking) {
             JavaVM *jvm = nullptr;
             if (env->GetJavaVM(&jvm) == JNI_OK && jvm != nullptr) {
                 if (install_jvmti_hooks(jvm)) {
@@ -66,59 +65,57 @@ namespace native_jvm::anti_debug {
         }
 
         // Apply gHotSpotVMStructs nullification early if enabled
-        if (g_ghot_struct_nullification) {
+        if (g_config.enableGHotSpotVMStructNullification) {
             bool result = nullify_ghotspot_vm_structs();
-            // Test output using JNI to call System.out.println
             if (env != nullptr) {
-                jclass systemClass = env->FindClass("java/lang/System");
-                if (systemClass != nullptr) {
-                    jfieldID outFieldID = env->GetStaticFieldID(systemClass, "out", "Ljava/io/PrintStream;");
-                    if (outFieldID != nullptr) {
-                        jobject outObject = env->GetStaticObjectField(systemClass, outFieldID);
-                        if (outObject != nullptr) {
-                            jclass printStreamClass = env->FindClass("java/io/PrintStream");
-                            if (printStreamClass != nullptr) {
-                                jmethodID printlnMethod = env->GetMethodID(printStreamClass, "println", "(Ljava/lang/String;)V");
-                                if (printlnMethod != nullptr) {
-                                    jstring message = env->NewStringUTF(result ?
-                                        "[Anti-Debug] gHotSpotVMStructs nullification: SUCCESS" :
-                                        "[Anti-Debug] gHotSpotVMStructs nullification: FAILED");
-                                    env->CallVoidMethod(outObject, printlnMethod, message);
-                                    env->DeleteLocalRef(message);
-                                }
-                                env->DeleteLocalRef(printStreamClass);
-                            }
-                            env->DeleteLocalRef(outObject);
-                        }
-                    }
-                    env->DeleteLocalRef(systemClass);
-                }
+                internal::debug_print(env, result ?
+                    "[Anti-Debug] gHotSpotVMStructs nullification: SUCCESS" :
+                    "[Anti-Debug] gHotSpotVMStructs nullification: FAILED");
             }
         }
 
         // Perform initial debugger detection
-        if (g_debugger_detection && detect_debugger()) {
-            // Debugger detected on initialization - terminate
+        if (g_config.enableDebuggerDetection && detect_debugger(env)) {
             protected_exit(1);
             return false;
         }
 
         // Set up VM protection checks
-        if (g_vm_protection && !check_vm_protection(env)) {
-            // VM tampering detected
+        if (g_config.enableVmIntegrityChecks && !check_vm_protection(env)) {
             protected_exit(2);
             return false;
         }
 
         // Initial tampering check
-        if (g_anti_tamper && detect_tampering()) {
-            // Code tampering detected
+        if (g_config.enableAntiTamper && detect_tampering()) {
             protected_exit(3);
             return false;
         }
 
         g_initialized = true;
         return true;
+    }
+
+    bool init_anti_debug(JNIEnv *env,
+                        bool enable_ghot_struct_nullification,
+                        bool enable_debugger_detection,
+                        bool enable_vm_protection,
+                        bool enable_anti_tamper) {
+        AntiDebugRuntimeConfig config{};
+        config.enableGHotSpotVMStructNullification = enable_ghot_struct_nullification;
+        config.enableDebuggerDetection = enable_debugger_detection;
+        config.enableDebuggerApiChecks = enable_debugger_detection;
+        config.enableDebuggerTracerCheck = enable_debugger_detection;
+        config.enableDebuggerPtraceCheck = enable_debugger_detection;
+        config.enableDebuggerProcessScan = enable_debugger_detection;
+        config.enableDebuggerModuleScan = enable_debugger_detection;
+        config.enableDebuggerEnvironmentScan = enable_debugger_detection;
+        config.enableDebuggerTimingCheck = enable_debugger_detection;
+        config.enableVmIntegrityChecks = enable_vm_protection;
+        config.enableJvmtiAgentBlocking = enable_vm_protection;
+        config.enableAntiTamper = enable_anti_tamper;
+        config.enableDebugRegisterScrubbing = enable_debugger_detection;
+        return init_anti_debug(env, config);
     }
 
     bool nullify_ghotspot_vm_structs() {
@@ -156,33 +153,57 @@ namespace native_jvm::anti_debug {
 #endif
     }
 
-    bool detect_debugger() {
-        if (!g_debugger_detection) return false;
-
-        // Use multiple detection methods for robustness
-        bool debugger_found = false;
-
-        if (internal::is_windows()) {
-            debugger_found = internal::is_debugger_present_windows();
-        } else {
-            debugger_found = internal::is_debugger_present_linux();
+    bool detect_debugger(JNIEnv *env) {
+        if (!g_config.enableDebuggerDetection) {
+            return false;
         }
 
-        // Additional generic checks
-        if (!debugger_found) {
-            debugger_found = !internal::check_ptrace_protection();
-        }
-
-        if (debugger_found) {
-            // Add some obfuscation to make analysis harder
+        auto handle_detection = [&](const char *message) {
+            internal::debug_print(env, message);
+            if (g_config.enableDebugRegisterScrubbing) {
+                internal::corrupt_debug_registers();
+            }
             anti_timing_delay();
+            return true;
+        };
+
+        if (g_config.enableDebuggerApiChecks && internal::check_debugger_api()) {
+            return handle_detection("[Anti-Debug] API-based debugger detection triggered");
         }
 
-        return debugger_found;
+        if (g_config.enableDebuggerTracerCheck && internal::check_tracer_pid()) {
+            return handle_detection("[Anti-Debug] Tracer PID detected");
+        }
+
+        if (g_config.enableDebuggerPtraceCheck && internal::check_ptrace_self_test()) {
+            return handle_detection("[Anti-Debug] ptrace self-test indicates tracing");
+        }
+
+        if (g_config.enableDebuggerProcessScan && internal::check_debugger_processes()) {
+            return handle_detection("[Anti-Debug] Suspicious debugger process detected");
+        }
+
+        if (g_config.enableDebuggerModuleScan && internal::check_suspicious_modules()) {
+            return handle_detection("[Anti-Debug] Suspicious module detected");
+        }
+
+        if (g_config.enableDebuggerEnvironmentScan && internal::check_debug_environment()) {
+            return handle_detection("[Anti-Debug] Debugger-related environment variable detected");
+        }
+
+        if (g_config.enableDebuggerTimingCheck && internal::check_timing_anomaly()) {
+            return handle_detection("[Anti-Debug] Timing anomaly detected");
+        }
+
+        if (g_config.enableDebugRegisterScrubbing) {
+            internal::corrupt_debug_registers();
+        }
+
+        return false;
     }
 
     bool check_vm_protection(JNIEnv *env) {
-        if (!g_vm_protection || env == nullptr) return true;
+        if (!g_config.enableVmIntegrityChecks || env == nullptr) return true;
 
         // Check JNI function table integrity
         if (env->functions == nullptr) {
@@ -206,7 +227,7 @@ namespace native_jvm::anti_debug {
     }
 
     bool detect_tampering() {
-        if (!g_anti_tamper) return false;
+        if (!g_config.enableAntiTamper) return false;
 
         // Check for code section modifications
         return !internal::validate_code_sections();
@@ -215,29 +236,29 @@ namespace native_jvm::anti_debug {
     bool runtime_anti_debug_check(JNIEnv *env) {
         if (!g_initialized) return true;
 
-        // Monitor for agent loading attempts
-        if (!monitor_agent_loading(env)) {
+        if (g_config.enableJvmtiAgentBlocking && !monitor_agent_loading(env)) {
             internal::debug_print(env, "[Anti-Debug] Agent loading detected - terminating!");
             protected_exit(7);
             return false;
         }
 
-        // Periodic debugger detection
-        if (g_debugger_detection && detect_debugger()) {
+        if (g_config.enableDebuggerDetection && detect_debugger(env)) {
             protected_exit(4);
             return false;
         }
 
-        // VM protection check
-        if (g_vm_protection && !check_vm_protection(env)) {
+        if (g_config.enableVmIntegrityChecks && !check_vm_protection(env)) {
             protected_exit(5);
             return false;
         }
 
-        // Tampering check
-        if (g_anti_tamper && detect_tampering()) {
+        if (g_config.enableAntiTamper && detect_tampering()) {
             protected_exit(6);
             return false;
+        }
+
+        if (g_config.enableDebugRegisterScrubbing) {
+            internal::corrupt_debug_registers();
         }
 
         return true;
@@ -292,11 +313,14 @@ namespace native_jvm::anti_debug {
     }
 
     bool detect_agent_attachment() {
+        if (!g_config.enableJvmtiAgentBlocking) {
+            return false;
+        }
         return g_agent_attachment_attempts.load() > 0;
     }
 
     bool monitor_agent_loading(JNIEnv *env) {
-        if (env == nullptr) return true;
+        if (env == nullptr || !g_config.enableJvmtiAgentBlocking) return true;
 
         // Check for Instrumentation class loading
         jclass instrClass = env->FindClass("sun/instrument/InstrumentationImpl");
@@ -437,82 +461,41 @@ namespace native_jvm::anti_debug {
 #endif
         }
 
-        bool is_debugger_present_windows() {
+        bool check_debugger_api() {
 #ifdef _WIN32
-            // Method 1: IsDebuggerPresent API
             if (IsDebuggerPresent()) {
                 return true;
             }
 
-            // Method 2: CheckRemoteDebuggerPresent
             BOOL remote_debugger = FALSE;
             CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote_debugger);
             if (remote_debugger) {
                 return true;
             }
-
-            // Method 3: NtQueryInformationProcess
-            typedef NTSTATUS (NTAPI *pfnNtQueryInformationProcess)(
-                HANDLE ProcessHandle,
-                ULONG ProcessInformationClass,
-                PVOID ProcessInformation,
-                ULONG ProcessInformationLength,
-                PULONG ReturnLength
-            );
-
-            HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
-            if (hNtdll) {
-                pfnNtQueryInformationProcess NtQueryInformationProcess =
-                    (pfnNtQueryInformationProcess)GetProcAddress(hNtdll, "NtQueryInformationProcess");
-
-                if (NtQueryInformationProcess) {
-                    DWORD debugPort = 0;
-                    NTSTATUS status = NtQueryInformationProcess(
-                        GetCurrentProcess(),
-                        7, // ProcessDebugPort
-                        &debugPort,
-                        sizeof(debugPort),
-                        NULL
-                    );
-
-                    if (status == 0 && debugPort != 0) {
-                        return true;
-                    }
-                }
-            }
-
-            // Method 4: Check for debugger processes
-            HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if (snapshot != INVALID_HANDLE_VALUE) {
-                PROCESSENTRY32 entry;
-                entry.dwSize = sizeof(PROCESSENTRY32);
-
-                if (Process32First(snapshot, &entry)) {
-                    do {
-                        // List of common debugger process names
-                        const char* debugger_names[] = {
-                            "ollydbg.exe", "x64dbg.exe", "x32dbg.exe", "windbg.exe",
-                            "ida.exe", "ida64.exe", "idaq.exe", "idaq64.exe",
-                            "immunitydebugger.exe", "cheatengine-x86_64.exe"
-                        };
-
-                        for (const char* name : debugger_names) {
-                            if (_stricmp(entry.szExeFile, name) == 0) {
-                                CloseHandle(snapshot);
-                                return true;
-                            }
-                        }
-                    } while (Process32Next(snapshot, &entry));
-                }
-                CloseHandle(snapshot);
-            }
 #endif
             return false;
         }
 
-        bool is_debugger_present_linux() {
-#ifndef _WIN32
-            // Method 1: Check TracerPid in /proc/self/status
+        bool check_tracer_pid() {
+#ifdef _WIN32
+            HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+            if (hNtdll) {
+                using NtQueryInformationProcessFn = NTSTATUS (NTAPI *)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+                auto NtQueryInformationProcess = reinterpret_cast<NtQueryInformationProcessFn>(
+                    GetProcAddress(hNtdll, "NtQueryInformationProcess"));
+                if (NtQueryInformationProcess) {
+                    DWORD debugPort = 0;
+                    if (NtQueryInformationProcess(
+                            GetCurrentProcess(),
+                            7,
+                            &debugPort,
+                            sizeof(debugPort),
+                            nullptr) == 0 && debugPort != 0) {
+                        return true;
+                    }
+                }
+            }
+#else
             FILE* status_file = fopen("/proc/self/status", "r");
             if (status_file) {
                 char line[256];
@@ -526,32 +509,195 @@ namespace native_jvm::anti_debug {
                 }
                 fclose(status_file);
             }
-
-            // Method 2: Try to ptrace ourselves
-            pid_t child_pid = fork();
-            if (child_pid == 0) {
-                // Child process
-                if (ptrace(PTRACE_TRACEME, 0, 1, 0) < 0) {
-                    exit(1); // Already being traced
-                } else {
-                    exit(0); // Not being traced
-                }
-            } else if (child_pid > 0) {
-                // Parent process
-                int status;
-                waitpid(child_pid, &status, 0);
-                return WEXITSTATUS(status) != 0;
-            }
 #endif
             return false;
         }
 
-        bool check_ptrace_protection() {
-#ifndef _WIN32
-            // Try to use ptrace on ourselves - if it fails, we might be debugged
-            return ptrace(PTRACE_TRACEME, 0, 1, 0) >= 0;
+        bool check_ptrace_self_test() {
+#ifdef _WIN32
+            return false;
+#else
+            errno = 0;
+            if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1) {
+                return errno == EPERM;
+            }
+            ptrace(PTRACE_DETACH, 0, nullptr, nullptr);
+            return false;
 #endif
-            return true;
+        }
+
+        bool check_debugger_processes() {
+#ifdef _WIN32
+            HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (snapshot == INVALID_HANDLE_VALUE) {
+                return false;
+            }
+
+            PROCESSENTRY32 entry;
+            entry.dwSize = sizeof(PROCESSENTRY32);
+
+            const char* debugger_names[] = {
+                "ollydbg.exe", "x64dbg.exe", "x32dbg.exe", "windbg.exe",
+                "ida.exe", "ida64.exe", "idaq.exe", "idaq64.exe",
+                "immunitydebugger.exe", "cheatengine-x86_64.exe", "ghidra.exe"
+            };
+
+            if (Process32First(snapshot, &entry)) {
+                do {
+                    for (const char* name : debugger_names) {
+                        if (_stricmp(entry.szExeFile, name) == 0) {
+                            CloseHandle(snapshot);
+                            return true;
+                        }
+                    }
+                } while (Process32Next(snapshot, &entry));
+            }
+            CloseHandle(snapshot);
+#else
+            DIR* proc = opendir("/proc");
+            if (!proc) {
+                return false;
+            }
+
+            pid_t self = getpid();
+            const char* debugger_names[] = {
+                "gdb", "lldb", "frida", "radare2", "x64dbg", "x32dbg", "ida", "hopper", "dnspy", "pydevd"
+            };
+
+            struct dirent* entry;
+            while ((entry = readdir(proc)) != nullptr) {
+                if (!isdigit(entry->d_name[0])) {
+                    continue;
+                }
+                pid_t pid = static_cast<pid_t>(atoi(entry->d_name));
+                if (pid == self) {
+                    continue;
+                }
+                std::string cmdline_path = std::string("/proc/") + entry->d_name + "/cmdline";
+                std::ifstream cmdline(cmdline_path);
+                if (!cmdline.is_open()) {
+                    continue;
+                }
+                std::string raw;
+                std::getline(cmdline, raw, '\0');
+                cmdline.close();
+                std::string lower;
+                lower.reserve(raw.size());
+                for (unsigned char c : raw) {
+                    lower.push_back(static_cast<char>(std::tolower(c)));
+                }
+                for (const char* name : debugger_names) {
+                    if (lower.find(name) != std::string::npos) {
+                        closedir(proc);
+                        return true;
+                    }
+                }
+            }
+            closedir(proc);
+#endif
+            return false;
+        }
+
+        bool check_suspicious_modules() {
+#ifdef _WIN32
+            HMODULE modules[1024];
+            DWORD needed = 0;
+            if (!EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &needed)) {
+                return false;
+            }
+
+            const char* suspicious_modules[] = {
+                "ntsdexts.dll", "sbie.dll",
+                "frida", "ida", "ollydbg", "x64dbg"
+            };
+
+            size_t module_count = needed / sizeof(HMODULE);
+            char module_name[MAX_PATH];
+            for (size_t i = 0; i < module_count; ++i) {
+                if (GetModuleBaseNameA(GetCurrentProcess(), modules[i], module_name, sizeof(module_name))) {
+                    std::string lower(module_name);
+                    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+                    for (const char* suspicious : suspicious_modules) {
+                        if (lower.find(suspicious) != std::string::npos) {
+                            return true;
+                        }
+                    }
+                }
+            }
+#else
+            FILE* maps = fopen("/proc/self/maps", "r");
+            if (!maps) {
+                return false;
+            }
+
+            const char* suspicious_tokens[] = {
+                "frida", "gdb", "lldb", "trace", "valgrind", "rrlib", "libdwarf", "libunwind"
+            };
+
+            char line[512];
+            while (fgets(line, sizeof(line), maps)) {
+                std::string lower(line);
+                std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+                for (const char* token : suspicious_tokens) {
+                    if (lower.find(token) != std::string::npos) {
+                        fclose(maps);
+                        return true;
+                    }
+                }
+            }
+            fclose(maps);
+#endif
+            return false;
+        }
+
+        bool check_debug_environment() {
+#ifdef _WIN32
+            const char* vars[] = {
+                "COR_ENABLE_PROFILING", "COMPLUS_ProfAPI_ProfilerCompatibilitySetting",
+                "JAVA_TOOL_OPTIONS", "_NT_SYMBOL_PATH", "DBGHELP_LOG"
+            };
+#else
+            const char* vars[] = {
+                "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "DYLD_INSERT_LIBRARIES",
+                "DYLD_SHARED_REGION", "FRIDA_REUSE_PORT", "RR_TRACE_DIR", "PYTHONINSPECT",
+                "JAVA_TOOL_OPTIONS"
+            };
+#endif
+            for (const char* var : vars) {
+#ifdef _WIN32
+                size_t value_len = 0;
+                char* value = nullptr;
+                if (_dupenv_s(&value, &value_len, var) == 0 && value != nullptr && value[0] != '\0') {
+                    free(value);
+                    return true;
+                }
+                free(value);
+#else
+                const char* value = std::getenv(var);
+                if (value != nullptr && value[0] != '\0') {
+                    return true;
+                }
+#endif
+            }
+            return false;
+        }
+
+        bool check_timing_anomaly() {
+            using namespace std::chrono;
+            auto start = steady_clock::now();
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start).count();
+            if (elapsed > 80) {
+                return true;
+            }
+
+            volatile int guard = 0;
+            for (int i = 0; i < 1500000; ++i) {
+                guard += i;
+            }
+            (void)guard;
+            auto loop_elapsed = duration_cast<milliseconds>(steady_clock::now() - start).count();
+            return loop_elapsed > 200;
         }
 
         void corrupt_debug_registers() {
@@ -578,7 +724,7 @@ namespace native_jvm::anti_debug {
         }
 
         void debug_print(JNIEnv *env, const char* message) {
-            if (env == nullptr || message == nullptr) return;
+            if (!g_config.enableDebugLogging || env == nullptr || message == nullptr) return;
 
             jclass systemClass = env->FindClass("java/lang/System");
             if (systemClass != nullptr) {

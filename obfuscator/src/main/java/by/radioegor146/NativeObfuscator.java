@@ -521,24 +521,70 @@ public class NativeObfuscator {
         StringBuilder configBuilder = new StringBuilder();
         configBuilder.append("#ifndef ANTI_DEBUG_CONFIG_HPP_GUARD\n");
         configBuilder.append("#define ANTI_DEBUG_CONFIG_HPP_GUARD\n\n");
+        configBuilder.append("#include \"anti_debug.hpp\"\n\n");
         configBuilder.append("// Auto-generated anti-debug configuration\n");
         configBuilder.append("namespace native_jvm::anti_debug::config {\n\n");
 
         configBuilder.append("    constexpr bool ENABLE_GHOTSPOT_STRUCT_NULLIFICATION = ")
                      .append(antiDebugConfig.isGHotSpotVMStructsNullificationEnabled() ? "true" : "false")
                      .append(";\n");
-
         configBuilder.append("    constexpr bool ENABLE_DEBUGGER_DETECTION = ")
                      .append(antiDebugConfig.isDebuggerDetectionEnabled() ? "true" : "false")
                      .append(";\n");
-
-        configBuilder.append("    constexpr bool ENABLE_VM_PROTECTION = ")
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_API_CHECKS = ")
+                     .append(antiDebugConfig.isDebuggerApiChecksEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_TRACER_CHECK = ")
+                     .append(antiDebugConfig.isDebuggerTracerCheckEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_PTRACE_CHECK = ")
+                     .append(antiDebugConfig.isDebuggerPtraceCheckEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_PROCESS_SCAN = ")
+                     .append(antiDebugConfig.isDebuggerProcessScanEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_MODULE_SCAN = ")
+                     .append(antiDebugConfig.isDebuggerModuleScanEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_ENV_SCAN = ")
+                     .append(antiDebugConfig.isDebuggerEnvironmentScanEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_TIMING_CHECK = ")
+                     .append(antiDebugConfig.isDebuggerTimingCheckEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_VM_INTEGRITY_CHECKS = ")
                      .append(antiDebugConfig.isVmProtectionEnabled() ? "true" : "false")
                      .append(";\n");
-
+        configBuilder.append("    constexpr bool ENABLE_JVMTI_AGENT_BLOCKING = ")
+                     .append(antiDebugConfig.isJvmtiAgentBlockingEnabled() ? "true" : "false")
+                     .append(";\n");
         configBuilder.append("    constexpr bool ENABLE_ANTI_TAMPER = ")
                      .append(antiDebugConfig.isAntiTamperEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUG_REGISTER_SCRUBBING = ")
+                     .append(antiDebugConfig.isDebugRegisterScrubbingEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUG_LOGGING = ")
+                     .append(antiDebugConfig.isDebugLoggingEnabled() ? "true" : "false")
                      .append(";\n\n");
+
+        configBuilder.append("    inline anti_debug::AntiDebugRuntimeConfig create_runtime_config() {\n");
+        configBuilder.append("        anti_debug::AntiDebugRuntimeConfig config{};\n");
+        configBuilder.append("        config.enableGHotSpotVMStructNullification = ENABLE_GHOTSPOT_STRUCT_NULLIFICATION;\n");
+        configBuilder.append("        config.enableDebuggerDetection = ENABLE_DEBUGGER_DETECTION;\n");
+        configBuilder.append("        config.enableDebuggerApiChecks = ENABLE_DEBUGGER_API_CHECKS;\n");
+        configBuilder.append("        config.enableDebuggerTracerCheck = ENABLE_DEBUGGER_TRACER_CHECK;\n");
+        configBuilder.append("        config.enableDebuggerPtraceCheck = ENABLE_DEBUGGER_PTRACE_CHECK;\n");
+        configBuilder.append("        config.enableDebuggerProcessScan = ENABLE_DEBUGGER_PROCESS_SCAN;\n");
+        configBuilder.append("        config.enableDebuggerModuleScan = ENABLE_DEBUGGER_MODULE_SCAN;\n");
+        configBuilder.append("        config.enableDebuggerEnvironmentScan = ENABLE_DEBUGGER_ENV_SCAN;\n");
+        configBuilder.append("        config.enableDebuggerTimingCheck = ENABLE_DEBUGGER_TIMING_CHECK;\n");
+        configBuilder.append("        config.enableVmIntegrityChecks = ENABLE_VM_INTEGRITY_CHECKS;\n");
+        configBuilder.append("        config.enableJvmtiAgentBlocking = ENABLE_JVMTI_AGENT_BLOCKING;\n");
+        configBuilder.append("        config.enableAntiTamper = ENABLE_ANTI_TAMPER;\n");
+        configBuilder.append("        config.enableDebugRegisterScrubbing = ENABLE_DEBUG_REGISTER_SCRUBBING;\n");
+        configBuilder.append("        config.enableDebugLogging = ENABLE_DEBUG_LOGGING;\n");
+        configBuilder.append("        return config;\n    }\n\n");
 
         configBuilder.append("} // namespace native_jvm::anti_debug::config\n\n");
         configBuilder.append("#endif // ANTI_DEBUG_CONFIG_HPP_GUARD\n");
@@ -558,10 +604,21 @@ public class NativeObfuscator {
         // Read the existing file
         String content = new String(Files.readAllBytes(nativeJvmOutputFile), StandardCharsets.UTF_8);
 
-        // Add anti-debug include if not present
+        // Ensure anti-debug headers are included
         if (!content.contains("#include \"anti_debug.hpp\"")) {
             content = content.replace("#include \"string_pool.hpp\"",
-                    "#include \"string_pool.hpp\"\n#include \"anti_debug.hpp\"\n#include \"anti_debug_config.hpp\"");
+                    "#include \"string_pool.hpp\"\n#include \"anti_debug.hpp\"");
+        }
+        if (!content.contains("#include \"anti_debug_config.hpp\"")) {
+            int includeIndex = content.indexOf("#include \"anti_debug.hpp\"");
+            if (includeIndex >= 0) {
+                int lineEnd = content.indexOf('\n', includeIndex);
+                if (lineEnd >= 0) {
+                    content = content.substring(0, lineEnd + 1)
+                            + "#include \"anti_debug_config.hpp\"\n"
+                            + content.substring(lineEnd + 1);
+                }
+            }
         }
 
         // Generate anti-debug initialization code
@@ -580,12 +637,7 @@ public class NativeObfuscator {
     private String generateAntiDebugInitCode(AntiDebugConfig antiDebugConfig) {
         StringBuilder code = new StringBuilder();
         code.append("        // Initialize anti-debug protection\n");
-        code.append("        anti_debug::init_anti_debug(env, ");
-        code.append(antiDebugConfig.isGHotSpotVMStructsNullificationEnabled() ? "true" : "false").append(", ");
-        code.append(antiDebugConfig.isDebuggerDetectionEnabled() ? "true" : "false").append(", ");
-        code.append(antiDebugConfig.isVmProtectionEnabled() ? "true" : "false").append(", ");
-        code.append(antiDebugConfig.isAntiTamperEnabled() ? "true" : "false");
-        code.append(");\n");
+        code.append("        anti_debug::init_anti_debug(env, native_jvm::anti_debug::config::create_runtime_config());\n");
         code.append("        if (env->ExceptionCheck())\n");
         code.append("            return;");
         return code.toString();
