@@ -322,6 +322,92 @@ namespace native_jvm::anti_debug {
         jint (*original_GetEnv)(JavaVM *vm, void **penv, jint version) = nullptr;
         void* original_agent_onattach = nullptr;
 
+        #ifdef _WIN32
+        // --- IAT hook GetProcAddress to intercept Agent_OnAttach / Agent_OnLoad ---
+
+        typedef FARPROC (WINAPI *PFN_GetProcAddress)(HMODULE, LPCSTR);
+        static PFN_GetProcAddress original_GetProcAddress = nullptr;
+
+        // Blocker for Agent_OnAttach/Agent_OnLoad
+        static jint JNICALL blocked_Agent_OnAttach(JavaVM *vm, char *options, void *reserved) {
+            JNIEnv *env = nullptr;
+            if (vm && vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_OK && env != nullptr) {
+                debug_print(env, "[Anti-Debug] JVMTI: Agent_OnAttach/OnLoad blocked!");
+            }
+            g_agent_attachment_attempts.fetch_add(1);
+            return JNI_ERR;
+        }
+
+        // Our GetProcAddress replacement
+        static FARPROC WINAPI hooked_GetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
+            if (lpProcName) {
+                if (lstrcmpiA(lpProcName, "Agent_OnAttach") == 0) {
+                    OutputDebugStringA("[Anti-Debug] JVMTI: GetProcAddress('Agent_OnAttach') intercepted - returning blocker");
+                    g_agent_attachment_attempts.fetch_add(1);
+                    return (FARPROC)blocked_Agent_OnAttach;
+                }
+                if (lstrcmpiA(lpProcName, "Agent_OnLoad") == 0) {
+                    OutputDebugStringA("[Anti-Debug] JVMTI: GetProcAddress('Agent_OnLoad') intercepted - returning blocker");
+                    g_agent_attachment_attempts.fetch_add(1);
+                    return (FARPROC)blocked_Agent_OnAttach;
+                }
+            }
+            return original_GetProcAddress ? original_GetProcAddress(hModule, lpProcName) : NULL;
+        }
+
+        // Patch IAT(GetProcAddress) of a given module
+        static bool patch_iat_getprocaddress(HMODULE mod) {
+            if (!mod) return false;
+
+            BYTE *base = (BYTE*)mod;
+            IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER*)base;
+            if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+
+            IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+            if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+
+            IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+            if (!dir.VirtualAddress || !dir.Size) return false;
+
+            IMAGE_IMPORT_DESCRIPTOR *desc = (IMAGE_IMPORT_DESCRIPTOR*)(base + dir.VirtualAddress);
+            bool patched = false;
+
+            for (; desc->Name; ++desc) {
+                IMAGE_THUNK_DATA *thunk = (IMAGE_THUNK_DATA*)(base + desc->FirstThunk);
+                IMAGE_THUNK_DATA *orig  = desc->OriginalFirstThunk ? (IMAGE_THUNK_DATA*)(base + desc->OriginalFirstThunk) : nullptr;
+                if (!orig) continue;
+
+                for (; orig->u1.AddressOfData; ++orig, ++thunk) {
+                    if (IMAGE_SNAP_BY_ORDINAL(orig->u1.Ordinal)) continue;
+                    IMAGE_IMPORT_BY_NAME *name = (IMAGE_IMPORT_BY_NAME*)(base + orig->u1.AddressOfData);
+                    if (!name) continue;
+
+                    if (lstrcmpiA((char*)name->Name, "GetProcAddress") == 0) {
+                        DWORD oldProtect;
+        #ifdef _WIN64
+                        if (VirtualProtect(&thunk->u1.Function, sizeof(ULONGLONG), PAGE_READWRITE, &oldProtect)) {
+                            if (!original_GetProcAddress)
+                                original_GetProcAddress = (PFN_GetProcAddress)(ULONG_PTR)thunk->u1.Function;
+                            thunk->u1.Function = (ULONGLONG)(ULONG_PTR)hooked_GetProcAddress;
+                            VirtualProtect(&thunk->u1.Function, sizeof(ULONGLONG), oldProtect, &oldProtect);
+                            patched = true;
+                        }
+        #else
+                        if (VirtualProtect(&thunk->u1.Function, sizeof(DWORD), PAGE_READWRITE, &oldProtect)) {
+                            if (!original_GetProcAddress)
+                                original_GetProcAddress = (PFN_GetProcAddress)thunk->u1.Function;
+                            thunk->u1.Function = (DWORD)hooked_GetProcAddress;
+                            VirtualProtect(&thunk->u1.Function, sizeof(DWORD), oldProtect, &oldProtect);
+                            patched = true;
+                        }
+        #endif
+                    }
+                }
+            }
+            return patched;
+        }
+        #endif
+
         // Hooked GetEnv function
         jint JNICALL hooked_GetEnv(JavaVM *vm, void **penv, jint version) {
             // Debug output
@@ -332,6 +418,7 @@ namespace native_jvm::anti_debug {
                     debug_print(env, "[Anti-Debug] JVMTI: GetEnv() called - BLOCKED!");
                 }
                 g_agent_attachment_attempts.fetch_add(1);
+                protected_exit(8);
                 return JNI_EVERSION; // Return error to prevent JVMTI access
             }
 
@@ -567,43 +654,41 @@ namespace native_jvm::anti_debug {
             return false;
         }
 
-        bool hook_agent_onattach() {
-#ifdef _WIN32
-            // Try to find and hook common agent attachment points
-            HMODULE hJvm = GetModuleHandleA("jvm.dll");
-            if (hJvm == NULL) return false;
+       bool hook_agent_onattach() {
+       #ifdef _WIN32
+           // Try to hook jvm.dll's IAT(GetProcAddress)
+           bool ok = false;
 
-            // Look for Agent_OnAttach export
-            FARPROC agent_onattach = GetProcAddress(hJvm, "Agent_OnAttach");
-            if (agent_onattach != NULL) {
-                // Store original pointer
-                original_agent_onattach = (void*)agent_onattach;
+           HMODULE hJvm = GetModuleHandleA("jvm.dll");
+           if (hJvm != NULL) {
+               if (patch_iat_getprocaddress(hJvm)) {
+                   OutputDebugStringA("[Anti-Debug] JVMTI: hook_agent_onattach installed via IAT(GetProcAddress) on jvm.dll");
+                   ok = true;
+               }
+           }
 
-                // For now, just log that we found it
-                return true;
-            }
+           // Also try main module to be robust across launchers
+           HMODULE hSelf = GetModuleHandleA(NULL);
+           if (patch_iat_getprocaddress(hSelf)) {
+               OutputDebugStringA("[Anti-Debug] JVMTI: hook_agent_onattach installed via IAT(GetProcAddress) on process");
+               ok = true;
+           }
 
-            // Check for dynamic agent loading functions
-            FARPROC jvm_attach = GetProcAddress(hJvm, "JVM_Attach");
-            if (jvm_attach != NULL) {
-                // Found attachment function
-                return true;
-            }
-#else
-            // Linux implementation - check for agent libraries
-            void *handle = dlopen("libjvm.so", RTLD_LAZY | RTLD_NOLOAD);
-            if (handle != NULL) {
-                void *agent_onattach = dlsym(handle, "Agent_OnAttach");
-                if (agent_onattach != NULL) {
-                    original_agent_onattach = agent_onattach;
-                    // For demonstration, we're just logging the detection
-                    return true;
-                }
-                dlclose(handle);
-            }
-#endif
-            return false;
-        }
+           return ok;
+       #else
+           // Linux implementation - check for agent libraries
+           void *handle = dlopen("libjvm.so", RTLD_LAZY | RTLD_NOLOAD);
+           if (handle != NULL) {
+               void *agent_onattach = dlsym(handle, "Agent_OnAttach");
+               if (agent_onattach != NULL) {
+                   original_agent_onattach = agent_onattach;
+                   return true;
+               }
+               dlclose(handle);
+           }
+           return false;
+       #endif
+       }
     }
 
 } // namespace native_jvm::anti_debug
