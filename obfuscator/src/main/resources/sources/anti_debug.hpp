@@ -33,7 +33,7 @@ namespace native_jvm::anti_debug {
     bool nullify_ghotspot_vm_structs();
     bool detect_debugger(JNIEnv *env);
     bool check_vm_protection(JNIEnv *env);
-    bool detect_tampering();
+    bool detect_tampering(JNIEnv *env);
     bool runtime_anti_debug_check(JNIEnv *env);
     void anti_timing_delay();
     void protected_exit(int exit_code);
@@ -44,7 +44,7 @@ namespace native_jvm::anti_debug {
     namespace internal {
         bool is_windows();
         void corrupt_debug_registers();
-        bool validate_code_sections();
+        bool validate_code_sections(JNIEnv *env);
         bool check_debugger_api();
         bool check_tracer_pid();
         bool check_ptrace_self_test();

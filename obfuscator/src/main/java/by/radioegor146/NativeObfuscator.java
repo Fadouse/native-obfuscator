@@ -25,6 +25,8 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -48,6 +50,8 @@ public class NativeObfuscator {
     private final NodeCache<String> cachedClasses;
     private final NodeCache<CachedMethodInfo> cachedMethods;
     private final NodeCache<CachedFieldInfo> cachedFields;
+    private byte[] lastStringPoolBytes;
+    private byte[] lastNativeJvmSourceBytes;
 
     public static class InvokeDynamicInfo {
         private final String methodName;
@@ -467,10 +471,13 @@ public class NativeObfuscator {
             metadataReader.close();
         }
 
-        Files.write(cppDir.resolve("string_pool.cpp"), stringPool.build().getBytes(StandardCharsets.UTF_8));
+        String stringPoolSource = stringPool.build();
+        lastStringPoolBytes = stringPool.getEncryptedBytes();
+        Files.write(cppDir.resolve("string_pool.cpp"), stringPoolSource.getBytes(StandardCharsets.UTF_8));
 
-        Files.write(cppDir.resolve("native_jvm_output.cpp"), mainSourceBuilder.build(nativeDir, currentClassId)
-                .getBytes(StandardCharsets.UTF_8));
+        String nativeJvmOutputSource = mainSourceBuilder.build(nativeDir, currentClassId);
+        lastNativeJvmSourceBytes = nativeJvmOutputSource.getBytes(StandardCharsets.UTF_8);
+        Files.write(cppDir.resolve("native_jvm_output.cpp"), lastNativeJvmSourceBytes);
 
         Files.write(cppDir.resolve("CMakeLists.txt"), cMakeBuilder.build().getBytes(StandardCharsets.UTF_8));
     }
@@ -507,7 +514,7 @@ public class NativeObfuscator {
 
         // Generate anti-debug configuration header if any anti-debug features are enabled
         if (antiDebugConfig.isAnyEnabled()) {
-            generateAntiDebugConfig(outputDir.resolve("cpp"), antiDebugConfig);
+            generateAntiDebugConfig(outputDir, outputDir.resolve("cpp"), antiDebugConfig, getNativeDir() + "/Loader");
 
             // Update the generated native_jvm_output.cpp to include anti-debug initialization
             updateNativeJvmOutputWithAntiDebug(outputDir.resolve("cpp"), antiDebugConfig);
@@ -517,11 +524,37 @@ public class NativeObfuscator {
     /**
      * Generates anti-debug configuration header file
      */
-    private void generateAntiDebugConfig(Path cppDir, AntiDebugConfig antiDebugConfig) throws IOException {
+    private void generateAntiDebugConfig(Path outputDir, Path cppDir, AntiDebugConfig antiDebugConfig, String loaderClassInternalName) throws IOException {
+        if (loaderClassInternalName == null) {
+            loaderClassInternalName = "";
+        }
+
+        byte[] stringPoolBytes = lastStringPoolBytes == null ? new byte[0] : lastStringPoolBytes;
+        byte[] nativeSourceBytes = lastNativeJvmSourceBytes == null ? new byte[0] : lastNativeJvmSourceBytes;
+        int stringPoolLength = Math.max(1, stringPoolBytes.length);
+        byte[] stringPoolBytesForHash = new byte[stringPoolLength];
+        System.arraycopy(stringPoolBytes, 0, stringPoolBytesForHash, 0, stringPoolBytes.length);
+        byte[] stringPoolHash = sha256(stringPoolBytesForHash);
+        byte[] nativeSourceHash = sha256(nativeSourceBytes);
+
+        byte[] loaderClassHash = new byte[0];
+        boolean hasLoaderHash = false;
+        if (!loaderClassInternalName.isEmpty()) {
+            Path primaryJar = findPrimaryJar(outputDir);
+            if (primaryJar != null) {
+                byte[] loaderBytes = readJarEntry(primaryJar, loaderClassInternalName + ".class");
+                if (loaderBytes != null) {
+                    loaderClassHash = sha256(loaderBytes);
+                    hasLoaderHash = true;
+                }
+            }
+        }
+
         StringBuilder configBuilder = new StringBuilder();
         configBuilder.append("#ifndef ANTI_DEBUG_CONFIG_HPP_GUARD\n");
         configBuilder.append("#define ANTI_DEBUG_CONFIG_HPP_GUARD\n\n");
-        configBuilder.append("#include \"anti_debug.hpp\"\n\n");
+        configBuilder.append("#include \"anti_debug.hpp\"\n");
+        configBuilder.append("#include <cstddef>\n\n");
         configBuilder.append("// Auto-generated anti-debug configuration\n");
         configBuilder.append("namespace native_jvm::anti_debug::config {\n\n");
 
@@ -568,6 +601,25 @@ public class NativeObfuscator {
                      .append(antiDebugConfig.isDebugLoggingEnabled() ? "true" : "false")
                      .append(";\n\n");
 
+        configBuilder.append("    constexpr std::size_t STRING_POOL_ENCRYPTED_SIZE = ")
+                     .append(stringPoolLength)
+                     .append("ULL;\n");
+        configBuilder.append("    constexpr unsigned char STRING_POOL_EXPECTED_HASH[32] = { ")
+                     .append(toCppByteArray(stringPoolHash))
+                     .append(" };\n");
+        configBuilder.append("    constexpr unsigned char NATIVE_SOURCE_EXPECTED_HASH[32] = { ")
+                     .append(toCppByteArray(nativeSourceHash))
+                     .append(" };\n");
+        configBuilder.append("    constexpr unsigned char LOADER_CLASS_EXPECTED_HASH[32] = { ")
+                     .append(toCppByteArray(hasLoaderHash ? loaderClassHash : null))
+                     .append(" };\n");
+        configBuilder.append("    constexpr bool HAS_LOADER_HASH = ")
+                     .append(hasLoaderHash ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr const char LOADER_CLASS_INTERNAL_NAME[] = \"")
+                     .append(loaderClassInternalName)
+                     .append("\";\n\n");
+
         configBuilder.append("    inline anti_debug::AntiDebugRuntimeConfig create_runtime_config() {\n");
         configBuilder.append("        anti_debug::AntiDebugRuntimeConfig config{};\n");
         configBuilder.append("        config.enableGHotSpotVMStructNullification = ENABLE_GHOTSPOT_STRUCT_NULLIFICATION;\n");
@@ -590,6 +642,56 @@ public class NativeObfuscator {
         configBuilder.append("#endif // ANTI_DEBUG_CONFIG_HPP_GUARD\n");
 
         Files.write(cppDir.resolve("anti_debug_config.hpp"), configBuilder.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] sha256(byte[] data) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return digest.digest(data);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    private static String toCppByteArray(byte[] data) {
+        if (data == null || data.length == 0) {
+            data = new byte[32];
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < data.length; i++) {
+            builder.append(String.format("0x%02X", data[i] & 0xFF));
+            if (i + 1 < data.length) {
+                builder.append(", ");
+            }
+        }
+        return builder.toString();
+    }
+
+    private static Path findPrimaryJar(Path outputDir) throws IOException {
+        try (java.util.stream.Stream<Path> stream = Files.list(outputDir)) {
+            return stream
+                    .filter(path -> path.getFileName().toString().endsWith(".jar")
+                            && !path.getFileName().toString().equals("debug.jar"))
+                    .findFirst()
+                    .orElse(null);
+        }
+    }
+
+    private static byte[] readJarEntry(Path jarPath, String entryName) throws IOException {
+        if (jarPath == null || entryName == null || entryName.isEmpty()) {
+            return null;
+        }
+        try (JarFile jar = new JarFile(jarPath.toFile())) {
+            ZipEntry entry = jar.getEntry(entryName);
+            if (entry == null) {
+                return null;
+            }
+            try (InputStream inputStream = jar.getInputStream(entry);
+                 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                Util.transfer(inputStream, baos);
+                return baos.toByteArray();
+            }
+        }
     }
 
     /**

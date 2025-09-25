@@ -130,5 +130,9 @@ namespace native_jvm::string_pool {
     char *get_pool() {
         return reinterpret_cast<char *>(pool);
     }
+
+    std::size_t get_pool_size() {
+        return sizeof(pool);
+    }
 }
 

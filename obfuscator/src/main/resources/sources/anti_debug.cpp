@@ -1,4 +1,5 @@
 #include "anti_debug.hpp"
+#include "string_pool.hpp"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -30,12 +31,24 @@
 #include <atomic>
 #include <vector>
 #include <string>
+#include <array>
 #include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <sstream>
 #include <cstring>
 #include <cstdio>
+#include <cstdint>
+
+#ifdef __has_include
+#  if __has_include("anti_debug_config.hpp")
+#    include "anti_debug_config.hpp"
+#    define ANTI_DEBUG_HAS_CONFIG 1
+#  endif
+#endif
+#ifndef ANTI_DEBUG_HAS_CONFIG
+#  define ANTI_DEBUG_HAS_CONFIG 0
+#endif
 
 namespace native_jvm::anti_debug {
 
@@ -87,7 +100,7 @@ namespace native_jvm::anti_debug {
         }
 
         // Initial tampering check
-        if (g_config.enableAntiTamper && detect_tampering()) {
+        if (g_config.enableAntiTamper && detect_tampering(env)) {
             protected_exit(3);
             return false;
         }
@@ -226,11 +239,10 @@ namespace native_jvm::anti_debug {
         return true;
     }
 
-    bool detect_tampering() {
+    bool detect_tampering(JNIEnv *env) {
         if (!g_config.enableAntiTamper) return false;
 
-        // Check for code section modifications
-        return !internal::validate_code_sections();
+        return !internal::validate_code_sections(env);
     }
 
     bool runtime_anti_debug_check(JNIEnv *env) {
@@ -252,7 +264,7 @@ namespace native_jvm::anti_debug {
             return false;
         }
 
-        if (g_config.enableAntiTamper && detect_tampering()) {
+        if (g_config.enableAntiTamper && detect_tampering(env)) {
             protected_exit(6);
             return false;
         }
@@ -341,6 +353,320 @@ namespace native_jvm::anti_debug {
     }
 
     namespace internal {
+
+        namespace {
+            struct Sha256Context {
+                std::uint8_t data[64];
+                std::uint32_t datalen;
+                std::uint64_t bitlen;
+                std::uint32_t state[8];
+            };
+
+            constexpr std::uint32_t SHA256_K[64] = {
+                0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+                0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+                0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+                0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+                0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+                0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+                0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+                0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+            };
+
+            inline std::uint32_t rotr(std::uint32_t value, std::uint32_t bits) {
+                return (value >> bits) | (value << (32 - bits));
+            }
+
+            inline void sha256_transform(Sha256Context &ctx, const std::uint8_t data[64]) {
+                std::uint32_t m[64];
+                for (std::uint32_t i = 0, j = 0; i < 16; ++i, j += 4) {
+                    m[i] = (static_cast<std::uint32_t>(data[j]) << 24)
+                         | (static_cast<std::uint32_t>(data[j + 1]) << 16)
+                         | (static_cast<std::uint32_t>(data[j + 2]) << 8)
+                         | static_cast<std::uint32_t>(data[j + 3]);
+                }
+                for (std::uint32_t i = 16; i < 64; ++i) {
+                    std::uint32_t s0 = rotr(m[i - 15], 7) ^ rotr(m[i - 15], 18) ^ (m[i - 15] >> 3);
+                    std::uint32_t s1 = rotr(m[i - 2], 17) ^ rotr(m[i - 2], 19) ^ (m[i - 2] >> 10);
+                    m[i] = m[i - 16] + s0 + m[i - 7] + s1;
+                }
+
+                std::uint32_t a = ctx.state[0];
+                std::uint32_t b = ctx.state[1];
+                std::uint32_t c = ctx.state[2];
+                std::uint32_t d = ctx.state[3];
+                std::uint32_t e = ctx.state[4];
+                std::uint32_t f = ctx.state[5];
+                std::uint32_t g = ctx.state[6];
+                std::uint32_t h = ctx.state[7];
+
+                for (std::uint32_t i = 0; i < 64; ++i) {
+                    std::uint32_t S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+                    std::uint32_t ch = (e & f) ^ (~e & g);
+                    std::uint32_t temp1 = h + S1 + ch + SHA256_K[i] + m[i];
+                    std::uint32_t S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+                    std::uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+                    std::uint32_t temp2 = S0 + maj;
+
+                    h = g;
+                    g = f;
+                    f = e;
+                    e = d + temp1;
+                    d = c;
+                    c = b;
+                    b = a;
+                    a = temp1 + temp2;
+                }
+
+                ctx.state[0] += a;
+                ctx.state[1] += b;
+                ctx.state[2] += c;
+                ctx.state[3] += d;
+                ctx.state[4] += e;
+                ctx.state[5] += f;
+                ctx.state[6] += g;
+                ctx.state[7] += h;
+            }
+
+            inline void sha256_init(Sha256Context &ctx) {
+                ctx.datalen = 0;
+                ctx.bitlen = 0;
+                ctx.state[0] = 0x6a09e667;
+                ctx.state[1] = 0xbb67ae85;
+                ctx.state[2] = 0x3c6ef372;
+                ctx.state[3] = 0xa54ff53a;
+                ctx.state[4] = 0x510e527f;
+                ctx.state[5] = 0x9b05688c;
+                ctx.state[6] = 0x1f83d9ab;
+                ctx.state[7] = 0x5be0cd19;
+            }
+
+            inline void sha256_update(Sha256Context &ctx, const std::uint8_t *data, std::size_t len) {
+                for (std::size_t i = 0; i < len; ++i) {
+                    ctx.data[ctx.datalen++] = data[i];
+                    if (ctx.datalen == 64) {
+                        sha256_transform(ctx, ctx.data);
+                        ctx.bitlen += 512;
+                        ctx.datalen = 0;
+                    }
+                }
+            }
+
+            inline void sha256_final(Sha256Context &ctx, std::uint8_t hash[32]) {
+                std::size_t i = ctx.datalen;
+
+                if (ctx.datalen < 56) {
+                    ctx.data[i++] = 0x80;
+                    while (i < 56) {
+                        ctx.data[i++] = 0x00;
+                    }
+                } else {
+                    ctx.data[i++] = 0x80;
+                    while (i < 64) {
+                        ctx.data[i++] = 0x00;
+                    }
+                    sha256_transform(ctx, ctx.data);
+                    std::memset(ctx.data, 0, 56);
+                }
+
+                ctx.bitlen += static_cast<std::uint64_t>(ctx.datalen) * 8;
+                ctx.data[63] = static_cast<std::uint8_t>(ctx.bitlen);
+                ctx.data[62] = static_cast<std::uint8_t>(ctx.bitlen >> 8);
+                ctx.data[61] = static_cast<std::uint8_t>(ctx.bitlen >> 16);
+                ctx.data[60] = static_cast<std::uint8_t>(ctx.bitlen >> 24);
+                ctx.data[59] = static_cast<std::uint8_t>(ctx.bitlen >> 32);
+                ctx.data[58] = static_cast<std::uint8_t>(ctx.bitlen >> 40);
+                ctx.data[57] = static_cast<std::uint8_t>(ctx.bitlen >> 48);
+                ctx.data[56] = static_cast<std::uint8_t>(ctx.bitlen >> 56);
+                sha256_transform(ctx, ctx.data);
+
+                for (std::uint32_t j = 0; j < 4; ++j) {
+                    hash[j]       = (ctx.state[0] >> (24 - j * 8)) & 0xFF;
+                    hash[j + 4]   = (ctx.state[1] >> (24 - j * 8)) & 0xFF;
+                    hash[j + 8]   = (ctx.state[2] >> (24 - j * 8)) & 0xFF;
+                    hash[j + 12]  = (ctx.state[3] >> (24 - j * 8)) & 0xFF;
+                    hash[j + 16]  = (ctx.state[4] >> (24 - j * 8)) & 0xFF;
+                    hash[j + 20]  = (ctx.state[5] >> (24 - j * 8)) & 0xFF;
+                    hash[j + 24]  = (ctx.state[6] >> (24 - j * 8)) & 0xFF;
+                    hash[j + 28]  = (ctx.state[7] >> (24 - j * 8)) & 0xFF;
+                }
+            }
+        }
+
+        static std::array<std::uint8_t, 32> compute_sha256(const unsigned char *data, std::size_t len) {
+            Sha256Context ctx;
+            sha256_init(ctx);
+            sha256_update(ctx, reinterpret_cast<const std::uint8_t*>(data), len);
+            std::array<std::uint8_t, 32> digest{};
+            sha256_final(ctx, digest.data());
+            return digest;
+        }
+
+        static std::array<std::uint8_t, 32> compute_sha256(const std::vector<unsigned char> &data) {
+            return compute_sha256(data.data(), data.size());
+        }
+
+        static bool hashes_equal(const std::array<std::uint8_t, 32> &actual, const unsigned char *expected) {
+            for (std::size_t i = 0; i < actual.size(); ++i) {
+                if (actual[i] != expected[i]) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        static bool load_class_bytes(JNIEnv *env, const char *internal_name, std::vector<unsigned char> &out) {
+            if (env == nullptr || internal_name == nullptr) {
+                return false;
+            }
+
+            jclass targetClass = env->FindClass(internal_name);
+            if (targetClass == nullptr) {
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                return false;
+            }
+
+            jclass classClass = env->FindClass("java/lang/Class");
+            if (classClass == nullptr) {
+                env->DeleteLocalRef(targetClass);
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                return false;
+            }
+
+            jmethodID getResourceAsStream = env->GetMethodID(classClass, "getResourceAsStream", "(Ljava/lang/String;)Ljava/io/InputStream;");
+            if (getResourceAsStream == nullptr) {
+                env->DeleteLocalRef(targetClass);
+                env->DeleteLocalRef(classClass);
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                return false;
+            }
+
+            std::string resourcePath = std::string("/") + internal_name + ".class";
+            jstring jResourcePath = env->NewStringUTF(resourcePath.c_str());
+            if (jResourcePath == nullptr) {
+                env->DeleteLocalRef(targetClass);
+                env->DeleteLocalRef(classClass);
+                return false;
+            }
+
+            jobject inputStream = env->CallObjectMethod(targetClass, getResourceAsStream, jResourcePath);
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+                env->DeleteLocalRef(targetClass);
+                env->DeleteLocalRef(classClass);
+                env->DeleteLocalRef(jResourcePath);
+                return false;
+            }
+
+            if (inputStream == nullptr) {
+                env->DeleteLocalRef(targetClass);
+                env->DeleteLocalRef(classClass);
+                env->DeleteLocalRef(jResourcePath);
+                return false;
+            }
+
+            jclass inputStreamClass = env->FindClass("java/io/InputStream");
+            jclass baosClass = env->FindClass("java/io/ByteArrayOutputStream");
+            if (inputStreamClass == nullptr || baosClass == nullptr) {
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(targetClass);
+                env->DeleteLocalRef(classClass);
+                env->DeleteLocalRef(jResourcePath);
+                env->DeleteLocalRef(inputStream);
+                return false;
+            }
+
+            jmethodID readMethod = env->GetMethodID(inputStreamClass, "read", "([B)I");
+            jmethodID closeMethod = env->GetMethodID(inputStreamClass, "close", "()V");
+            jmethodID baosCtor = env->GetMethodID(baosClass, "<init>", "()V");
+            jmethodID baosWrite = env->GetMethodID(baosClass, "write", "([BII)V");
+            jmethodID baosToByteArray = env->GetMethodID(baosClass, "toByteArray", "()[B");
+            if (!readMethod || !closeMethod || !baosCtor || !baosWrite || !baosToByteArray) {
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(targetClass);
+                env->DeleteLocalRef(classClass);
+                env->DeleteLocalRef(jResourcePath);
+                env->DeleteLocalRef(inputStream);
+                env->DeleteLocalRef(inputStreamClass);
+                env->DeleteLocalRef(baosClass);
+                return false;
+            }
+
+            jobject baos = env->NewObject(baosClass, baosCtor);
+            jbyteArray buffer = env->NewByteArray(4096);
+            if (baos == nullptr || buffer == nullptr) {
+                if (env->ExceptionCheck()) env->ExceptionClear();
+                env->DeleteLocalRef(targetClass);
+                env->DeleteLocalRef(classClass);
+                env->DeleteLocalRef(jResourcePath);
+                env->DeleteLocalRef(inputStream);
+                env->DeleteLocalRef(inputStreamClass);
+                env->DeleteLocalRef(baosClass);
+                if (baos != nullptr) env->DeleteLocalRef(baos);
+                if (buffer != nullptr) env->DeleteLocalRef(buffer);
+                return false;
+            }
+
+            bool success = true;
+            while (success) {
+                jint read = env->CallIntMethod(inputStream, readMethod, buffer);
+                if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                    success = false;
+                    break;
+                }
+                if (read == -1) {
+                    break;
+                }
+                if (read > 0) {
+                    env->CallVoidMethod(baos, baosWrite, buffer, 0, read);
+                    if (env->ExceptionCheck()) {
+                        env->ExceptionClear();
+                        success = false;
+                        break;
+                    }
+                }
+            }
+
+            if (success) {
+                env->CallVoidMethod(inputStream, closeMethod);
+                if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                    success = false;
+                }
+            }
+
+            if (success) {
+                jbyteArray byteArray = static_cast<jbyteArray>(env->CallObjectMethod(baos, baosToByteArray));
+                if (env->ExceptionCheck()) {
+                    env->ExceptionClear();
+                    success = false;
+                } else if (byteArray != nullptr) {
+                    jsize len = env->GetArrayLength(byteArray);
+                    out.resize(static_cast<std::size_t>(len));
+                    env->GetByteArrayRegion(byteArray, 0, len, reinterpret_cast<jbyte*>(out.data()));
+                    if (env->ExceptionCheck()) {
+                        env->ExceptionClear();
+                        out.clear();
+                        success = false;
+                    }
+                    env->DeleteLocalRef(byteArray);
+                } else {
+                    success = false;
+                }
+            }
+
+            env->DeleteLocalRef(buffer);
+            env->DeleteLocalRef(baos);
+            env->DeleteLocalRef(inputStream);
+            env->DeleteLocalRef(inputStreamClass);
+            env->DeleteLocalRef(baosClass);
+            env->DeleteLocalRef(jResourcePath);
+            env->DeleteLocalRef(classClass);
+            env->DeleteLocalRef(targetClass);
+
+            return success;
+        }
 
         // Original function pointers for JVMTI hooks
         jint (*original_GetEnv)(JavaVM *vm, void **penv, jint version) = nullptr;
@@ -716,11 +1042,41 @@ namespace native_jvm::anti_debug {
 #endif
         }
 
-        bool validate_code_sections() {
-            // Simple code integrity check - in a real implementation,
-            // this would check checksums of critical code sections
-            // For now, just return true
+        bool validate_code_sections(JNIEnv *env) {
+#if ANTI_DEBUG_HAS_CONFIG
+            bool ok = true;
+
+            std::size_t pool_size = native_jvm::string_pool::get_pool_size();
+            if (pool_size != native_jvm::anti_debug::config::STRING_POOL_ENCRYPTED_SIZE) {
+                ok = false;
+                debug_print(env, "[Anti-Debug] String pool size mismatch detected");
+            } else {
+                auto pool_hash = compute_sha256(reinterpret_cast<const unsigned char *>(native_jvm::string_pool::get_pool()), pool_size);
+                if (!hashes_equal(pool_hash, native_jvm::anti_debug::config::STRING_POOL_EXPECTED_HASH)) {
+                    ok = false;
+                    debug_print(env, "[Anti-Debug] String pool integrity check failed");
+                }
+            }
+
+            if (env != nullptr && native_jvm::anti_debug::config::HAS_LOADER_HASH) {
+                std::vector<unsigned char> loader_bytes;
+                if (load_class_bytes(env, native_jvm::anti_debug::config::LOADER_CLASS_INTERNAL_NAME, loader_bytes)) {
+                    auto loader_hash = compute_sha256(loader_bytes);
+                    if (!hashes_equal(loader_hash, native_jvm::anti_debug::config::LOADER_CLASS_EXPECTED_HASH)) {
+                        ok = false;
+                        debug_print(env, "[Anti-Debug] Loader class integrity check failed");
+                    }
+                } else {
+                    ok = false;
+                    debug_print(env, "[Anti-Debug] Unable to read loader class bytes");
+                }
+            }
+
+            return ok;
+#else
+            (void)env;
             return true;
+#endif
         }
 
         void debug_print(JNIEnv *env, const char* message) {

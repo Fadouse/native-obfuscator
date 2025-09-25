@@ -29,6 +29,7 @@ public class StringPool {
     private final Map<String, Entry> pool;
 
     private final SecureRandom random;
+    private byte[] lastEncrypted;
 
     public StringPool() {
         this.length = 0;
@@ -130,6 +131,7 @@ public class StringPool {
         for (int i = 0; i < encryptedBytes.size(); i++) {
             encrypted[i] = encryptedBytes.get(i);
         }
+        this.lastEncrypted = encrypted;
 
         String poolArray = String.format("{ %s }", IntStream.range(0, encrypted.length)
                 .map(i -> encrypted[i] & 0xFF)
@@ -141,6 +143,10 @@ public class StringPool {
                 "size", Math.max(1, encrypted.length) + "LL",
                 "value", poolArray
         ));
+    }
+
+    public byte[] getEncryptedBytes() {
+        return lastEncrypted == null ? new byte[0] : lastEncrypted.clone();
     }
 
     private static byte[] encode(byte[] arr, int seed) {
