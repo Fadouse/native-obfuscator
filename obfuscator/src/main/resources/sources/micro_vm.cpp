@@ -26,6 +26,10 @@ static constexpr size_t HOT_THRESHOLD = 10;
 
 static thread_local std::unordered_map<std::string, jweak> class_cache{};
 static thread_local size_t class_lookup_calls = 0;
+static thread_local std::unordered_map<const MethodRef*, jmethodID> static_method_cache{};
+static thread_local std::unordered_map<const MethodRef*, jmethodID> instance_method_cache{};
+static thread_local std::unordered_map<const FieldRef*, jfieldID> static_field_cache{};
+static thread_local std::unordered_map<const FieldRef*, jfieldID> instance_field_cache{};
 
 static jclass get_cached_class(JNIEnv* env, const char* name) {
     auto it = class_cache.find(name);
@@ -52,10 +56,52 @@ void clear_class_cache(JNIEnv* env) {
     }
     class_cache.clear();
     class_lookup_calls = 0;
+    static_method_cache.clear();
+    instance_method_cache.clear();
+    static_field_cache.clear();
+    instance_field_cache.clear();
 }
 
 size_t get_class_cache_calls() {
     return class_lookup_calls;
+}
+
+static jmethodID resolve_method_id(JNIEnv* env, const MethodRef* ref, bool is_static, jclass clazz) {
+    if (!ref || !clazz) {
+        return nullptr;
+    }
+    auto& cache = is_static ? static_method_cache : instance_method_cache;
+    auto it = cache.find(ref);
+    if (it != cache.end()) {
+        return it->second;
+    }
+    jmethodID resolved = is_static
+            ? env->GetStaticMethodID(clazz, ref->method_name, ref->method_sig)
+            : env->GetMethodID(clazz, ref->method_name, ref->method_sig);
+    if (!resolved) {
+        return nullptr;
+    }
+    cache.emplace(ref, resolved);
+    return resolved;
+}
+
+static jfieldID resolve_field_id(JNIEnv* env, const FieldRef* ref, bool is_static, jclass clazz) {
+    if (!ref || !clazz) {
+        return nullptr;
+    }
+    auto& cache = is_static ? static_field_cache : instance_field_cache;
+    auto it = cache.find(ref);
+    if (it != cache.end()) {
+        return it->second;
+    }
+    jfieldID resolved = is_static
+            ? env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig)
+            : env->GetFieldID(clazz, ref->field_name, ref->field_sig);
+    if (!resolved) {
+        return nullptr;
+    }
+    cache.emplace(ref, resolved);
+    return resolved;
 }
 
 static void parse_method_sig(const char* sig, std::vector<char>& args, char& ret) {
@@ -147,12 +193,8 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
     if (!clazz) {
         return;
     }
-    jmethodID mid;
-    if (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC) {
-        mid = env->GetStaticMethodID(clazz, ref->method_name, ref->method_sig);
-    } else {
-        mid = env->GetMethodID(clazz, ref->method_name, ref->method_sig);
-    }
+    bool is_static = (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC);
+    jmethodID mid = resolve_method_id(env, ref, is_static, clazz);
     if (!mid) {
         env->DeleteLocalRef(clazz);
         return;
@@ -1532,7 +1574,7 @@ do_sastore:
 do_new:
     if (sp < 256) {
         const char* name = reinterpret_cast<const char*>(tmp);
-        jclass clazz = env->FindClass(name);
+        jclass clazz = get_cached_class(env, name);
         if (clazz) {
             jobject obj = env->AllocObject(clazz);
             stack[sp++] = reinterpret_cast<int64_t>(obj);
@@ -1545,7 +1587,7 @@ do_anewarray:
     if (sp >= 1) {
         jint length = static_cast<jint>(stack[--sp]);
         const char* name = reinterpret_cast<const char*>(tmp);
-        jclass clazz = env->FindClass(name);
+        jclass clazz = get_cached_class(env, name);
         jobjectArray arr = nullptr;
         if (clazz) {
             arr = env->NewObjectArray(length, clazz, nullptr);
@@ -1584,7 +1626,7 @@ do_multianewarray:
             sizes[i] = static_cast<jint>(stack[--sp]);
         }
         jobjectArray arr = nullptr;
-        jclass clazz = env->FindClass(name);
+        jclass clazz = get_cached_class(env, name);
         if (clazz) {
             arr = env->NewObjectArray(dims > 0 ? sizes[0] : 0, clazz, nullptr);
             env->DeleteLocalRef(clazz);
@@ -1598,7 +1640,7 @@ do_checkcast:
         jobject obj = reinterpret_cast<jobject>(stack[sp - 1]);
         if (obj != nullptr) {
             const char* name = reinterpret_cast<const char*>(tmp);
-            jclass clazz = env->FindClass(name);
+            jclass clazz = get_cached_class(env, name);
             if (clazz) {
                 if (!env->IsInstanceOf(obj, clazz)) {
                     jclass ex = env->FindClass("java/lang/ClassCastException");
@@ -1614,7 +1656,7 @@ do_instanceof:
     if (sp >= 1) {
         jobject obj = reinterpret_cast<jobject>(stack[--sp]);
         const char* name = reinterpret_cast<const char*>(tmp);
-        jclass clazz = env->FindClass(name);
+        jclass clazz = get_cached_class(env, name);
         jboolean res = obj && clazz && env->IsInstanceOf(obj, clazz);
         if (clazz) env->DeleteLocalRef(clazz);
         stack[sp++] = res ? 1 : 0;
@@ -1626,7 +1668,7 @@ do_getstatic:
         auto* ref = &field_refs[tmp];
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
-            jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
+            jfieldID fid = resolve_field_id(env, ref, true, clazz);
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
@@ -1670,7 +1712,7 @@ do_putstatic:
         auto* ref = &field_refs[tmp];
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
-            jfieldID fid = env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig);
+            jfieldID fid = resolve_field_id(env, ref, true, clazz);
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
@@ -1723,7 +1765,7 @@ do_getfield:
         }
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
-            jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
+            jfieldID fid = resolve_field_id(env, ref, false, clazz);
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
@@ -1773,7 +1815,7 @@ do_putfield:
         }
         jclass clazz = get_cached_class(env, ref->class_name);
         if (clazz) {
-            jfieldID fid = env->GetFieldID(clazz, ref->field_name, ref->field_sig);
+            jfieldID fid = resolve_field_id(env, ref, false, clazz);
             if (fid) {
                 switch (ref->field_sig[0]) {
                     case 'Z': case 'B': case 'C': case 'S': case 'I': {
