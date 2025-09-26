@@ -185,6 +185,8 @@ public class MethodProcessor {
         List<VmTranslator.MultiArrayRefInfo> multiArrayRefs = new ArrayList<>();
         List<VmTranslator.MethodRefInfo> methodRefs = new ArrayList<>();
         List<VmTranslator.ConstantPoolEntry> constantPool = new ArrayList<>();
+        List<VmTranslator.TableSwitchInfo> tableSwitches = new ArrayList<>();
+        List<VmTranslator.LookupSwitchInfo> lookupSwitches = new ArrayList<>();
         VmTranslator vmTranslator = null;
         long vmKeySeed = 0;
 
@@ -214,6 +216,8 @@ public class MethodProcessor {
                     vmCode = null;
                 }
                 constantPool = vmTranslator.getConstantPool();
+                tableSwitches = vmTranslator.getTableSwitches();
+                lookupSwitches = vmTranslator.getLookupSwitches();
             }
         }
         if (vmCode != null && vmCode.length > 0) {
@@ -303,6 +307,60 @@ public class MethodProcessor {
                     output.append(String.format("{ %s, %d }",
                             context.getStringPool().get(mi.desc), mi.dims));
                     if (i + 1 < multiArrayRefs.size()) output.append(", ");
+                }
+                output.append(" };\n");
+            }
+            if (!tableSwitches.isEmpty()) {
+                for (int i = 0; i < tableSwitches.size(); i++) {
+                    VmTranslator.TableSwitchInfo ts = tableSwitches.get(i);
+                    output.append("    static const size_t __ngen_vm_table_targets_").append(i).append("[] = {");
+                    for (int j = 0; j < ts.labels.length; j++) {
+                        if (j > 0) output.append(", ");
+                        output.append(ts.labels[j]);
+                    }
+                    output.append(" };\n");
+                }
+                output.append("    native_jvm::vm::TableSwitch __ngen_vm_tables[] = {");
+                for (int i = 0; i < tableSwitches.size(); i++) {
+                    VmTranslator.TableSwitchInfo ts = tableSwitches.get(i);
+                    output.append(String.format("{ %d, %d, static_cast<size_t>(%d), __ngen_vm_table_targets_%d }",
+                            ts.low, ts.high, ts.defaultLabel, i));
+                    if (i + 1 < tableSwitches.size()) output.append(", ");
+                }
+                output.append(" };\n");
+            }
+            if (!lookupSwitches.isEmpty()) {
+                List<String> lookupKeyVars = new ArrayList<>();
+                List<String> lookupTargetVars = new ArrayList<>();
+                for (int i = 0; i < lookupSwitches.size(); i++) {
+                    VmTranslator.LookupSwitchInfo ls = lookupSwitches.get(i);
+                    String keyVar = "nullptr";
+                    String targetVar = "nullptr";
+                    if (ls.keys.length > 0) {
+                        keyVar = String.format("__ngen_vm_lookup_keys_%d", i);
+                        targetVar = String.format("__ngen_vm_lookup_targets_%d", i);
+                        output.append("    static const int32_t ").append(keyVar).append("[] = {");
+                        for (int j = 0; j < ls.keys.length; j++) {
+                            if (j > 0) output.append(", ");
+                            output.append(ls.keys[j]);
+                        }
+                        output.append(" };\n");
+                        output.append("    static const size_t ").append(targetVar).append("[] = {");
+                        for (int j = 0; j < ls.labels.length; j++) {
+                            if (j > 0) output.append(", ");
+                            output.append(ls.labels[j]);
+                        }
+                        output.append(" };\n");
+                    }
+                    lookupKeyVars.add(keyVar);
+                    lookupTargetVars.add(targetVar);
+                }
+                output.append("    native_jvm::vm::LookupSwitch __ngen_vm_lookups[] = {");
+                for (int i = 0; i < lookupSwitches.size(); i++) {
+                    VmTranslator.LookupSwitchInfo ls = lookupSwitches.get(i);
+                    output.append(String.format("{ %d, %s, %s, static_cast<size_t>(%d) }",
+                            ls.keys.length, lookupKeyVars.get(i), lookupTargetVars.get(i), ls.defaultLabel));
+                    if (i + 1 < lookupSwitches.size()) output.append(", ");
                 }
                 output.append(" };\n");
             }
@@ -410,11 +468,11 @@ public class MethodProcessor {
             String multiRefsPtr = multiArrayRefs.isEmpty() ? "nullptr" : "__ngen_vm_multi";
             int multiRefsSize = multiArrayRefs.size();
 
-            // Determine class references parameters (for switches, not implemented yet)
-            String tableRefsPtr = "nullptr";
-            int tableRefsSize = 0;
-            String lookupRefsPtr = "nullptr";
-            int lookupRefsSize = 0;
+            // Determine switch references parameters
+            String tableRefsPtr = tableSwitches.isEmpty() ? "nullptr" : "__ngen_vm_tables";
+            int tableRefsSize = tableSwitches.size();
+            String lookupRefsPtr = lookupSwitches.isEmpty() ? "nullptr" : "__ngen_vm_lookups";
+            int lookupRefsSize = lookupSwitches.size();
 
             // Execute micro VM and correctly convert the encoded top-of-stack value
             // back to the Java return type. The VM encodes values on a 64-bit stack:

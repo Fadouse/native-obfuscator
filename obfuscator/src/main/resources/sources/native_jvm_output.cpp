@@ -9,7 +9,8 @@ namespace native_jvm {
 
     typedef void (* reg_method)(JNIEnv *,jclass);
 
-    reg_method reg_methods[$class_count];
+    reg_method reg_methods[$class_count] = {0};
+    static JavaVM* cached_vm = nullptr;
 
     void register_for_class(JNIEnv *env, jclass, jint id, jclass clazz) {
         // Guard against out-of-range indexes or missing registration entries.
@@ -17,7 +18,17 @@ namespace native_jvm {
         if (id < 0 || id >= $class_count) {
             return;
         }
-        if (!reg_methods[id]) {
+        if (cached_vm && env == nullptr) {
+            if (cached_vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_8) == JNI_EDETACHED) {
+                if (cached_vm->AttachCurrentThread(reinterpret_cast<void **>(&env), nullptr) != JNI_OK) {
+                    return;
+                }
+            }
+        }
+        if (env == nullptr) {
+            return;
+        }
+        if (reg_methods[id] == nullptr) {
             return;
         }
         reg_methods[id](env, clazz);
@@ -49,6 +60,7 @@ $register_code
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     JNIEnv *env = nullptr;
     vm->GetEnv((void **)&env, JNI_VERSION_1_8);
+    native_jvm::cached_vm = vm;
     native_jvm::prepare_lib(env);
     return JNI_VERSION_1_8;
 }
