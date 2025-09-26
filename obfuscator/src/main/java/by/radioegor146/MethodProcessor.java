@@ -86,14 +86,11 @@ public class MethodProcessor {
     }
 
     private SpecialMethodProcessor getSpecialMethodProcessor(String name) {
-        switch (name) {
-            case "<init>":
-                return null;
-            case "<clinit>":
-                return new ClInitSpecialMethodProcessor();
-            default:
-                return new DefaultSpecialMethodProcessor();
-        }
+        return switch (name) {
+            case "<init>" -> null;
+            case "<clinit>" -> new ClInitSpecialMethodProcessor();
+            default -> new DefaultSpecialMethodProcessor();
+        };
     }
 
     public static boolean shouldProcess(MethodNode method) {
@@ -101,8 +98,7 @@ public class MethodProcessor {
         if (Util.getFlag(method.access, Opcodes.ACC_NATIVE)) return false;
         if (method.name.equals("<init>")) return false;
         // Skip lambda body methods to avoid subtle JVM/linkage issues in JDK8/21
-        if (method.name.startsWith("lambda$")) return false;
-        return true;
+        return !method.name.startsWith("lambda$");
     }
 
     public static String getClassGetter(MethodContext context, String desc) {
@@ -151,7 +147,7 @@ public class MethodProcessor {
 
         context.argTypes = new ArrayList<>(Arrays.asList(args));
         if (!isStatic) {
-            context.argTypes.add(0, Type.getType(Object.class));
+            context.argTypes.addFirst(Type.getType(Object.class));
         }
 
         if (context.proxyMethod != null) {
@@ -318,38 +314,38 @@ public class MethodProcessor {
                     output.append(String.format("    __ngen_vm_constants[%d].type = native_jvm::vm::ConstantPoolEntry::", i));
                     switch (cp.type) {
                         case INTEGER:
-                            output.append(String.format("TYPE_INTEGER;\n"));
+                            output.append("TYPE_INTEGER;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].i_value = %d;\n", i, (Integer)cp.value));
                             break;
                         case FLOAT:
-                            output.append(String.format("TYPE_FLOAT;\n"));
+                            output.append("TYPE_FLOAT;\n");
                             // Print with enough precision to round-trip single-precision values
                             output.append(String.format(java.util.Locale.ROOT,
                                     "    __ngen_vm_constants[%d].f_value = %.9gF;\n", i, (Float)cp.value));
                             break;
                         case LONG:
-                            output.append(String.format("TYPE_LONG;\n"));
+                            output.append("TYPE_LONG;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].l_value = %dLL;\n", i, (Long)cp.value));
                             break;
                         case DOUBLE:
-                            output.append(String.format("TYPE_DOUBLE;\n"));
+                            output.append("TYPE_DOUBLE;\n");
                             // Print with enough precision to round-trip double-precision values
                             output.append(String.format(java.util.Locale.ROOT,
                                     "    __ngen_vm_constants[%d].d_value = %.17g;\n", i, (Double)cp.value));
                             break;
                         case STRING:
-                            output.append(String.format("TYPE_STRING;\n"));
+                            output.append("TYPE_STRING;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].str_value = %s;\n", i,
                                     context.getStringPool().get((String)cp.value)));
                             break;
                         case CLASS:
-                            output.append(String.format("TYPE_CLASS;\n"));
+                            output.append("TYPE_CLASS;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].class_name = %s;\n", i,
                                     context.getStringPool().get((String)cp.value)));
                             break;
                         default:
                             // Unsupported types - should not reach here
-                            output.append(String.format("TYPE_INTEGER;\n"));
+                            output.append("TYPE_INTEGER;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].i_value = 0;\n", i));
                             break;
                     }
@@ -426,7 +422,7 @@ public class MethodProcessor {
             // - long/double use all 64 bits (double is raw IEEE754 bits)
             // - object/array are stored as their pointer cast to int64
             String vmCallFmt;
-            if (vmTranslator != null && vmTranslator.isUseJit()) {
+            if (vmTranslator.isUseJit()) {
                 vmCallFmt = String.format(
                         "    auto __ngen_vm_ret = native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
                         vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize);
@@ -454,12 +450,12 @@ public class MethodProcessor {
                 case Type.CHAR:
                 case Type.BYTE:
                 case Type.BOOLEAN: {
-                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") (jint)__ngen_vm_ret;\n");
+                    output.append("    return (").append(CPP_TYPES[context.ret.getSort()]).append(") (jint)__ngen_vm_ret;\n");
                     break;
                 }
                 case Type.OBJECT:
                 case Type.ARRAY: {
-                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") (jlong)__ngen_vm_ret;\n");
+                    output.append("    return (").append(CPP_TYPES[context.ret.getSort()]).append(") (jlong)__ngen_vm_ret;\n");
                     break;
                 }
                 case Type.VOID: {
@@ -467,7 +463,7 @@ public class MethodProcessor {
                     break;
                 }
                 default:
-                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") 0;\n");
+                    output.append("    return (").append(CPP_TYPES[context.ret.getSort()]).append(") 0;\n");
                     break;
             }
             output.append("}\n");
@@ -594,6 +590,7 @@ public class MethodProcessor {
         context.stackPointer = 0;
         context.dispatcherMode = true;
         boolean flattenControlFlow = context.protectionConfig.isControlFlowFlatteningEnabled();
+        Set<Integer> referencedStates = new HashSet<>();
 
         int instructionCount = method.instructions.size();
         if (instructionCount == 0) {
@@ -617,7 +614,7 @@ public class MethodProcessor {
                 context.getLabelPool().setState(((LabelNode) node).getLabel(), states[i]);
             }
         }
-        int fakeState = context.getLabelPool().generateStandaloneState();
+        int fakeState = flattenControlFlow ? context.getLabelPool().generateStandaloneState() : -1;
 
         ControlFlowFlattener.StateObfuscation stateObfuscation = null;
         if (flattenControlFlow) {
@@ -654,14 +651,34 @@ public class MethodProcessor {
             int opcode = node.getOpcode();
             if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) changesFlow = true;
             if (opcode == Opcodes.ATHROW) changesFlow = true;
-            if (!changesFlow) {
+            switch (node) {
+                case JumpInsnNode jumpInsnNode ->
+                        referencedStates.add(parseStateId(context.getLabelPool().getName(jumpInsnNode.label.getLabel())));
+                case TableSwitchInsnNode tableSwitch -> {
+                    referencedStates.add(parseStateId(context.getLabelPool().getName(tableSwitch.dflt.getLabel())));
+                    for (LabelNode labelNode : tableSwitch.labels) {
+                        referencedStates.add(parseStateId(context.getLabelPool().getName(labelNode.getLabel())));
+                    }
+                }
+                case LookupSwitchInsnNode lookupSwitch -> {
+                    referencedStates.add(parseStateId(context.getLabelPool().getName(lookupSwitch.dflt.getLabel())));
+                    for (LabelNode labelNode : lookupSwitch.labels) {
+                        referencedStates.add(parseStateId(context.getLabelPool().getName(labelNode.getLabel())));
+                    }
+                }
+                default -> {
+                }
+            }
+            if (!changesFlow && flattenControlFlow) {
                 int nextState = (instruction + 1 < instructionCount) ? states[instruction + 1] : fakeState;
-                appendStateTransition(flattenControlFlow, block, "            ", nextState, stateObfuscation);
+                appendStateTransition(true, block, "            ", nextState, stateObfuscation);
             }
         }
 
-        StringBuilder fakeBlock = stateBlocks.computeIfAbsent(fakeState, k -> new StringBuilder());
-        appendStateTransition(flattenControlFlow, fakeBlock, "            ", states[0], stateObfuscation);
+        if (flattenControlFlow) {
+            StringBuilder fakeBlock = stateBlocks.computeIfAbsent(fakeState, k -> new StringBuilder());
+            appendStateTransition(true, fakeBlock, "            ", states[0], stateObfuscation);
+        }
 
         boolean hasAddedNewBlocks = true;
         Set<CatchesBlock> proceedBlocks = new HashSet<>();
@@ -674,14 +691,16 @@ public class MethodProcessor {
                 }
                 proceedBlocks.add(catchBlock);
                 int catchState = Integer.parseInt(context.catches.get(catchBlock));
+                referencedStates.add(catchState);
                 StringBuilder catchBody = stateBlocks.computeIfAbsent(catchState, k -> new StringBuilder());
-                CatchesBlock.CatchBlock currentCatchBlock = catchBlock.getCatches().get(0);
+                CatchesBlock.CatchBlock currentCatchBlock = catchBlock.getCatches().getFirst();
                 if (currentCatchBlock.getClazz() == null) {
                     catchBody.append("            ")
                             .append(context.getSnippet("TRYCATCH_ANY_L", Util.createMap(
                                     "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
                             )))
                             .append("\n");
+                    referencedStates.add(parseStateId(context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())));
                     continue;
                 }
                 catchBody.append("            ")
@@ -690,6 +709,7 @@ public class MethodProcessor {
                                 "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
                         )))
                         .append("\n");
+                referencedStates.add(parseStateId(context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())));
                 if (catchBlock.getCatches().size() == 1) {
                     catchBody.append("            ")
                             .append(context.getSnippet("TRYCATCH_END_STACK", Util.createMap(
@@ -708,6 +728,7 @@ public class MethodProcessor {
                                 "handler_block", context.catches.get(nextCatchesBlock)
                         )))
                         .append("\n");
+                referencedStates.add(parseStateId(context.catches.get(nextCatchesBlock)));
             }
         }
 
@@ -723,7 +744,7 @@ public class MethodProcessor {
             );
             output.append(stateMachine);
         } else {
-            output.append(buildLinearControlFlow(stateBlocks, defaultBlock));
+            output.append(buildLinearControlFlow(stateBlocks, defaultBlock, referencedStates));
         }
         output.append("}\n");
 
@@ -751,7 +772,8 @@ public class MethodProcessor {
         }
     }
 
-    private static String buildLinearControlFlow(LinkedHashMap<Integer, StringBuilder> stateBlocks, String defaultBlock) {
+    private static String buildLinearControlFlow(LinkedHashMap<Integer, StringBuilder> stateBlocks, String defaultBlock,
+                                                 Set<Integer> referencedStates) {
         StringBuilder linear = new StringBuilder();
         boolean firstBlock = true;
         for (Map.Entry<Integer, StringBuilder> entry : stateBlocks.entrySet()) {
@@ -759,7 +781,10 @@ public class MethodProcessor {
                 linear.append('\n');
             }
             firstBlock = false;
-            linear.append("    ").append(getLinearLabelName(entry.getKey())).append(":\n");
+            boolean needLabel = referencedStates.contains(entry.getKey());
+            if (needLabel) {
+                linear.append("    ").append(getLinearLabelName(entry.getKey())).append(":\n");
+            }
             String blockContent = linearizeStateAssignments(entry.getValue().toString());
             if (!blockContent.isEmpty()) {
                 linear.append(blockContent);
@@ -770,7 +795,7 @@ public class MethodProcessor {
         }
         String fallback = linearizeStateAssignments(defaultBlock);
         if (!fallback.isEmpty()) {
-            if (linear.length() > 0 && linear.charAt(linear.length() - 1) != '\n') {
+            if (!linear.isEmpty() && linear.charAt(linear.length() - 1) != '\n') {
                 linear.append('\n');
             }
             linear.append(fallback);
@@ -786,7 +811,7 @@ public class MethodProcessor {
             return "";
         }
         Matcher matcher = STATE_ASSIGNMENT_PATTERN.matcher(code);
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
             String rawState = matcher.group(1);
             matcher.appendReplacement(sb, Matcher.quoteReplacement("goto " + getLinearLabelName(rawState) + ";"));
@@ -810,6 +835,17 @@ public class MethodProcessor {
             sanitized = "0";
         }
         return negative ? "__ngen_label_m" + sanitized : "__ngen_label_" + sanitized;
+    }
+
+    private static int parseStateId(String state) {
+        if (state == null || state.isEmpty()) {
+            throw new IllegalStateException("State id is null or empty");
+        }
+        try {
+            return Integer.parseInt(state);
+        } catch (NumberFormatException ex) {
+            throw new IllegalStateException("Unexpected state id: " + state, ex);
+        }
     }
 
 }
