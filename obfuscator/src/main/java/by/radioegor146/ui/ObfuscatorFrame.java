@@ -62,6 +62,8 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox enableVirtualizationBox = new JCheckBox("Enable VM virtualization");
     private final JCheckBox enableJitBox = new JCheckBox("Enable JIT compilation");
     private final JCheckBox flattenControlFlowBox = new JCheckBox("Enable control flow flattening");
+    private final JCheckBox stringObfuscationBox = new JCheckBox("Encrypt string pool literals", true);
+    private final JCheckBox constantObfuscationBox = new JCheckBox("Encrypt LDC primitive constants", true);
 
     // Anti-debug feature checkboxes
     private final JCheckBox enableAntiDebugBox = new JCheckBox("Enable anti-debug protection");
@@ -155,6 +157,8 @@ public class ObfuscatorFrame extends JFrame {
             enableVirtualizationBox.setEnabled(enabled);
             enableJitBox.setEnabled(enabled && enableVirtualizationBox.isSelected());
             flattenControlFlowBox.setEnabled(enabled);
+            stringObfuscationBox.setEnabled(enabled);
+            constantObfuscationBox.setEnabled(enabled);
             packageBox.setEnabled(enabled);
             plainLibNameField.setEnabled(enabled);
             customLibDirField.setEnabled(enabled);
@@ -162,6 +166,11 @@ public class ObfuscatorFrame extends JFrame {
                 enableVirtualizationBox.setSelected(false);
                 enableJitBox.setSelected(false);
                 flattenControlFlowBox.setSelected(false);
+                stringObfuscationBox.setSelected(false);
+                constantObfuscationBox.setSelected(false);
+            } else {
+                if (!stringObfuscationBox.isSelected()) stringObfuscationBox.setSelected(true);
+                if (!constantObfuscationBox.isSelected()) constantObfuscationBox.setSelected(true);
             }
         });
 
@@ -386,6 +395,10 @@ public class ObfuscatorFrame extends JFrame {
                 "JIT for virtualized methods; improves runtime performance"), 40));
         protectionPanel.add(indent(checkWithHint(flattenControlFlowBox,
                 "State-machine style CFG flattening for native methods"), 20));
+        protectionPanel.add(indent(checkWithHint(stringObfuscationBox,
+                "Encrypt and lazily decrypt UTF-8 literals stored in the native string pool"), 20));
+        protectionPanel.add(indent(checkWithHint(constantObfuscationBox,
+                "XOR-encode LDC primitives and decode them through JNI helpers"), 20));
 
         form.add(protectionPanel);
         form.add(Box.createRigidArea(new Dimension(0, 12)));
@@ -881,9 +894,11 @@ public class ObfuscatorFrame extends JFrame {
                 boolean useAnnotations = useAnnotationsBox.isSelected();
                 boolean debug = debugJarBox.isSelected();
                 boolean enableNativeObfuscation = enableNativeObfuscationBox.isSelected();
-                boolean enableVirtualization = enableVirtualizationBox.isSelected();
-                boolean enableJit = enableJitBox.isSelected();
-                boolean flattenControlFlow = flattenControlFlowBox.isSelected();
+                boolean enableVirtualization = enableNativeObfuscation && enableVirtualizationBox.isSelected();
+                boolean enableJit = enableNativeObfuscation && enableVirtualization && enableJitBox.isSelected();
+                boolean flattenControlFlow = enableNativeObfuscation && flattenControlFlowBox.isSelected();
+                boolean stringObfuscation = enableNativeObfuscation && stringObfuscationBox.isSelected();
+                boolean constantObfuscation = enableNativeObfuscation && constantObfuscationBox.isSelected();
 
                 // Anti-debug settings
                 boolean enableAntiDebug = enableAntiDebugBox.isSelected();
@@ -928,6 +943,8 @@ public class ObfuscatorFrame extends JFrame {
                     if (enableVirtualization)
                         publish("  ⚡ JIT Compilation: " + (enableJit ? "✅ Enabled" : "❌ Disabled"));
                     publish("  🌀 Native Control Flow Flattening: " + (flattenControlFlow ? "✅ Enabled" : "❌ Disabled"));
+                    publish("  🔐 String Encryption: " + (stringObfuscation ? "✅ Enabled" : "❌ Disabled"));
+                    publish("  🔢 Constant Encryption: " + (constantObfuscation ? "✅ Enabled" : "❌ Disabled"));
                 }
                 publish("  ☕ Java Obfuscation: " + (enableJavaObfuscation ? "✅ Enabled (" + javaObfStrength + ")" : "❌ Disabled"));
                 publish("  🛡️ Anti-Debug Protection: " + (enableAntiDebug ? "✅ Enabled" : "❌ Disabled"));
@@ -952,7 +969,8 @@ public class ObfuscatorFrame extends JFrame {
                 publish("");
 
                 // Create protection configuration
-                ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
+                ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
+                        stringObfuscation, constantObfuscation);
 
                 // Create anti-debug configuration
                 AntiDebugConfig.Builder antiDebugBuilder = new AntiDebugConfig.Builder()
@@ -1062,6 +1080,8 @@ public class ObfuscatorFrame extends JFrame {
         enableVirtualizationBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected());
         enableJitBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected() && enableVirtualizationBox.isSelected());
         flattenControlFlowBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected());
+        stringObfuscationBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected());
+        constantObfuscationBox.setEnabled(enabled && enableNativeObfuscationBox.isSelected());
 
         // Java obfuscation controls
         enableJavaObfuscationBox.setEnabled(enabled);

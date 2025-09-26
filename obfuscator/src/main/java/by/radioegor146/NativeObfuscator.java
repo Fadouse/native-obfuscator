@@ -103,10 +103,12 @@ public class NativeObfuscator {
                         List<String> blackList, List<String> whiteList, String plainLibName,
                         String customLibraryDirectory,
                         Platform platform, boolean useAnnotations, boolean generateDebugJar,
-                        boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow) throws IOException {
+                        boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow,
+                        boolean obfuscateStrings, boolean obfuscateConstants) throws IOException {
         // Default Java obfuscation disabled, native obfuscation enabled
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
                 platform, useAnnotations, generateDebugJar, enableVirtualization, enableJit, flattenControlFlow,
+                obfuscateStrings, obfuscateConstants,
                 false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true);
     }
 
@@ -115,12 +117,16 @@ public class NativeObfuscator {
                         String customLibraryDirectory,
                         Platform platform, boolean useAnnotations, boolean generateDebugJar,
                         boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow,
+                        boolean obfuscateStrings, boolean obfuscateConstants,
                         boolean enableJavaObfuscation, String javaObfuscationStrength,
                         List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation) throws IOException {
-        ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
+        ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
+                obfuscateStrings, obfuscateConstants);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
             throw new RuntimeException("Input jar can't be in the same directory as output directory");
         }
+
+        stringPool.reset(protectionConfig.isStringObfuscationEnabled());
 
         // Step 1: Apply Java obfuscation if enabled
         Path processedJarPath = inputJarPath;
@@ -509,8 +515,9 @@ public class NativeObfuscator {
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
                 platform, useAnnotations, generateDebugJar,
                 protectionConfig.isVirtualizationEnabled(), protectionConfig.isJitEnabled(),
-                protectionConfig.isControlFlowFlatteningEnabled(), enableJavaObfuscation,
-                javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation);
+                protectionConfig.isControlFlowFlatteningEnabled(),
+                protectionConfig.isStringObfuscationEnabled(), protectionConfig.isConstantObfuscationEnabled(),
+                enableJavaObfuscation, javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation);
 
         // Generate anti-debug configuration header if any anti-debug features are enabled
         if (antiDebugConfig.isAnyEnabled()) {

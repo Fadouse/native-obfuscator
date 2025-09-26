@@ -61,6 +61,14 @@ public class Main {
         @CommandLine.Option(names = {"--flatten-control-flow"}, description = "Enable control flow flattening in native methods")
         private boolean flattenControlFlow;
 
+        @CommandLine.Option(names = {"--obfuscate-strings"}, defaultValue = "true",
+                description = "Encrypt string literals stored in the native string pool")
+        private boolean obfuscateStrings = true;
+
+        @CommandLine.Option(names = {"--obfuscate-constants"}, defaultValue = "true",
+                description = "Encode primitive LDC constants and decode them at runtime")
+        private boolean obfuscateConstants = true;
+
         @CommandLine.Option(names = {"--enable-java-obfuscation"}, description = "Enable Java-layer obfuscation with control flow flattening")
         private boolean enableJavaObfuscation;
 
@@ -162,7 +170,8 @@ public class Main {
             }
 
             // Create protection configuration
-            ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
+            ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
+                    obfuscateStrings, obfuscateConstants);
 
             // Create anti-debug configuration
             AntiDebugConfig.Builder antiDebugBuilder = new AntiDebugConfig.Builder()

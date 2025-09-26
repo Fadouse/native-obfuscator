@@ -30,26 +30,48 @@ public class StringPool {
 
     private final SecureRandom random;
     private byte[] lastEncrypted;
+    private boolean obfuscateStrings;
 
     public StringPool() {
+        this(true);
+    }
+
+    public StringPool(boolean obfuscateStrings) {
         this.length = 0;
         this.pool = new HashMap<>();
         this.random = new SecureRandom();
+        this.obfuscateStrings = obfuscateStrings;
+    }
+
+    public void reset(boolean obfuscateStrings) {
+        this.obfuscateStrings = obfuscateStrings;
+        this.length = 0;
+        this.pool.clear();
+        this.lastEncrypted = null;
     }
 
     public String get(String value) {
         Entry entry = pool.get(value);
         if (entry == null) {
             byte[] bytes = getModifiedUtf8Bytes(value);
-            byte[] key = new byte[32];
-            byte[] nonce = new byte[12];
-            random.nextBytes(key);
-            random.nextBytes(nonce);
-            int seed = random.nextInt();
-            entry = new Entry(length, bytes.length + 1, key, nonce, seed);
+            if (obfuscateStrings) {
+                byte[] key = new byte[32];
+                byte[] nonce = new byte[12];
+                random.nextBytes(key);
+                random.nextBytes(nonce);
+                int seed = random.nextInt();
+                entry = new Entry(length, bytes.length + 1, key, nonce, seed);
+            } else {
+                entry = new Entry(length, bytes.length + 1, null, null, 0);
+            }
             pool.put(value, entry);
             length += entry.length;
         }
+
+        if (!obfuscateStrings) {
+            return String.format("(char *)(string_pool + %dLL)", entry.offset);
+        }
+
         return String.format(
                 "(string_pool::decrypt_string(string_pool::decode_key(%s, %d), string_pool::decode_nonce(%s, %d), %d, %dLL, %d), (char *)(string_pool + %dLL))",
                 formatArray(entry.key, entry.seed), entry.seed,
@@ -121,8 +143,8 @@ public class StringPool {
                     Entry entry = e.getValue();
                     byte[] bytes = getModifiedUtf8Bytes(string);
                     byte[] plain = Arrays.copyOf(bytes, bytes.length + 1);
-                    byte[] encrypted = ChaCha20.crypt(entry.key, entry.nonce, 0, plain);
-                    for (byte b : encrypted) {
+                    byte[] payload = obfuscateStrings ? ChaCha20.crypt(entry.key, entry.nonce, 0, plain) : plain;
+                    for (byte b : payload) {
                         encryptedBytes.add(b);
                     }
                 });

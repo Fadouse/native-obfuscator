@@ -50,7 +50,7 @@ public class VmFieldPipelineTest {
 
         new NativeObfuscator().process(inputJar, out, Collections.emptyList(),
                 Collections.singletonList("Main"), null, "native_library", null,
-                Platform.HOTSPOT, true, false, true, true, true);
+                Platform.HOTSPOT, true, false, true, true, true, true, true);
 
         Path cppDir = out.resolve("cpp");
         ProcessHelper.run(cppDir, 120_000, Arrays.asList("cmake", "."))

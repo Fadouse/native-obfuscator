@@ -63,63 +63,84 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
     @Override
     protected void process(MethodContext context, LdcInsnNode node) {
         Object cst = node.cst;
+        boolean constantsObfuscated = context.protectionConfig.isConstantObfuscationEnabled();
         if (cst instanceof String) {
             instructionName += "_STRING";
             props.put("cst_ptr", context.getCachedStrings().getPointer(node.cst.toString()));
         } else if (cst instanceof Integer) {
-            instructionName += "_INT";
-            int key = ThreadLocalRandom.current().nextInt();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            int mixed = mix32(key, mid, cid, seed);
-            int enc = ((Integer) cst) ^ mixed;
-            props.put("enc", getIntString(enc));
-            props.put("key", getIntString(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_INT";
+                int key = ThreadLocalRandom.current().nextInt();
+                int seed = ThreadLocalRandom.current().nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                int mixed = mix32(key, mid, cid, seed);
+                int enc = ((Integer) cst) ^ mixed;
+                props.put("enc", getIntString(enc));
+                props.put("key", getIntString(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_INT_RAW";
+                props.put("value", getIntString((Integer) cst));
+            }
         } else if (cst instanceof Long) {
-            instructionName += "_LONG";
-            long key = ThreadLocalRandom.current().nextLong();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            long mixed = mix64(key, mid, cid, seed);
-            long enc = ((Long) cst) ^ mixed;
-            props.put("enc", getLongValue(enc));
-            props.put("key", getLongValue(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_LONG";
+                long key = ThreadLocalRandom.current().nextLong();
+                int seed = ThreadLocalRandom.current().nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                long mixed = mix64(key, mid, cid, seed);
+                long enc = ((Long) cst) ^ mixed;
+                props.put("enc", getLongValue(enc));
+                props.put("key", getLongValue(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_LONG_RAW";
+                props.put("value", getLongValue((Long) cst));
+            }
         } else if (cst instanceof Float) {
-            instructionName += "_FLOAT";
-            int bits = Float.floatToRawIntBits((Float) cst);
-            int key = ThreadLocalRandom.current().nextInt();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            int mixed = mix32(key, mid, cid, seed);
-            int enc = bits ^ mixed;
-            props.put("enc", getIntString(enc));
-            props.put("key", getIntString(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_FLOAT";
+                int bits = Float.floatToRawIntBits((Float) cst);
+                int key = ThreadLocalRandom.current().nextInt();
+                int seed = ThreadLocalRandom.current().nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                int mixed = mix32(key, mid, cid, seed);
+                int enc = bits ^ mixed;
+                props.put("enc", getIntString(enc));
+                props.put("key", getIntString(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_FLOAT_RAW";
+                props.put("value", getFloatValue((Float) cst));
+            }
         } else if (cst instanceof Double) {
-            instructionName += "_DOUBLE";
-            long bits = Double.doubleToRawLongBits((Double) cst);
-            long key = ThreadLocalRandom.current().nextLong();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            long mixed = mix64(key, mid, cid, seed);
-            long enc = bits ^ mixed;
-            props.put("enc", getLongValue(enc));
-            props.put("key", getLongValue(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_DOUBLE";
+                long bits = Double.doubleToRawLongBits((Double) cst);
+                long key = ThreadLocalRandom.current().nextLong();
+                int seed = ThreadLocalRandom.current().nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                long mixed = mix64(key, mid, cid, seed);
+                long enc = bits ^ mixed;
+                props.put("enc", getLongValue(enc));
+                props.put("key", getLongValue(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_DOUBLE_RAW";
+                props.put("value", getDoubleValue((Double) cst));
+            }
         } else if (cst instanceof Type) {
             instructionName += "_CLASS";
 
