@@ -36,8 +36,11 @@ public class FieldHandler extends GenericInstructionHandler<FieldInsnNode> {
         // Mirror JVM semantics: static field access triggers class initialization.
         if (isStatic) {
             String dotted = node.owner.replace('/', '.');
-            context.output.append(String.format("utils::ensure_initialized(env, classloader, %s); %s ",
-                    context.getCachedStrings().getPointer(dotted), trimmedTryCatchBlock));
+            context.output.append(String.format(
+                    "if (!cclasses_initialized[%1$d].load()) { cclasses_mtx[%1$d].lock(); if (!cclasses_initialized[%1$d].load()) { utils::ensure_initialized(env, classloader, %2$s); if (!env->ExceptionCheck()) { cclasses_initialized[%1$d].store(true); } } cclasses_mtx[%1$d].unlock(); %3$s } ",
+                    classId,
+                    context.getCachedStrings().getPointer(dotted),
+                    trimmedTryCatchBlock));
         }
 
         int fieldId = context.getCachedFields().getId(info);

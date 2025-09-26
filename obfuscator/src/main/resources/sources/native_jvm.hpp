@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <unordered_set>
 #include <mutex>
+#include <atomic>
 #include <initializer_list>
 #include <cstdint>
 
