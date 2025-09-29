@@ -106,4 +106,5 @@ public class MethodProcessorClassCachingTest {
         assertTrue(output.contains("__ngen_native_recursive"), output);
         assertFalse(output.contains("CallStaticVoidMethod"), output);
     }
+
 }
