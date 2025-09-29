@@ -62,6 +62,11 @@ public class MethodContext {
     public boolean enumSwitchMapOnStack;
     public boolean lastWasEnumOrdinal;
 
+    public final Map<Integer, String> verifiedClassLocals;
+    public final Map<Integer, String> verifiedClassFlagNames;
+    public final StringBuilder verifiedClassPreamble;
+    public int verifiedClassPreambleInsertionPoint;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
         this.obfuscator = obfuscator;
@@ -79,6 +84,11 @@ public class MethodContext {
         this.locals = new ArrayList<>();
         this.tryCatches = new HashSet<>();
         this.catches = new HashMap<>();
+
+        this.verifiedClassLocals = new HashMap<>();
+        this.verifiedClassFlagNames = new HashMap<>();
+        this.verifiedClassPreamble = new StringBuilder();
+        this.verifiedClassPreambleInsertionPoint = -1;
     }
 
     public NodeCache<String> getCachedStrings() {
