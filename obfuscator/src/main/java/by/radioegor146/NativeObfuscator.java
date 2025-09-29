@@ -29,7 +29,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -320,6 +322,21 @@ public class NativeObfuscator {
                                  new ClassSourceBuilder(cppOutput, classNode.name, classIndexReference[0]++, stringPool)) {
                         StringBuilder instructions = new StringBuilder();
 
+                        Map<String, String> nativeSymbols = new HashMap<>();
+                        for (int i = 0; i < classNode.methods.size(); i++) {
+                            MethodNode method = classNode.methods.get(i);
+                            if (!MethodProcessor.shouldProcess(method)) {
+                                continue;
+                            }
+                            if (!classMethodFilter.shouldProcess(classNode, method)) {
+                                continue;
+                            }
+                            String symbol = MethodProcessor.computeNativeSymbol(classNode, method, currentClassId, i);
+                            if (symbol != null) {
+                                nativeSymbols.put(classNode.name + "#" + method.name + method.desc, symbol);
+                            }
+                        }
+
                         for (int i = 0; i < classNode.methods.size(); i++) {
                             MethodNode method = classNode.methods.get(i);
 
@@ -332,6 +349,7 @@ public class NativeObfuscator {
                             }
 
                             MethodContext context = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
+                            context.nativeSymbolTable = nativeSymbols;
                             methodProcessor.processMethod(context);
                             instructions.append(context.output.toString().replace("\n", "\n    "));
 

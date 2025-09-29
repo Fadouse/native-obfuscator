@@ -183,10 +183,6 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
         int classId = context.getCachedClasses().getId(node.owner);
         String classPtr = MethodProcessor.ensureVerifiedClass(context, classId, node.owner, trimmedTryCatchBlock);
 
-        if (isStatic || node.getOpcode() == Opcodes.INVOKESPECIAL) {
-            props.put("class_ptr", classPtr);
-        }
-
         if (isStatic) {
             String dotted = node.owner.replace('/', '.');
             context.output.append(String.format(
@@ -194,6 +190,21 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                     classId,
                     context.getCachedStrings().getPointer(dotted),
                     trimmedTryCatchBlock));
+        }
+
+        if (isStatic || node.getOpcode() == Opcodes.INVOKESPECIAL) {
+            props.put("class_ptr", classPtr);
+        }
+
+        if (isStatic && context.nativeSymbolTable != null) {
+            String key = node.owner + "#" + node.name + node.desc;
+            String directSymbol = context.nativeSymbolTable.get(key);
+            if (directSymbol != null && node.owner.equals(context.clazz.name)) {
+                props.put("direct_method", directSymbol);
+                props.put("args", argsBuilder.toString());
+                instructionName = "DIRECT_INVOKESTATIC_" + returnType.getSort();
+                return;
+            }
         }
 
         CachedMethodInfo methodInfo = new CachedMethodInfo(node.owner, node.name, node.desc, isStatic);

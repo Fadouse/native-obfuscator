@@ -86,12 +86,41 @@ public class MethodProcessor {
         handlers[id] = new InstructionHandlerContainer<>(handler, instructionClass);
     }
 
-    private SpecialMethodProcessor getSpecialMethodProcessor(String name) {
+    private static SpecialMethodProcessor getSpecialMethodProcessor(String name) {
         return switch (name) {
             case "<init>" -> null;
             case "<clinit>" -> new ClInitSpecialMethodProcessor();
             default -> new DefaultSpecialMethodProcessor();
         };
+    }
+
+    private static String formatNativeSymbol(String baseName) {
+        String methodName = "__ngen_" + baseName.replace('/', '_');
+        return Util.escapeCppNameString(methodName);
+    }
+
+    public static String computeNativeSymbol(ClassNode classNode, MethodNode method,
+                                             int classIndex, int methodIndex) {
+        SpecialMethodProcessor processor = getSpecialMethodProcessor(method.name);
+        if (processor == null) {
+            return null;
+        }
+
+        if (processor instanceof ClInitSpecialMethodProcessor) {
+            if (ClInitSpecialMethodProcessor.shouldKeepOriginalClinit(classNode)) {
+                return null;
+            }
+            String base = String.format("special_clinit_%d_%d", classIndex, methodIndex);
+            return formatNativeSymbol(base);
+        }
+
+        if ((classNode.access & Opcodes.ACC_INTERFACE) != 0) {
+            String base = String.format("interfacestatic_%d_%d", classIndex, methodIndex);
+            return formatNativeSymbol(base);
+        }
+
+        String base = "native_" + method.name + methodIndex;
+        return formatNativeSymbol(base);
     }
 
     public static boolean shouldProcess(MethodNode method) {

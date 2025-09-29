@@ -67,6 +67,8 @@ public class MethodContext {
     public final StringBuilder verifiedClassPreamble;
     public int verifiedClassPreambleInsertionPoint;
 
+    public Map<String, String> nativeSymbolTable;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
         this.obfuscator = obfuscator;
@@ -89,6 +91,8 @@ public class MethodContext {
         this.verifiedClassFlagNames = new HashMap<>();
         this.verifiedClassPreamble = new StringBuilder();
         this.verifiedClassPreambleInsertionPoint = -1;
+
+        this.nativeSymbolTable = java.util.Collections.emptyMap();
     }
 
     public NodeCache<String> getCachedStrings() {
