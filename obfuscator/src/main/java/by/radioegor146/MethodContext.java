@@ -6,7 +6,13 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class MethodContext {
 
@@ -61,6 +67,39 @@ public class MethodContext {
     // reliance on the fragile synthetic mapping array.
     public boolean enumSwitchMapOnStack;
     public boolean lastWasEnumOrdinal;
+
+    /**
+     * Per-method cache of verified class references. Each entry keeps track of a
+     * lazily materialized strong local reference for the corresponding
+     * {@code classId}. Instruction handlers request these handles via
+     * {@link MethodProcessor#ensureClassHandle(MethodContext, String, String)},
+     * which also emits the runtime guard to refresh the weak global reference
+     * when necessary.
+     */
+    public final Map<Integer, String> verifiedClasses = new HashMap<>();
+
+    /**
+     * Tracks which class identifiers already had their declaration emitted in
+     * the current native method body. Using a {@link BitSet} keeps lookups
+     * compact while avoiding duplicate declarations when the same class is
+     * requested multiple times.
+     */
+    public final BitSet verifiedClassFlags = new BitSet();
+
+    /**
+     * Buffer holding the C++ declarations for class cache locals. The contents
+     * are injected into the method prologue by {@link MethodProcessor} once all
+     * instruction handlers have run.
+     */
+    public final StringBuilder classCacheDeclarations = new StringBuilder();
+
+    /**
+     * Absolute position within {@link #output} where the class cache
+     * declarations should be inserted. This is populated by
+     * {@link MethodProcessor} after the generic prologue is emitted so that the
+     * declarations appear before the state machine implementation.
+     */
+    public int classCacheInsertPosition = -1;
 
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
