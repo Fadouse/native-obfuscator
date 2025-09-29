@@ -576,6 +576,7 @@ public class MethodProcessor {
 
         output.append("    std::unordered_set<jobject> refs;\n");
         output.append("\n");
+        context.classCacheInsertPosition = output.length();
 
         int localIndex = 0;
         for (int i = 0; i < context.argTypes.size(); ++i) {
@@ -711,6 +712,12 @@ public class MethodProcessor {
             }
         }
 
+        if (context.classCacheDeclarations.length() > 0 && context.classCacheInsertPosition >= 0) {
+            output.insert(context.classCacheInsertPosition, context.classCacheDeclarations.toString());
+            context.classCacheDeclarations.setLength(0);
+            context.classCacheInsertPosition = -1;
+        }
+
         String defaultBlock = String.format("            return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]);
         if (flattenControlFlow) {
             String stateMachine = ControlFlowFlattener.generateStateMachine(
@@ -748,6 +755,64 @@ public class MethodProcessor {
                     .append("__ngen_state = ")
                     .append(rawState)
                     .append("; break;\n");
+        }
+    }
+
+    public static ClassCacheAccess ensureClassHandle(MethodContext context, String owner, String trimmedTryCatchBlock) {
+        int classId = context.getCachedClasses().getId(owner);
+        String localVar = context.verifiedClasses.computeIfAbsent(classId,
+                id -> String.format("__ngen_local_class_%d", id));
+        String flagName = String.format("__ngen_local_class_ready_%d", classId);
+
+        if (!context.verifiedClassFlags.get(classId)) {
+            context.verifiedClassFlags.set(classId);
+            context.classCacheDeclarations
+                    .append(String.format("    jclass %s = nullptr;\n", localVar))
+                    .append(String.format("    bool %s = false;\n\n", flagName));
+        }
+
+        StringBuilder guard = new StringBuilder();
+        guard.append("if (!").append(flagName).append(") {\n");
+        guard.append("        ").append(localVar)
+                .append(" = (jclass) env->NewLocalRef(cclasses[").append(classId).append("]);\n");
+        guard.append("        if (!").append(localVar).append(") {\n");
+        guard.append("            cclasses_mtx[").append(classId).append("].lock();\n");
+        guard.append("            if (!cclasses[").append(classId).append("] || env->IsSameObject(cclasses[")
+                .append(classId).append("], NULL)) {\n");
+        guard.append("                if (jclass clazz = ").append(getClassGetter(context, owner)).append(") {\n");
+        guard.append("                    cclasses[").append(classId)
+                .append("] = (jclass) env->NewWeakGlobalRef(clazz);\n");
+        guard.append("                    env->DeleteLocalRef(clazz);\n");
+        guard.append("                }\n");
+        guard.append("            }\n");
+        guard.append("            cclasses_mtx[").append(classId).append("].unlock(); ")
+                .append(trimmedTryCatchBlock).append("\n");
+        guard.append("            ").append(localVar)
+                .append(" = (jclass) env->NewLocalRef(cclasses[").append(classId).append("]);\n");
+        guard.append("        }\n");
+        guard.append("        ").append(flagName).append(" = ").append(localVar).append(" != nullptr;\n");
+        guard.append("        if (!").append(flagName).append(") { ")
+                .append(trimmedTryCatchBlock).append(" }\n");
+        guard.append("    }\n");
+
+        return new ClassCacheAccess(guard.toString(), localVar);
+    }
+
+    public static final class ClassCacheAccess {
+        private final String guard;
+        private final String local;
+
+        private ClassCacheAccess(String guard, String local) {
+            this.guard = guard;
+            this.local = local;
+        }
+
+        public String guard() {
+            return guard;
+        }
+
+        public String local() {
+            return local;
         }
     }
 

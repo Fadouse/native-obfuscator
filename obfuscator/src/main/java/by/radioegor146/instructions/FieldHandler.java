@@ -16,22 +16,13 @@ public class FieldHandler extends GenericInstructionHandler<FieldInsnNode> {
         CachedFieldInfo info = new CachedFieldInfo(node.owner, node.name, node.desc, isStatic);
 
         instructionName += "_" + Type.getType(node.desc).getSort();
+        MethodProcessor.ClassCacheAccess classAccess = MethodProcessor.ensureClassHandle(
+                context, node.owner, trimmedTryCatchBlock);
+        context.output.append(classAccess.guard());
+
         if (isStatic) {
-            props.put("class_ptr", context.getCachedClasses().getPointer(node.owner));
+            props.put("class_ptr", classAccess.local());
         }
-
-        int classId = context.getCachedClasses().getId(node.owner);
-
-        context.output.append(String.format("if (!cclasses[%d]  || env->IsSameObject(cclasses[%d], NULL)) { cclasses_mtx[%d].lock(); if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } cclasses_mtx[%d].unlock(); %s } ",
-                classId,
-                classId,
-                classId,
-                classId,
-                classId,
-                MethodProcessor.getClassGetter(context, node.owner),
-                classId,
-                classId,
-                trimmedTryCatchBlock));
 
         // Mirror JVM semantics: static field access triggers class initialization.
         if (isStatic) {
@@ -47,7 +38,7 @@ public class FieldHandler extends GenericInstructionHandler<FieldInsnNode> {
                 fieldId,
                 fieldId,
                 isStatic ? "Static" : "",
-                context.getCachedClasses().getPointer(node.owner),
+                classAccess.local(),
                 context.getStringPool().get(node.name),
                 context.getStringPool().get(node.desc),
                 trimmedTryCatchBlock));
