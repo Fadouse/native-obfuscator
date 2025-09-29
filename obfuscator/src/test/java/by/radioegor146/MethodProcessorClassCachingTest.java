@@ -31,6 +31,12 @@ public class MethodProcessorClassCachingTest {
             }
             return clazz;
         }
+
+        static void recursive(int depth) {
+            if (depth > 0) {
+                recursive(depth - 1);
+            }
+        }
     }
 
     private NativeObfuscator obfuscator;
@@ -89,4 +95,16 @@ public class MethodProcessorClassCachingTest {
         assertTrue(Pattern.compile("refs.insert\\(cstack\\d+\\.l\\);").matcher(output).find(), output);
         assertFalse(Pattern.compile("cstack\\d+\\.l = \\(?cclasses").matcher(output).find(), output);
     }
+
+    @Test
+    void staticRecursionBypassesJniBridge() {
+        MethodContext context = createContext("recursive", "(I)V");
+        processor.processMethod(context);
+
+        String output = context.output.toString();
+
+        assertTrue(output.contains("__ngen_native_recursive"), output);
+        assertFalse(output.contains("CallStaticVoidMethod"), output);
+    }
+
 }

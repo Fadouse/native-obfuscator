@@ -187,6 +187,19 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
             props.put("class_ptr", classPtr);
         }
 
+        boolean directSelfStaticVoidInvoke = isStatic
+                && returnType.getSort() == Type.VOID
+                && node.owner.equals(context.clazz.name)
+                && node.name.equals(context.method.name)
+                && node.desc.equals(context.method.desc);
+
+        if (directSelfStaticVoidInvoke) {
+            props.put("direct_method", context.cppNativeMethodName);
+            props.put("args", argsBuilder.toString());
+            instructionName = "DIRECT_INVOKESTATIC_0";
+            return;
+        }
+
         if (isStatic) {
             String dotted = node.owner.replace('/', '.');
             context.output.append(String.format(
