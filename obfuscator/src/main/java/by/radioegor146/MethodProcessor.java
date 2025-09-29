@@ -112,6 +112,37 @@ public class MethodProcessor {
         return "utils::find_class_wo_static(env, classloader, " + context.getCachedStrings().getPointer(desc.replace('/', '.')) + ")";
     }
 
+    public static String ensureVerifiedClass(MethodContext context, int classId, String owner,
+                                             String trimmedTryCatchBlock) {
+        String localName = context.verifiedClassLocals.get(classId);
+        if (localName == null) {
+            localName = "cclass_local" + context.verifiedClassLocals.size();
+            context.verifiedClassLocals.put(classId, localName);
+
+            String flagName = localName + "_cached";
+            context.verifiedClassFlagNames.put(classId, flagName);
+            context.verifiedClassPreamble.append("    jclass ").append(localName).append(" = nullptr;\n");
+            context.verifiedClassPreamble.append("    bool ").append(flagName).append(" = false;\n");
+        }
+
+        String flagName = context.verifiedClassFlagNames.get(classId);
+
+        if (!context.verifiedClassFlags.get(classId)) {
+            context.verifiedClassFlags.set(classId);
+            context.output.append(String.format(
+                    "if (!%1$s) { %2$s = (jclass) env->NewLocalRef(cclasses[%3$d]); if (%2$s == nullptr) { cclasses_mtx[%3$d].lock(); "
+                            + "if (!cclasses[%3$d] || env->IsSameObject(cclasses[%3$d], NULL)) { if (jclass clazz = %4$s) { cclasses[%3$d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
+                            + "cclasses_mtx[%3$d].unlock(); %5$s %2$s = (jclass) env->NewLocalRef(cclasses[%3$d]); %5$s } %1$s = true; } ",
+                    flagName,
+                    localName,
+                    classId,
+                    getClassGetter(context, owner),
+                    trimmedTryCatchBlock));
+        }
+
+        return localName;
+    }
+
     public void processMethod(MethodContext context) {
         MethodNode method = context.method;
         StringBuilder output = context.output;
@@ -631,6 +662,7 @@ public class MethodProcessor {
 
         output.append("    std::unordered_set<jobject> refs;\n");
         output.append("\n");
+        context.verifiedClassPreambleInsertionPoint = output.length();
 
         int localIndex = 0;
         for (int i = 0; i < context.argTypes.size(); ++i) {
@@ -789,6 +821,10 @@ public class MethodProcessor {
                         .append("\n");
                 referencedStates.add(parseStateId(context.catches.get(nextCatchesBlock)));
             }
+        }
+
+        if (context.verifiedClassPreamble.length() > 0 && context.verifiedClassPreambleInsertionPoint >= 0) {
+            output.insert(context.verifiedClassPreambleInsertionPoint, context.verifiedClassPreamble.toString());
         }
 
         String defaultBlock = String.format("            return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]);
