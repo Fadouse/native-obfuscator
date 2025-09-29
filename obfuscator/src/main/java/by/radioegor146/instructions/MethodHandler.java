@@ -180,22 +180,12 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
         props.put("objectstackprev", String.valueOf(objectStackPrev));
         props.put("returnstackindex", String.valueOf(objectStackIndex));
 
+        String classLocal = MethodProcessor.ensureClassStrongRef(context, node.owner, trimmedTryCatchBlock);
         if (isStatic || node.getOpcode() == Opcodes.INVOKESPECIAL) {
-            props.put("class_ptr", context.getCachedClasses().getPointer(node.owner));
+            props.put("class_ptr", classLocal);
         }
 
         int classId = context.getCachedClasses().getId(node.owner);
-
-        context.output.append(String.format("if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { cclasses_mtx[%d].lock(); if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } cclasses_mtx[%d].unlock(); %s } ",
-                classId,
-                classId,
-                classId,
-                classId,
-                classId,
-                MethodProcessor.getClassGetter(context, node.owner),
-                classId,
-                classId,
-                trimmedTryCatchBlock));
 
         if (isStatic) {
             String dotted = node.owner.replace('/', '.');
@@ -215,7 +205,7 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                         methodId,
                         methodId,
                         isStatic ? "Static" : "",
-                        context.getCachedClasses().getPointer(node.owner),
+                        classLocal,
                         context.getStringPool().get(node.name),
                         context.getStringPool().get(node.desc),
                         trimmedTryCatchBlock));

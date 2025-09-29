@@ -54,6 +54,14 @@ public class MethodProcessor {
             1, 1, 1, 2, 2, 0, 0, 0, 0
     };
 
+    private static String classLocalVarName(int index) {
+        return "__ngen_cached_class_" + index;
+    }
+
+    private static String classGuardVarName(int index) {
+        return "__ngen_class_guard_" + index;
+    }
+
     private final NativeObfuscator obfuscator;
     private final InstructionHandlerContainer<?>[] handlers;
 
@@ -110,6 +118,35 @@ public class MethodProcessor {
             desc = desc.substring(1, desc.length() - 1);
         }
         return "utils::find_class_wo_static(env, classloader, " + context.getCachedStrings().getPointer(desc.replace('/', '.')) + ")";
+    }
+
+    public static String ensureClassStrongRef(MethodContext context, String internalName, String trimmedTryCatchBlock) {
+        int classId = context.getCachedClasses().getId(internalName);
+        int cacheIndex = context.ensureClassCacheIndex(classId);
+        String localVar = classLocalVarName(cacheIndex);
+        String guardVar = classGuardVarName(cacheIndex);
+
+        if (context.markClassGuardGenerated(classId)) {
+            context.output.append(String.format(
+                    "if (%1$s == nullptr) { if (!%2$s) { %2$s = true; if (!cclasses[%3$d] || env->IsSameObject(cclasses[%3$d], NULL)) { cclasses_mtx[%3$d].lock(); if (!cclasses[%3$d] || env->IsSameObject(cclasses[%3$d], NULL)) { if (jclass clazz = %4$s) { cclasses[%3$d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } cclasses_mtx[%3$d].unlock(); %5$s } } %1$s = (jclass) env->NewLocalRef(cclasses[%3$d]); %5$s }\n",
+                    localVar,
+                    guardVar,
+                    classId,
+                    getClassGetter(context, internalName),
+                    trimmedTryCatchBlock));
+        }
+
+        return localVar;
+    }
+
+    public static String getClassStrongRefName(MethodContext context, int classId) {
+        int cacheIndex = context.ensureClassCacheIndex(classId);
+        return classLocalVarName(cacheIndex);
+    }
+
+    public static String getClassStrongRefName(MethodContext context, String internalName) {
+        int classId = context.getCachedClasses().getId(internalName);
+        return getClassStrongRefName(context, classId);
     }
 
     public void processMethod(MethodContext context) {
@@ -579,6 +616,8 @@ public class MethodProcessor {
                     CPP_TYPES[context.ret.getSort()])).append(" }\n");
         }
         output.append("    jobject lookup = nullptr;\n");
+        output.append("\n");
+        context.setClassDeclarationsInsertPos(output.length());
 
         if (method.tryCatchBlocks != null) {
             for (TryCatchBlockNode tryCatch : method.tryCatchBlocks) {
@@ -588,22 +627,12 @@ public class MethodProcessor {
             }
             Set<String> classesForTryCatches = method.tryCatchBlocks.stream().filter((tryCatchBlock) -> (tryCatchBlock.type != null)).map(x -> x.type)
                     .collect(Collectors.toSet());
+            String tryCatchGuard = String.format("if (env->ExceptionCheck()) { return (%s) 0; }",
+                    CPP_TYPES[context.ret.getSort()]);
             classesForTryCatches.forEach((clazz) -> {
-                int classId = context.getCachedClasses().getId(clazz);
-
                 context.output.append(String.format("    // try-catch-class %s\n", Util.escapeCommentString(clazz)));
-                context.output.append(String.format("    if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { cclasses_mtx[%d].lock(); "
-                                + "if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
-                                + "cclasses_mtx[%d].unlock(); if (env->ExceptionCheck()) { return (%s) 0; } }\n",
-                        classId,
-                        classId,
-                        classId,
-                        classId,
-                        classId,
-                        getClassGetter(context, clazz),
-                        classId,
-                        classId,
-                        CPP_TYPES[context.ret.getSort()]));
+                context.output.append("    ");
+                ensureClassStrongRef(context, clazz, tryCatchGuard);
             });
         }
 
@@ -764,7 +793,7 @@ public class MethodProcessor {
                 }
                 catchBody.append("            ")
                         .append(context.getSnippet("TRYCATCH_CHECK_STACK", Util.createMap(
-                                "exception_class_ptr", context.getCachedClasses().getPointer(currentCatchBlock.getClazz()),
+                                "exception_class_ptr", getClassStrongRefName(context, currentCatchBlock.getClazz()),
                                 "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
                         )))
                         .append("\n");
@@ -805,6 +834,7 @@ public class MethodProcessor {
         } else {
             output.append(buildLinearControlFlow(stateBlocks, defaultBlock, referencedStates));
         }
+        insertClassCacheDeclarations(context);
         output.append("}\n");
 
         context.stateObfuscation = null;
@@ -863,6 +893,33 @@ public class MethodProcessor {
             }
         }
         return linear.toString();
+    }
+
+    private static void insertClassCacheDeclarations(MethodContext context) {
+        int insertPos = context.getClassDeclarationsInsertPos();
+        if (insertPos < 0) {
+            return;
+        }
+        String declarations = buildClassCacheDeclarations(context);
+        if (declarations.isEmpty()) {
+            return;
+        }
+        context.output.insert(insertPos, declarations);
+    }
+
+    private static String buildClassCacheDeclarations(MethodContext context) {
+        if (context.getClassCacheIndices().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int index : context.getClassCacheIndices().values()) {
+            sb.append("    jclass ").append(classLocalVarName(index)).append(" = nullptr;\n");
+        }
+        for (int index : context.getClassCacheIndices().values()) {
+            sb.append("    bool ").append(classGuardVarName(index)).append(" = false;\n");
+        }
+        sb.append('\n');
+        return sb.toString();
     }
 
     private static String linearizeStateAssignments(String code) {

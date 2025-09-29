@@ -62,6 +62,11 @@ public class MethodContext {
     public boolean enumSwitchMapOnStack;
     public boolean lastWasEnumOrdinal;
 
+    private final LinkedHashMap<Integer, Integer> classCacheIndices = new LinkedHashMap<>();
+    private final Set<Integer> emittedClassGuards = new HashSet<>();
+    private int nextClassCacheIndex = 0;
+    private int classDeclarationsInsertPos = -1;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
         this.obfuscator = obfuscator;
@@ -79,6 +84,36 @@ public class MethodContext {
         this.locals = new ArrayList<>();
         this.tryCatches = new HashSet<>();
         this.catches = new HashMap<>();
+    }
+
+    public int ensureClassCacheIndex(int classId) {
+        Integer existing = classCacheIndices.get(classId);
+        if (existing != null) {
+            return existing;
+        }
+        int index = nextClassCacheIndex++;
+        classCacheIndices.put(classId, index);
+        return index;
+    }
+
+    public boolean markClassGuardGenerated(int classId) {
+        return emittedClassGuards.add(classId);
+    }
+
+    public boolean isClassGuardGenerated(int classId) {
+        return emittedClassGuards.contains(classId);
+    }
+
+    public LinkedHashMap<Integer, Integer> getClassCacheIndices() {
+        return classCacheIndices;
+    }
+
+    public void setClassDeclarationsInsertPos(int pos) {
+        this.classDeclarationsInsertPos = pos;
+    }
+
+    public int getClassDeclarationsInsertPos() {
+        return classDeclarationsInsertPos;
     }
 
     public NodeCache<String> getCachedStrings() {
