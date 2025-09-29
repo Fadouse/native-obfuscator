@@ -24,55 +24,6 @@ namespace native_jvm::utils {
     bool is_jvm11_link_call_site;
 #endif
 
-    static inline uint32_t rotl32(uint32_t v, int r) {
-        return (v << r) | (v >> (32 - r));
-    }
-
-    static inline uint32_t chacha_round(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
-        a += b; d ^= a; d = rotl32(d, 16);
-        c += d; b ^= c; b = rotl32(b, 12);
-        a += b; d ^= a; d = rotl32(d, 8);
-        c += d; b ^= c; b = rotl32(b, 7);
-        return a;
-    }
-
-    static inline uint32_t mix32(uint32_t key, uint32_t method_id, uint32_t class_id, uint32_t seed) {
-        return chacha_round(key, method_id, class_id, seed);
-    }
-
-    static inline uint64_t mix64(uint64_t key, uint32_t method_id, uint32_t class_id, uint32_t seed) {
-        uint32_t k1 = (uint32_t) key;
-        uint32_t k2 = (uint32_t) (key >> 32);
-        uint32_t s2 = seed ^ 0x9E3779B9u;
-        uint32_t r1 = chacha_round(k1, method_id, class_id, seed);
-        uint32_t r2 = chacha_round(k2, class_id, method_id, s2);
-        return ((uint64_t) r2 << 32) | r1;
-    }
-
-    jint decode_int(jint enc, jint key, jint method_id, jint class_id, jint seed) {
-        uint32_t mixed = mix32((uint32_t) key, (uint32_t) method_id, (uint32_t) class_id, (uint32_t) seed);
-        return enc ^ (jint) mixed;
-    }
-
-    jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id, jint seed) {
-        uint64_t mixed = mix64((uint64_t) key, (uint32_t) method_id, (uint32_t) class_id, (uint32_t) seed);
-        return enc ^ (jlong) mixed;
-    }
-
-    jfloat decode_float(jint enc, jint key, jint method_id, jint class_id, jint seed) {
-        jint dec = decode_int(enc, key, method_id, class_id, seed);
-        jfloat result;
-        std::memcpy(&result, &dec, sizeof(result));
-        return result;
-    }
-
-    jdouble decode_double(jlong enc, jlong key, jint method_id, jint class_id, jint seed) {
-        jlong dec = decode_long(enc, key, method_id, class_id, seed);
-        jdouble result;
-        std::memcpy(&result, &dec, sizeof(result));
-        return result;
-    }
-
     void init_utils(JNIEnv *env) {
         jclass clazz = env->FindClass("[Z");
         if (env->ExceptionCheck())

@@ -11,10 +11,11 @@ import org.objectweb.asm.tree.*;
 
 import java.lang.reflect.Field;
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import by.radioegor146.FastRandom;
 
 public class MethodProcessor {
 
@@ -192,7 +193,7 @@ public class MethodProcessor {
 
         // Only use VM translation if virtualization is enabled
         if (context.protectionConfig.isVirtualizationEnabled()) {
-            vmKeySeed = ThreadLocalRandom.current().nextLong();
+            vmKeySeed = FastRandom.nextLong();
             output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
 
             boolean useJit = context.protectionConfig.isJitEnabled();

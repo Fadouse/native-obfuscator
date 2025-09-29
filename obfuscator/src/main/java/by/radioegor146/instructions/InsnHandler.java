@@ -1,10 +1,10 @@
 package by.radioegor146.instructions;
 
+import by.radioegor146.FastRandom;
 import by.radioegor146.MethodContext;
 import by.radioegor146.Util;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.InsnNode;
-import java.util.concurrent.ThreadLocalRandom;
 
 public class InsnHandler extends GenericInstructionHandler<InsnNode> {
 
@@ -42,10 +42,10 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IADD: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
-                    if (ThreadLocalRandom.current().nextBoolean()) {
-                        long junkSeed = ThreadLocalRandom.current().nextLong();
-                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    long seed = FastRandom.nextLong();
+                    if (FastRandom.nextBoolean()) {
+                        long junkSeed = FastRandom.nextLong();
+                        int junkIdx = FastRandom.nextBoolean() ? 1 : 2;
                         context.output.append(String.format(
                                 "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
                                 junkIdx, junkSeed, props.get("trycatchhandler")));
@@ -64,10 +64,10 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.ISUB: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
-                    if (ThreadLocalRandom.current().nextBoolean()) {
-                        long junkSeed = ThreadLocalRandom.current().nextLong();
-                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    long seed = FastRandom.nextLong();
+                    if (FastRandom.nextBoolean()) {
+                        long junkSeed = FastRandom.nextLong();
+                        int junkIdx = FastRandom.nextBoolean() ? 1 : 2;
                         context.output.append(String.format(
                                 "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
                                 junkIdx, junkSeed, props.get("trycatchhandler")));
@@ -86,10 +86,10 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IMUL: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
-                    if (ThreadLocalRandom.current().nextBoolean()) {
-                        long junkSeed = ThreadLocalRandom.current().nextLong();
-                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    long seed = FastRandom.nextLong();
+                    if (FastRandom.nextBoolean()) {
+                        long junkSeed = FastRandom.nextLong();
+                        int junkIdx = FastRandom.nextBoolean() ? 1 : 2;
                         context.output.append(String.format(
                                 "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
                                 junkIdx, junkSeed, props.get("trycatchhandler")));
@@ -108,10 +108,10 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IDIV: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
-                    if (ThreadLocalRandom.current().nextBoolean()) {
-                        long junkSeed = ThreadLocalRandom.current().nextLong();
-                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    long seed = FastRandom.nextLong();
+                    if (FastRandom.nextBoolean()) {
+                        long junkSeed = FastRandom.nextLong();
+                        int junkIdx = FastRandom.nextBoolean() ? 1 : 2;
                         context.output.append(String.format(
                                 "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
                                 junkIdx, junkSeed, props.get("trycatchhandler")));
@@ -129,10 +129,10 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IAND: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
-                    if (ThreadLocalRandom.current().nextBoolean()) {
-                        long junkSeed = ThreadLocalRandom.current().nextLong();
-                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    long seed = FastRandom.nextLong();
+                    if (FastRandom.nextBoolean()) {
+                        long junkSeed = FastRandom.nextLong();
+                        int junkIdx = FastRandom.nextBoolean() ? 1 : 2;
                         context.output.append(String.format(
                                 "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
                                 junkIdx, junkSeed, props.get("trycatchhandler")));
@@ -151,10 +151,10 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IOR: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
-                    if (ThreadLocalRandom.current().nextBoolean()) {
-                        long junkSeed = ThreadLocalRandom.current().nextLong();
-                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    long seed = FastRandom.nextLong();
+                    if (FastRandom.nextBoolean()) {
+                        long junkSeed = FastRandom.nextLong();
+                        int junkIdx = FastRandom.nextBoolean() ? 1 : 2;
                         context.output.append(String.format(
                                 "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
                                 junkIdx, junkSeed, props.get("trycatchhandler")));
@@ -173,10 +173,10 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IXOR: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
-                    if (ThreadLocalRandom.current().nextBoolean()) {
-                        long junkSeed = ThreadLocalRandom.current().nextLong();
-                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                    long seed = FastRandom.nextLong();
+                    if (FastRandom.nextBoolean()) {
+                        long junkSeed = FastRandom.nextLong();
+                        int junkIdx = FastRandom.nextBoolean() ? 1 : 2;
                         context.output.append(String.format(
                                 "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
                                 junkIdx, junkSeed, props.get("trycatchhandler")));
@@ -195,7 +195,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.ISHL: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHL, cstack%s.i, cstack%s.i, %dLL);%s",
                             props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
@@ -210,7 +210,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.ISHR: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHR, cstack%s.i, cstack%s.i, %dLL);%s",
                             props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
@@ -225,7 +225,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.IUSHR: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_USHR, cstack%s.i, cstack%s.i, %dLL);%s",
                             props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
@@ -241,7 +241,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.I2B: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2B, cstack%s.i, %dLL);%s",
                             props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
@@ -255,7 +255,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.I2C: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2C, cstack%s.i, %dLL);%s",
                             props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
@@ -269,7 +269,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.I2S: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2S, cstack%s.i, %dLL);%s",
                             props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
@@ -283,7 +283,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.I2L: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.j = native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2L, cstack%s.i, %dLL);%s",
                             props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
@@ -297,7 +297,7 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
             case Opcodes.INEG: {
                 if (virtualizationEnabled) {
                     instructionName = null;
-                    long seed = ThreadLocalRandom.current().nextLong();
+                    long seed = FastRandom.nextLong();
                     context.output.append(String.format(
                             "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_NEG, cstack%s.i, %dLL);%s",
                             props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
@@ -345,8 +345,8 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
     }
 
     private void emitEncodedIntResult(MethodContext context, String targetIndex, String resultExpression) {
-        int key = ThreadLocalRandom.current().nextInt();
-        int seed = ThreadLocalRandom.current().nextInt();
+        int key = FastRandom.nextInt();
+        int seed = FastRandom.nextInt();
         String keyLiteral = LdcHandler.getIntString(key);
         String seedLiteral = LdcHandler.getIntString(seed);
         context.output.append(String.format(
@@ -360,8 +360,8 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
     }
 
     private void emitEncodedLongResult(MethodContext context, String targetIndex, String resultExpression) {
-        long key = ThreadLocalRandom.current().nextLong();
-        int seed = ThreadLocalRandom.current().nextInt();
+        long key = FastRandom.nextLong();
+        int seed = FastRandom.nextInt();
         String keyLiteral = LdcHandler.getLongValue(key);
         String seedLiteral = LdcHandler.getIntString(seed);
         context.output.append(String.format(
@@ -375,8 +375,8 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
     }
 
     private void emitEncodedIntDiv(MethodContext context) {
-        int key = ThreadLocalRandom.current().nextInt();
-        int seed = ThreadLocalRandom.current().nextInt();
+        int key = FastRandom.nextInt();
+        int seed = FastRandom.nextInt();
         String keyLiteral = LdcHandler.getIntString(key);
         String seedLiteral = LdcHandler.getIntString(seed);
         String dividendIdx = props.get("stackindexm2");

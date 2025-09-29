@@ -1,11 +1,10 @@
 package by.radioegor146.instructions;
 
+import by.radioegor146.FastRandom;
 import by.radioegor146.MethodContext;
 import by.radioegor146.MethodProcessor;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.LdcInsnNode;
-
-import java.util.concurrent.ThreadLocalRandom;
 
 public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
 
@@ -70,8 +69,8 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
         } else if (cst instanceof Integer) {
             if (constantsObfuscated) {
                 instructionName += "_INT";
-                int key = ThreadLocalRandom.current().nextInt();
-                int seed = ThreadLocalRandom.current().nextInt();
+                int key = FastRandom.nextInt();
+                int seed = FastRandom.nextInt();
                 int mid = context.methodIndex;
                 int cid = context.classIndex;
                 int mixed = mix32(key, mid, cid, seed);
@@ -88,8 +87,8 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
         } else if (cst instanceof Long) {
             if (constantsObfuscated) {
                 instructionName += "_LONG";
-                long key = ThreadLocalRandom.current().nextLong();
-                int seed = ThreadLocalRandom.current().nextInt();
+                long key = FastRandom.nextLong();
+                int seed = FastRandom.nextInt();
                 int mid = context.methodIndex;
                 int cid = context.classIndex;
                 long mixed = mix64(key, mid, cid, seed);
@@ -107,8 +106,8 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
             if (constantsObfuscated) {
                 instructionName += "_FLOAT";
                 int bits = Float.floatToRawIntBits((Float) cst);
-                int key = ThreadLocalRandom.current().nextInt();
-                int seed = ThreadLocalRandom.current().nextInt();
+                int key = FastRandom.nextInt();
+                int seed = FastRandom.nextInt();
                 int mid = context.methodIndex;
                 int cid = context.classIndex;
                 int mixed = mix32(key, mid, cid, seed);
@@ -126,8 +125,8 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
             if (constantsObfuscated) {
                 instructionName += "_DOUBLE";
                 long bits = Double.doubleToRawLongBits((Double) cst);
-                long key = ThreadLocalRandom.current().nextLong();
-                int seed = ThreadLocalRandom.current().nextInt();
+                long key = FastRandom.nextLong();
+                int seed = FastRandom.nextInt();
                 int mid = context.methodIndex;
                 int cid = context.classIndex;
                 long mixed = mix64(key, mid, cid, seed);
