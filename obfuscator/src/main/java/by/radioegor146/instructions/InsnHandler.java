@@ -10,6 +10,9 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
 
     @Override
     protected void process(MethodContext context, InsnNode node) {
+        boolean virtualizationEnabled = context.protectionConfig.isVirtualizationEnabled();
+        boolean constantObfuscationEnabled = context.protectionConfig.isConstantObfuscationEnabled();
+
         switch (node.getOpcode()) {
             case Opcodes.IALOAD: {
                 // Rewrite enum-switch mapping pattern:
@@ -37,182 +40,272 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
                 break;
             }
             case Opcodes.IADD: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                if (ThreadLocalRandom.current().nextBoolean()) {
-                    long junkSeed = ThreadLocalRandom.current().nextLong();
-                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    if (ThreadLocalRandom.current().nextBoolean()) {
+                        long junkSeed = ThreadLocalRandom.current().nextLong();
+                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                        context.output.append(String.format(
+                                "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                                junkIdx, junkSeed, props.get("trycatchhandler")));
+                    }
                     context.output.append(String.format(
-                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
-                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i + cstack%s.i)", props.get("stackindexm2"), props.get("stackindexm1")));
                 }
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_ADD, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
                 break;
             }
             case Opcodes.ISUB: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                if (ThreadLocalRandom.current().nextBoolean()) {
-                    long junkSeed = ThreadLocalRandom.current().nextLong();
-                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    if (ThreadLocalRandom.current().nextBoolean()) {
+                        long junkSeed = ThreadLocalRandom.current().nextLong();
+                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                        context.output.append(String.format(
+                                "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                                junkIdx, junkSeed, props.get("trycatchhandler")));
+                    }
                     context.output.append(String.format(
-                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
-                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i - cstack%s.i)", props.get("stackindexm2"), props.get("stackindexm1")));
                 }
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SUB, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
                 break;
             }
             case Opcodes.IMUL: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                if (ThreadLocalRandom.current().nextBoolean()) {
-                    long junkSeed = ThreadLocalRandom.current().nextLong();
-                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    if (ThreadLocalRandom.current().nextBoolean()) {
+                        long junkSeed = ThreadLocalRandom.current().nextLong();
+                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                        context.output.append(String.format(
+                                "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                                junkIdx, junkSeed, props.get("trycatchhandler")));
+                    }
                     context.output.append(String.format(
-                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
-                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i * cstack%s.i)", props.get("stackindexm2"), props.get("stackindexm1")));
                 }
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_MUL, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
                 break;
             }
             case Opcodes.IDIV: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                if (ThreadLocalRandom.current().nextBoolean()) {
-                    long junkSeed = ThreadLocalRandom.current().nextLong();
-                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    if (ThreadLocalRandom.current().nextBoolean()) {
+                        long junkSeed = ThreadLocalRandom.current().nextLong();
+                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                        context.output.append(String.format(
+                                "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                                junkIdx, junkSeed, props.get("trycatchhandler")));
+                    }
                     context.output.append(String.format(
-                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
-                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntDiv(context);
                 }
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_DIV, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
                 break;
             }
             case Opcodes.IAND: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                if (ThreadLocalRandom.current().nextBoolean()) {
-                    long junkSeed = ThreadLocalRandom.current().nextLong();
-                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    if (ThreadLocalRandom.current().nextBoolean()) {
+                        long junkSeed = ThreadLocalRandom.current().nextLong();
+                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                        context.output.append(String.format(
+                                "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                                junkIdx, junkSeed, props.get("trycatchhandler")));
+                    }
                     context.output.append(String.format(
-                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
-                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_AND, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i & cstack%s.i)", props.get("stackindexm2"), props.get("stackindexm1")));
                 }
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_AND, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
                 break;
             }
             case Opcodes.IOR: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                if (ThreadLocalRandom.current().nextBoolean()) {
-                    long junkSeed = ThreadLocalRandom.current().nextLong();
-                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    if (ThreadLocalRandom.current().nextBoolean()) {
+                        long junkSeed = ThreadLocalRandom.current().nextLong();
+                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                        context.output.append(String.format(
+                                "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                                junkIdx, junkSeed, props.get("trycatchhandler")));
+                    }
                     context.output.append(String.format(
-                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
-                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_OR, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i | cstack%s.i)", props.get("stackindexm2"), props.get("stackindexm1")));
                 }
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_OR, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
                 break;
             }
             case Opcodes.IXOR: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                if (ThreadLocalRandom.current().nextBoolean()) {
-                    long junkSeed = ThreadLocalRandom.current().nextLong();
-                    int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    if (ThreadLocalRandom.current().nextBoolean()) {
+                        long junkSeed = ThreadLocalRandom.current().nextLong();
+                        int junkIdx = ThreadLocalRandom.current().nextBoolean() ? 1 : 2;
+                        context.output.append(String.format(
+                                "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
+                                junkIdx, junkSeed, props.get("trycatchhandler")));
+                    }
                     context.output.append(String.format(
-                            "native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_JUNK%d, 0, 0, %dLL);%s",
-                            junkIdx, junkSeed, props.get("trycatchhandler")));
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_XOR, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i ^ cstack%s.i)", props.get("stackindexm2"), props.get("stackindexm1")));
                 }
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_XOR, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
                 break;
             }
             case Opcodes.ISHL: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHL, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHL, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i << (0x1f & cstack%s.i))", props.get("stackindexm2"), props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.ISHR: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHR, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_SHR, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("(cstack%s.i >> (0x1f & cstack%s.i))", props.get("stackindexm2"), props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.IUSHR: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_USHR, cstack%s.i, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
-                        props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.i = (jint)native_jvm::vm::run_arith_vm(env, native_jvm::vm::OP_USHR, cstack%s.i, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm2"), props.get("stackindexm2"), props.get("stackindexm1"), seed,
+                            props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm2"),
+                            String.format("((jint)(((uint32_t)cstack%s.i) >> (((uint32_t)cstack%s.i) & 0x1f)))",
+                                    props.get("stackindexm2"), props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.I2B: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2B, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2B, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm1"),
+                            String.format("((jint)(jbyte)cstack%s.i)", props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.I2C: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2C, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2C, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm1"),
+                            String.format("((jint)(jchar)cstack%s.i)", props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.I2S: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2S, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2S, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm1"),
+                            String.format("((jint)(jshort)cstack%s.i)", props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.I2L: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.j = native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2L, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.j = native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_I2L, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedLongResult(context, props.get("stackindexm1"),
+                            String.format("((jlong)cstack%s.i)", props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.INEG: {
-                instructionName = null;
-                long seed = ThreadLocalRandom.current().nextLong();
-                context.output.append(String.format(
-                        "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_NEG, cstack%s.i, %dLL);%s",
-                        props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                if (virtualizationEnabled) {
+                    instructionName = null;
+                    long seed = ThreadLocalRandom.current().nextLong();
+                    context.output.append(String.format(
+                            "cstack%s.i = (jint)native_jvm::vm::run_unary_vm(env, native_jvm::vm::OP_NEG, cstack%s.i, %dLL);%s",
+                            props.get("stackindexm1"), props.get("stackindexm1"), seed, props.get("trycatchhandler")));
+                } else if (constantObfuscationEnabled) {
+                    instructionName = null;
+                    emitEncodedIntResult(context, props.get("stackindexm1"),
+                            String.format("(-cstack%s.i)", props.get("stackindexm1")));
+                }
                 break;
             }
             case Opcodes.DUP_X1: {
@@ -249,6 +342,58 @@ public class InsnHandler extends GenericInstructionHandler<InsnNode> {
                 // handled via snippets
                 break;
         }
+    }
+
+    private void emitEncodedIntResult(MethodContext context, String targetIndex, String resultExpression) {
+        int key = ThreadLocalRandom.current().nextInt();
+        int seed = ThreadLocalRandom.current().nextInt();
+        String keyLiteral = LdcHandler.getIntString(key);
+        String seedLiteral = LdcHandler.getIntString(seed);
+        context.output.append(String.format(
+                "{ jint __ngen_res = %s; jint __ngen_mix = native_jvm::utils::decode_int(0, %s, %d, %d, %s); " +
+                        "jint __ngen_enc = __ngen_res ^ __ngen_mix; cstack%s.i = native_jvm::utils::decode_int(__ngen_enc, %s, %d, %d, %s); }%s",
+                resultExpression,
+                keyLiteral, context.methodIndex, context.classIndex, seedLiteral,
+                targetIndex,
+                keyLiteral, context.methodIndex, context.classIndex, seedLiteral,
+                props.get("trycatchhandler")));
+    }
+
+    private void emitEncodedLongResult(MethodContext context, String targetIndex, String resultExpression) {
+        long key = ThreadLocalRandom.current().nextLong();
+        int seed = ThreadLocalRandom.current().nextInt();
+        String keyLiteral = LdcHandler.getLongValue(key);
+        String seedLiteral = LdcHandler.getIntString(seed);
+        context.output.append(String.format(
+                "{ jlong __ngen_res = %s; jlong __ngen_mix = native_jvm::utils::decode_long(0LL, %s, %d, %d, %s); " +
+                        "jlong __ngen_enc = __ngen_res ^ __ngen_mix; cstack%s.j = native_jvm::utils::decode_long(__ngen_enc, %s, %d, %d, %s); }%s",
+                resultExpression,
+                keyLiteral, context.methodIndex, context.classIndex, seedLiteral,
+                targetIndex,
+                keyLiteral, context.methodIndex, context.classIndex, seedLiteral,
+                props.get("trycatchhandler")));
+    }
+
+    private void emitEncodedIntDiv(MethodContext context) {
+        int key = ThreadLocalRandom.current().nextInt();
+        int seed = ThreadLocalRandom.current().nextInt();
+        String keyLiteral = LdcHandler.getIntString(key);
+        String seedLiteral = LdcHandler.getIntString(seed);
+        String dividendIdx = props.get("stackindexm2");
+        String divisorIdx = props.get("stackindexm1");
+        String tryCatch = props.get("trycatchhandler");
+        context.output.append(String.format(
+                "if (cstack%s.i == -1 && cstack%s.i == ((jint) 2147483648U)) { } else { if (cstack%s.i == 0) { " +
+                        "utils::throw_re(env, \"java/lang/ArithmeticException\", \"IDIV / by 0\", %d); %s } else { " +
+                        "jint __ngen_res = cstack%s.i / cstack%s.i; jint __ngen_mix = native_jvm::utils::decode_int(0, %s, %d, %d, %s); " +
+                        "jint __ngen_enc = __ngen_res ^ __ngen_mix; cstack%s.i = native_jvm::utils::decode_int(__ngen_enc, %s, %d, %d, %s); } }",
+                divisorIdx, dividendIdx,
+                divisorIdx, context.line, tryCatch,
+                dividendIdx, divisorIdx,
+                keyLiteral, context.methodIndex, context.classIndex, seedLiteral,
+                dividendIdx,
+                keyLiteral, context.methodIndex, context.classIndex, seedLiteral));
+        context.output.append(String.format(" %s", tryCatch));
     }
 
     @Override
