@@ -64,7 +64,6 @@ public class MethodContext {
 
     public final Map<Integer, String> verifiedClassLocals;
     public final Map<Integer, String> verifiedClassFlagNames;
-    public final BitSet verifiedClassFlags;
     public final StringBuilder verifiedClassPreamble;
     public int verifiedClassPreambleInsertionPoint;
 
@@ -88,7 +87,6 @@ public class MethodContext {
 
         this.verifiedClassLocals = new HashMap<>();
         this.verifiedClassFlagNames = new HashMap<>();
-        this.verifiedClassFlags = new BitSet();
         this.verifiedClassPreamble = new StringBuilder();
         this.verifiedClassPreambleInsertionPoint = -1;
     }
