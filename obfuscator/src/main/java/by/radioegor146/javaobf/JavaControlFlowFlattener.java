@@ -21,7 +21,7 @@ public final class JavaControlFlowFlattener implements Opcodes {
     private static final Random RANDOM = new Random();
     private static final boolean DEBUG = false;
     private static ClassProvider classProvider = ClassProvider.ofClasspathFallback();
-    private static final boolean ENABLE_SWITCH_STATE_MACHINE = false;
+    private static final boolean ENABLE_SWITCH_STATE_MACHINE = true;
 
     public static boolean canProcess(MethodNode method) {
         if (method == null || method.instructions == null || method.instructions.size() == 0) {
@@ -168,6 +168,19 @@ public final class JavaControlFlowFlattener implements Opcodes {
             return false;
         }
 
+        // Ensure that every block is entered with an empty operand stack.
+        for (BlockInfo2 block : blocks) {
+            Frame<?> entryFrame = findEntryFrame(method, block, frames);
+            if (entryFrame == null || entryFrame.getStackSize() != 0) {
+                return false;
+            }
+        }
+
+        // Ensure we can rewrite every outgoing transition safely before mutating the method.
+        if (!canRewriteAllTransitions(method, blocks, frames)) {
+            return false;
+        }
+
         // 2) Add state variable
         int stateLocal = method.maxLocals;
         method.maxLocals = stateLocal + 1;
@@ -237,7 +250,8 @@ public final class JavaControlFlowFlattener implements Opcodes {
                     Frame<?> fIn = frameAt.apply(endReal);
                     if (fIn != null && fIn.getStackSize() == 0) {
                         BlockInfo2 tgt = newLabel2block.get(j.label);
-                        if (tgt != null) {
+                        Frame<?> tgtFrame = tgt == null ? null : findEntryFrame(method, tgt, frames);
+                        if (tgt != null && tgtFrame != null && tgtFrame.getStackSize() == 0) {
                             InsnList repl = makeSetStateAndGoto(stateLocal, stateOf.get(tgt), L_dispatch);
                             method.instructions.insertBefore(endReal, repl);
                             method.instructions.remove(endReal);
@@ -252,8 +266,12 @@ public final class JavaControlFlowFlattener implements Opcodes {
                         if (fAfterIf != null && fAfterIf.getStackSize() == 0) {
                             BlockInfo2 tTrue  = newLabel2block.get(j.label);
                             BlockInfo2 tFalse = nextFallthroughBlock(blocks, i, method);
+                            Frame<?> tTrueFrame = tTrue == null ? null : findEntryFrame(method, tTrue, frames);
+                            Frame<?> tFalseFrame = tFalse == null ? null : findEntryFrame(method, tFalse, frames);
 
-                            if (tTrue != null && tFalse != null) {
+                            if (tTrue != null && tFalse != null &&
+                                    tTrueFrame != null && tTrueFrame.getStackSize() == 0 &&
+                                    tFalseFrame != null && tFalseFrame.getStackSize() == 0) {
                                 // CRITICAL: Always create fresh label for branch target
                                 LabelNode L_setTrue = new LabelNode();
                                 j.label = L_setTrue;
@@ -278,10 +296,11 @@ public final class JavaControlFlowFlattener implements Opcodes {
                     Frame<?> fAfter = frameAt.apply(nextReal);
                     if (fAfter != null && fAfter.getStackSize() == 0) {
                         BlockInfo2 t = nextFallthroughBlock(blocks, i, method);
-                if (t != null) {
-                    InsnList tail = makeSetStateAndGoto(stateLocal, stateOf.get(t), L_dispatch);
-                    method.instructions.insert(endReal, tail);
-                }
+                        Frame<?> tFrame = t == null ? null : findEntryFrame(method, t, frames);
+                        if (t != null && tFrame != null && tFrame.getStackSize() == 0) {
+                            InsnList tail = makeSetStateAndGoto(stateLocal, stateOf.get(t), L_dispatch);
+                            method.instructions.insert(endReal, tail);
+                        }
                     }
                 }
             }
@@ -390,6 +409,110 @@ public final class JavaControlFlowFlattener implements Opcodes {
     private static BlockInfo2 nextFallthroughBlock(List<BlockInfo2> blocks, int idx, MethodNode m) {
         // 物理顺序上的下一个块即为落空目标（不跨方法结尾）
         if (idx + 1 < blocks.size()) return blocks.get(idx + 1);
+        return null;
+    }
+
+    private static Frame<?> findEntryFrame(MethodNode method, BlockInfo2 block, Frame<?>[] frames) {
+        if (block == null) {
+            return null;
+        }
+
+        AbstractInsnNode cursor = block.begin;
+        while (cursor != null && (cursor instanceof LabelNode || cursor instanceof LineNumberNode || cursor instanceof FrameNode)) {
+            cursor = cursor.getNext();
+        }
+        if (cursor == null) {
+            return null;
+        }
+
+        int index = method.instructions.indexOf(cursor);
+        if (index < 0 || index >= frames.length) {
+            return null;
+        }
+        return frames[index];
+    }
+
+    private static boolean canRewriteAllTransitions(MethodNode method, List<BlockInfo2> blocks, Frame<?>[] frames) {
+        java.util.function.Function<AbstractInsnNode, Frame<?>> frameAt =
+                (insn) -> {
+                    int idx = method.instructions.indexOf(insn);
+                    if (idx < 0 || idx >= frames.length) return null;
+                    return frames[idx];
+                };
+
+        for (int i = 0; i < blocks.size(); i++) {
+            BlockInfo2 block = blocks.get(i);
+            AbstractInsnNode end = block.endInclusive;
+            AbstractInsnNode endReal = end;
+            while (endReal != null && endReal.getOpcode() == -1) {
+                endReal = endReal.getPrevious();
+            }
+            if (endReal == null) {
+                continue;
+            }
+
+            int opEnd = endReal.getOpcode();
+
+            if (endReal instanceof JumpInsnNode jump) {
+                if (opEnd == GOTO) {
+                    Frame<?> fIn = frameAt.apply(endReal);
+                    BlockInfo2 target = jump == null ? null : findBlockByLabel(blocks, ((JumpInsnNode) endReal).label);
+                    Frame<?> targetFrame = target == null ? null : findEntryFrame(method, target, frames);
+                    if (fIn == null || fIn.getStackSize() != 0 || targetFrame == null || targetFrame.getStackSize() != 0) {
+                        return false;
+                    }
+                } else if ((opEnd >= IFEQ && opEnd <= IF_ACMPNE) || opEnd == IFNULL || opEnd == IFNONNULL) {
+                    AbstractInsnNode nextReal = jump.getNext();
+                    while (nextReal != null && nextReal.getOpcode() == -1) {
+                        nextReal = nextReal.getNext();
+                    }
+                    if (nextReal == null) {
+                        return false;
+                    }
+
+                    Frame<?> afterIf = frameAt.apply(nextReal);
+                    BlockInfo2 trueBlock = findBlockByLabel(blocks, jump.label);
+                    BlockInfo2 falseBlock = nextFallthroughBlock(blocks, i, method);
+                    Frame<?> trueFrame = trueBlock == null ? null : findEntryFrame(method, trueBlock, frames);
+                    Frame<?> falseFrame = falseBlock == null ? null : findEntryFrame(method, falseBlock, frames);
+                    if (afterIf == null || afterIf.getStackSize() != 0 ||
+                            trueFrame == null || trueFrame.getStackSize() != 0 ||
+                            falseFrame == null || falseFrame.getStackSize() != 0) {
+                        return false;
+                    }
+                }
+            } else if (!(endReal instanceof TableSwitchInsnNode) &&
+                    !(endReal instanceof LookupSwitchInsnNode) &&
+                    !((opEnd >= IRETURN && opEnd <= RETURN) || opEnd == ATHROW)) {
+                AbstractInsnNode nextReal = endReal.getNext();
+                while (nextReal != null && nextReal.getOpcode() == -1) {
+                    nextReal = nextReal.getNext();
+                }
+                if (nextReal == null) {
+                    return false;
+                }
+
+                Frame<?> after = frameAt.apply(nextReal);
+                BlockInfo2 fallthrough = nextFallthroughBlock(blocks, i, method);
+                Frame<?> fallthroughFrame = fallthrough == null ? null : findEntryFrame(method, fallthrough, frames);
+                if (after == null || after.getStackSize() != 0 ||
+                        fallthroughFrame == null || fallthroughFrame.getStackSize() != 0) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static BlockInfo2 findBlockByLabel(List<BlockInfo2> blocks, LabelNode label) {
+        if (label == null) {
+            return null;
+        }
+        for (BlockInfo2 block : blocks) {
+            if (block.startLabel == label) {
+                return block;
+            }
+        }
         return null;
     }
 
