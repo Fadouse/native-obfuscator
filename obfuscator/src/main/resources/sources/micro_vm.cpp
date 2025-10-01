@@ -91,10 +91,21 @@ static thread_local std::vector<jvalue> jarg_buffer{};
 
 static thread_local std::unordered_map<std::string, jweak> class_cache{};
 static thread_local size_t class_lookup_calls = 0;
-static thread_local std::unordered_map<const MethodRef*, jmethodID> static_method_cache{};
-static thread_local std::unordered_map<const MethodRef*, jmethodID> instance_method_cache{};
-static thread_local std::unordered_map<const FieldRef*, jfieldID> static_field_cache{};
-static thread_local std::unordered_map<const FieldRef*, jfieldID> instance_field_cache{};
+
+struct CachedMethodEntry {
+    jclass clazz = nullptr;
+    jmethodID method = nullptr;
+};
+
+struct CachedFieldEntry {
+    jclass clazz = nullptr;
+    jfieldID field = nullptr;
+};
+
+static thread_local std::unordered_map<const MethodRef*, CachedMethodEntry> static_method_cache{};
+static thread_local std::unordered_map<const MethodRef*, CachedMethodEntry> instance_method_cache{};
+static thread_local std::unordered_map<const FieldRef*, CachedFieldEntry> static_field_cache{};
+static thread_local std::unordered_map<const FieldRef*, CachedFieldEntry> instance_field_cache{};
 
 static jclass get_cached_class(JNIEnv* env, const char* name) {
     auto it = class_cache.find(name);
@@ -121,52 +132,118 @@ void clear_class_cache(JNIEnv* env) {
     }
     class_cache.clear();
     class_lookup_calls = 0;
-    static_method_cache.clear();
-    instance_method_cache.clear();
-    static_field_cache.clear();
-    instance_field_cache.clear();
+
+    auto release_method_cache = [env](auto& cache) {
+        for (auto& entry : cache) {
+            if (entry.second.clazz) {
+                env->DeleteGlobalRef(entry.second.clazz);
+            }
+        }
+        cache.clear();
+    };
+    release_method_cache(static_method_cache);
+    release_method_cache(instance_method_cache);
+
+    auto release_field_cache = [env](auto& cache) {
+        for (auto& entry : cache) {
+            if (entry.second.clazz) {
+                env->DeleteGlobalRef(entry.second.clazz);
+            }
+        }
+        cache.clear();
+    };
+    release_field_cache(static_field_cache);
+    release_field_cache(instance_field_cache);
 }
 
 size_t get_class_cache_calls() {
     return class_lookup_calls;
 }
 
-static jmethodID resolve_method_id(JNIEnv* env, const MethodRef* ref, bool is_static, jclass clazz) {
-    if (!ref || !clazz) {
+static CachedMethodEntry* resolve_method(JNIEnv* env, const MethodRef* ref, bool is_static) {
+    if (!ref) {
         return nullptr;
     }
+
     auto& cache = is_static ? static_method_cache : instance_method_cache;
     auto it = cache.find(ref);
-    if (it != cache.end()) {
-        return it->second;
+    if (it != cache.end() && it->second.method != nullptr && it->second.clazz != nullptr) {
+        return &it->second;
     }
+
+    jclass clazz = get_cached_class(env, ref->class_name);
+    if (!clazz) {
+        return nullptr;
+    }
+
     jmethodID resolved = is_static
             ? env->GetStaticMethodID(clazz, ref->method_name, ref->method_sig)
             : env->GetMethodID(clazz, ref->method_name, ref->method_sig);
     if (!resolved) {
+        env->DeleteLocalRef(clazz);
         return nullptr;
     }
-    cache.emplace(ref, resolved);
-    return resolved;
+
+    jclass global_clazz = reinterpret_cast<jclass>(env->NewGlobalRef(clazz));
+    env->DeleteLocalRef(clazz);
+    if (!global_clazz) {
+        return nullptr;
+    }
+
+    auto [iter, inserted] = cache.emplace(ref, CachedMethodEntry{global_clazz, resolved});
+    if (!inserted) {
+        if (iter->second.clazz && iter->second.clazz != global_clazz) {
+            env->DeleteGlobalRef(iter->second.clazz);
+        }
+        iter->second.clazz = global_clazz;
+        iter->second.method = resolved;
+    }
+    return &iter->second;
 }
 
-static jfieldID resolve_field_id(JNIEnv* env, const FieldRef* ref, bool is_static, jclass clazz) {
-    if (!ref || !clazz) {
+static CachedFieldEntry* resolve_field(JNIEnv* env, const FieldRef* ref, bool is_static) {
+    if (!ref) {
         return nullptr;
     }
+
     auto& cache = is_static ? static_field_cache : instance_field_cache;
     auto it = cache.find(ref);
-    if (it != cache.end()) {
-        return it->second;
+    if (it != cache.end() && it->second.field != nullptr && (!is_static || it->second.clazz != nullptr)) {
+        return &it->second;
     }
+
+    jclass clazz = get_cached_class(env, ref->class_name);
+    if (!clazz) {
+        return nullptr;
+    }
+
     jfieldID resolved = is_static
             ? env->GetStaticFieldID(clazz, ref->field_name, ref->field_sig)
             : env->GetFieldID(clazz, ref->field_name, ref->field_sig);
     if (!resolved) {
+        env->DeleteLocalRef(clazz);
         return nullptr;
     }
-    cache.emplace(ref, resolved);
-    return resolved;
+
+    jclass global_clazz = nullptr;
+    if (is_static) {
+        global_clazz = reinterpret_cast<jclass>(env->NewGlobalRef(clazz));
+        if (!global_clazz) {
+            env->DeleteLocalRef(clazz);
+            return nullptr;
+        }
+    }
+    env->DeleteLocalRef(clazz);
+
+    auto [iter, inserted] = cache.emplace(ref, CachedFieldEntry{global_clazz, resolved});
+    if (!inserted) {
+        if (iter->second.clazz && iter->second.clazz != global_clazz) {
+            env->DeleteGlobalRef(iter->second.clazz);
+        }
+        iter->second.clazz = global_clazz;
+        iter->second.field = resolved;
+    }
+    return &iter->second;
 }
 
 static void parse_method_sig(const char* sig, std::vector<char>& args, char& ret) {
@@ -262,16 +339,13 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
             return;
         }
     }
-    jclass clazz = get_cached_class(env, ref->class_name);
-    if (!clazz) {
-        return;
-    }
     bool is_static = (op == OP_INVOKESTATIC || op == OP_INVOKEDYNAMIC);
-    jmethodID mid = resolve_method_id(env, ref, is_static, clazz);
-    if (!mid) {
-        env->DeleteLocalRef(clazz);
+    CachedMethodEntry* cached_method = resolve_method(env, ref, is_static);
+    if (!cached_method) {
         return;
     }
+    jclass clazz = cached_method->clazz;
+    jmethodID mid = cached_method->method;
     // Save VM decode state to survive nested obfuscated calls that reinitialize it
     struct VmStateSnapshot {
         uint64_t KEY;
@@ -365,7 +439,6 @@ static void invoke_method(JNIEnv* env, OpCode op, MethodRef* ref,
     inv_op_map2 = snapshot.inv_op_map2;
     inv_op_map = snapshot.inv_op_map;
     vm_state_initialized = snapshot.vm_state_initialized;
-    env->DeleteLocalRef(clazz);
 }
 
 void init_key(uint64_t seed) {
@@ -1742,43 +1815,41 @@ do_instanceof:
 do_getstatic:
     if (sp < 256) {
         auto* ref = &field_refs[tmp];
-        jclass clazz = get_cached_class(env, ref->class_name);
-        if (clazz) {
-            jfieldID fid = resolve_field_id(env, ref, true, clazz);
-            if (fid) {
-                switch (ref->field_sig[0]) {
-                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
-                        jint v = env->GetStaticIntField(clazz, fid);
-                        stack[sp++] = static_cast<int64_t>(v);
-                        break;
-                    }
-                    case 'F': {
-                        jfloat v = env->GetStaticFloatField(clazz, fid);
-                        int32_t bits;
-                        std::memcpy(&bits, &v, sizeof(float));
-                        stack[sp++] = static_cast<int64_t>(bits);
-                        break;
-                    }
-                    case 'J': {
-                        jlong v = env->GetStaticLongField(clazz, fid);
-                        stack[sp++] = static_cast<int64_t>(v);
-                        break;
-                    }
-                    case 'D': {
-                        jdouble v = env->GetStaticDoubleField(clazz, fid);
-                        int64_t bits;
-                        std::memcpy(&bits, &v, sizeof(double));
-                        stack[sp++] = bits;
-                        break;
-                    }
-                    default: {
-                        jobject v = env->GetStaticObjectField(clazz, fid);
-                        stack[sp++] = reinterpret_cast<int64_t>(v);
-                        break;
-                    }
+        CachedFieldEntry* cached_field = resolve_field(env, ref, true);
+        if (cached_field && cached_field->clazz && cached_field->field) {
+            jclass clazz = cached_field->clazz;
+            jfieldID fid = cached_field->field;
+            switch (ref->field_sig[0]) {
+                case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                    jint v = env->GetStaticIntField(clazz, fid);
+                    stack[sp++] = static_cast<int64_t>(v);
+                    break;
+                }
+                case 'F': {
+                    jfloat v = env->GetStaticFloatField(clazz, fid);
+                    int32_t bits;
+                    std::memcpy(&bits, &v, sizeof(float));
+                    stack[sp++] = static_cast<int64_t>(bits);
+                    break;
+                }
+                case 'J': {
+                    jlong v = env->GetStaticLongField(clazz, fid);
+                    stack[sp++] = static_cast<int64_t>(v);
+                    break;
+                }
+                case 'D': {
+                    jdouble v = env->GetStaticDoubleField(clazz, fid);
+                    int64_t bits;
+                    std::memcpy(&bits, &v, sizeof(double));
+                    stack[sp++] = bits;
+                    break;
+                }
+                default: {
+                    jobject v = env->GetStaticObjectField(clazz, fid);
+                    stack[sp++] = reinterpret_cast<int64_t>(v);
+                    break;
                 }
             }
-            env->DeleteLocalRef(clazz);
         }
     }
     goto dispatch;
@@ -1786,47 +1857,43 @@ do_getstatic:
 do_putstatic:
     if (sp >= 1) {
         auto* ref = &field_refs[tmp];
-        jclass clazz = get_cached_class(env, ref->class_name);
-        if (clazz) {
-            jfieldID fid = resolve_field_id(env, ref, true, clazz);
-            if (fid) {
-                switch (ref->field_sig[0]) {
-                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
-                        jint v = static_cast<jint>(stack[--sp]);
-                        env->SetStaticIntField(clazz, fid, v);
-                        break;
-                    }
-                    case 'F': {
-                        int32_t bits = static_cast<int32_t>(stack[--sp]);
-                        jfloat v;
-                        std::memcpy(&v, &bits, sizeof(float));
-                        env->SetStaticFloatField(clazz, fid, v);
-                        break;
-                    }
-                    case 'J': {
-                        jlong v = static_cast<jlong>(stack[--sp]);
-                        env->SetStaticLongField(clazz, fid, v);
-                        break;
-                    }
-                    case 'D': {
-                        int64_t bits = stack[--sp];
-                        jdouble v;
-                        std::memcpy(&v, &bits, sizeof(double));
-                        env->SetStaticDoubleField(clazz, fid, v);
-                        break;
-                    }
-                    default: {
-                        jobject v = reinterpret_cast<jobject>(stack[--sp]);
-                        env->SetStaticObjectField(clazz, fid, v);
-                        break;
-                    }
+        CachedFieldEntry* cached_field = resolve_field(env, ref, true);
+        if (cached_field && cached_field->clazz && cached_field->field) {
+            jclass clazz = cached_field->clazz;
+            jfieldID fid = cached_field->field;
+            switch (ref->field_sig[0]) {
+                case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                    jint v = static_cast<jint>(stack[--sp]);
+                    env->SetStaticIntField(clazz, fid, v);
+                    break;
                 }
-            } else {
-                --sp; // consume value even if fid not found
+                case 'F': {
+                    int32_t bits = static_cast<int32_t>(stack[--sp]);
+                    jfloat v;
+                    std::memcpy(&v, &bits, sizeof(float));
+                    env->SetStaticFloatField(clazz, fid, v);
+                    break;
+                }
+                case 'J': {
+                    jlong v = static_cast<jlong>(stack[--sp]);
+                    env->SetStaticLongField(clazz, fid, v);
+                    break;
+                }
+                case 'D': {
+                    int64_t bits = stack[--sp];
+                    jdouble v;
+                    std::memcpy(&v, &bits, sizeof(double));
+                    env->SetStaticDoubleField(clazz, fid, v);
+                    break;
+                }
+                default: {
+                    jobject v = reinterpret_cast<jobject>(stack[--sp]);
+                    env->SetStaticObjectField(clazz, fid, v);
+                    break;
+                }
             }
-            env->DeleteLocalRef(clazz);
         } else {
-            --sp;
+            --sp; // consume value even if field resolution failed
         }
     }
     goto dispatch;
@@ -1839,43 +1906,40 @@ do_getfield:
             env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
             goto halt;
         }
-        jclass clazz = get_cached_class(env, ref->class_name);
-        if (clazz) {
-            jfieldID fid = resolve_field_id(env, ref, false, clazz);
-            if (fid) {
-                switch (ref->field_sig[0]) {
-                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
-                        jint v = env->GetIntField(obj, fid);
-                        stack[sp++] = static_cast<int64_t>(v);
-                        break;
-                    }
-                    case 'F': {
-                        jfloat v = env->GetFloatField(obj, fid);
-                        int32_t bits;
-                        std::memcpy(&bits, &v, sizeof(float));
-                        stack[sp++] = static_cast<int64_t>(bits);
-                        break;
-                    }
-                    case 'J': {
-                        jlong v = env->GetLongField(obj, fid);
-                        stack[sp++] = static_cast<int64_t>(v);
-                        break;
-                    }
-                    case 'D': {
-                        jdouble v = env->GetDoubleField(obj, fid);
-                        int64_t bits;
-                        std::memcpy(&bits, &v, sizeof(double));
-                        stack[sp++] = bits;
-                        break;
-                    }
-                    default: {
-                        jobject v = env->GetObjectField(obj, fid);
-                        stack[sp++] = reinterpret_cast<int64_t>(v);
-                        break;
-                    }
+        CachedFieldEntry* cached_field = resolve_field(env, ref, false);
+        if (cached_field && cached_field->field) {
+            jfieldID fid = cached_field->field;
+            switch (ref->field_sig[0]) {
+                case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                    jint v = env->GetIntField(obj, fid);
+                    stack[sp++] = static_cast<int64_t>(v);
+                    break;
+                }
+                case 'F': {
+                    jfloat v = env->GetFloatField(obj, fid);
+                    int32_t bits;
+                    std::memcpy(&bits, &v, sizeof(float));
+                    stack[sp++] = static_cast<int64_t>(bits);
+                    break;
+                }
+                case 'J': {
+                    jlong v = env->GetLongField(obj, fid);
+                    stack[sp++] = static_cast<int64_t>(v);
+                    break;
+                }
+                case 'D': {
+                    jdouble v = env->GetDoubleField(obj, fid);
+                    int64_t bits;
+                    std::memcpy(&bits, &v, sizeof(double));
+                    stack[sp++] = bits;
+                    break;
+                }
+                default: {
+                    jobject v = env->GetObjectField(obj, fid);
+                    stack[sp++] = reinterpret_cast<int64_t>(v);
+                    break;
                 }
             }
-            env->DeleteLocalRef(clazz);
         }
     }
     goto dispatch;
@@ -1889,41 +1953,38 @@ do_putfield:
             env->ThrowNew(env->FindClass("java/lang/NullPointerException"), "null");
             goto halt;
         }
-        jclass clazz = get_cached_class(env, ref->class_name);
-        if (clazz) {
-            jfieldID fid = resolve_field_id(env, ref, false, clazz);
-            if (fid) {
-                switch (ref->field_sig[0]) {
-                    case 'Z': case 'B': case 'C': case 'S': case 'I': {
-                        env->SetIntField(obj, fid, static_cast<jint>(value));
-                        break;
-                    }
-                    case 'F': {
-                        jfloat v;
-                        int32_t bits = static_cast<int32_t>(value);
-                        std::memcpy(&v, &bits, sizeof(float));
-                        env->SetFloatField(obj, fid, v);
-                        break;
-                    }
-                    case 'J': {
-                        env->SetLongField(obj, fid, static_cast<jlong>(value));
-                        break;
-                    }
-                    case 'D': {
-                        jdouble v;
-                        int64_t bits = value;
-                        std::memcpy(&v, &bits, sizeof(double));
-                        env->SetDoubleField(obj, fid, v);
-                        break;
-                    }
-                    default: {
-                        jobject v = reinterpret_cast<jobject>(value);
-                        env->SetObjectField(obj, fid, v);
-                        break;
-                    }
+        CachedFieldEntry* cached_field = resolve_field(env, ref, false);
+        if (cached_field && cached_field->field) {
+            jfieldID fid = cached_field->field;
+            switch (ref->field_sig[0]) {
+                case 'Z': case 'B': case 'C': case 'S': case 'I': {
+                    env->SetIntField(obj, fid, static_cast<jint>(value));
+                    break;
+                }
+                case 'F': {
+                    jfloat v;
+                    int32_t bits = static_cast<int32_t>(value);
+                    std::memcpy(&v, &bits, sizeof(float));
+                    env->SetFloatField(obj, fid, v);
+                    break;
+                }
+                case 'J': {
+                    env->SetLongField(obj, fid, static_cast<jlong>(value));
+                    break;
+                }
+                case 'D': {
+                    jdouble v;
+                    int64_t bits = value;
+                    std::memcpy(&v, &bits, sizeof(double));
+                    env->SetDoubleField(obj, fid, v);
+                    break;
+                }
+                default: {
+                    jobject v = reinterpret_cast<jobject>(value);
+                    env->SetObjectField(obj, fid, v);
+                    break;
                 }
             }
-            env->DeleteLocalRef(clazz);
         }
     } else {
         sp = 0;
