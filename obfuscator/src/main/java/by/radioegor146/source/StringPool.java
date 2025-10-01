@@ -160,7 +160,9 @@ public class StringPool {
                 .mapToObj(String::valueOf)
                 .collect(Collectors.joining(", ")));
 
-        String template = Util.readResource("sources/string_pool.cpp");
+        String template = Util.readResource(obfuscateStrings
+                ? "sources/string_pool.cpp"
+                : "sources/string_pool_plain.cpp");
         return Util.dynamicFormat(template, Util.createMap(
                 "size", Math.max(1, encrypted.length) + "LL",
                 "value", poolArray

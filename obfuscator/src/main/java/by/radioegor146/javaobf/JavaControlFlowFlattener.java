@@ -21,6 +21,7 @@ public final class JavaControlFlowFlattener implements Opcodes {
     private static final Random RANDOM = new Random();
     private static final boolean DEBUG = false;
     private static ClassProvider classProvider = ClassProvider.ofClasspathFallback();
+    private static final boolean ENABLE_SWITCH_STATE_MACHINE = false;
 
     public static boolean canProcess(MethodNode method) {
         if (method == null || method.instructions == null || method.instructions.size() == 0) {
@@ -47,20 +48,77 @@ public final class JavaControlFlowFlattener implements Opcodes {
      * Only rewrites at safe points where stack height == 0
      * IMPROVED: Uses in-place label replacement and proper frame cleanup
      */
-    private static void applySwitchStateMachineFlattening(MethodNode method, String ownerInternalName, String ownerSuperName, String[] ownerInterfaces) {
+    private static boolean applySwitchStateMachineFlattening(MethodNode method, String ownerInternalName, String ownerSuperName, String[] ownerInterfaces) {
+        boolean transformed = false;
+
         // 0) Conservative filtering
-        if ((method.access & ACC_ABSTRACT) != 0 || (method.access & ACC_NATIVE) != 0) return;
-        if (method.tryCatchBlocks != null && !method.tryCatchBlocks.isEmpty()) return;
+        if ((method.access & ACC_ABSTRACT) != 0 || (method.access & ACC_NATIVE) != 0) return false;
+        if (method.tryCatchBlocks != null && !method.tryCatchBlocks.isEmpty()) return false;
 
         // Check for problematic instructions
         for (AbstractInsnNode p = method.instructions.getFirst(); p != null; p = p.getNext()) {
             int op = p.getOpcode();
-            if (op == MONITORENTER || op == MONITOREXIT || op == JSR || op == RET) return;
+            if (op == MONITORENTER || op == MONITOREXIT || op == JSR || op == RET) return false;
+        }
+
+        // Skip complex methods with backward edges (loops). The current state
+        // machine implementation is intentionally conservative because
+        // back-edges often require advanced stack modelling and additional
+        // synthetic states. Until that support is implemented we bail out and
+        // fall back to the legacy bogus jump strategy.
+        Map<LabelNode, Integer> labelPositions = new HashMap<>();
+        int insnIndex = 0;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof LabelNode label) {
+                labelPositions.put(label, insnIndex);
+            }
+            insnIndex++;
+        }
+
+        insnIndex = 0;
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof JumpInsnNode jump) {
+                Integer target = labelPositions.get(jump.label);
+                if (target != null && target <= insnIndex) {
+                    return false;
+                }
+            } else if (insn instanceof TableSwitchInsnNode tableSwitch) {
+                Integer target = labelPositions.get(tableSwitch.dflt);
+                if (target != null && target <= insnIndex) {
+                    return false;
+                }
+                for (LabelNode label : tableSwitch.labels) {
+                    Integer t = labelPositions.get(label);
+                    if (t != null && t <= insnIndex) {
+                        return false;
+                    }
+                }
+            } else if (insn instanceof LookupSwitchInsnNode lookupSwitch) {
+                Integer target = labelPositions.get(lookupSwitch.dflt);
+                if (target != null && target <= insnIndex) {
+                    return false;
+                }
+                for (LabelNode label : lookupSwitch.labels) {
+                    Integer t = labelPositions.get(label);
+                    if (t != null && t <= insnIndex) {
+                        return false;
+                    }
+                }
+            }
+            insnIndex++;
         }
 
         // 1) Build basic blocks
         List<BlockInfo2> blocks = buildBasicBlocks(method);
-        if (blocks.size() <= 1) return;
+        if (blocks.size() <= 1) return false;
+
+        // Ensure every block has a tangible entry label so switch dispatch targets
+        // point at stable instruction positions. Without this ASM may recycle or
+        // inline synthetic labels, leading to bogus default fall-through and
+        // ultimately infinite loops in the generated state machine.
+        for (BlockInfo2 block : blocks) {
+            ensureBlockHasStartLabel(block, method);
+        }
 
         // 1.1) Assign state ID to each block
         Map<BlockInfo2, Integer> stateOf = new HashMap<>();
@@ -102,12 +160,12 @@ public final class JavaControlFlowFlattener implements Opcodes {
 
             // Validate frames
             if (frames == null || frames.length != method.instructions.size()) {
-                return; // Skip if frame analysis is incomplete
+                return false; // Skip if frame analysis is incomplete
             }
 
         } catch (AnalyzerException ae) {
             // Skip flattening if frame analysis fails
-            return;
+            return false;
         }
 
         // 2) Add state variable
@@ -147,9 +205,11 @@ public final class JavaControlFlowFlattener implements Opcodes {
 
         // 5) Insert at method start
         AbstractInsnNode head = method.instructions.getFirst();
-        if (head == null) return;
+        if (head == null) return false;
         method.instructions.insertBefore(head, prologue);
         method.instructions.insert(prologue.getLast(), dispatcher);
+
+        transformed = true;
 
         // 6) Rewrite control flow only at safe points (stack height == 0)
         java.util.function.Function<AbstractInsnNode, Frame<?>> frameAt =
@@ -218,10 +278,10 @@ public final class JavaControlFlowFlattener implements Opcodes {
                     Frame<?> fAfter = frameAt.apply(nextReal);
                     if (fAfter != null && fAfter.getStackSize() == 0) {
                         BlockInfo2 t = nextFallthroughBlock(blocks, i, method);
-                        if (t != null) {
-                            InsnList tail = makeSetStateAndGoto(stateLocal, stateOf.get(t), L_dispatch);
-                            method.instructions.insert(endReal, tail);
-                        }
+                if (t != null) {
+                    InsnList tail = makeSetStateAndGoto(stateLocal, stateOf.get(t), L_dispatch);
+                    method.instructions.insert(endReal, tail);
+                }
                     }
                 }
             }
@@ -235,6 +295,7 @@ public final class JavaControlFlowFlattener implements Opcodes {
         AsmSanity.stripAllFrames(method);
 
         // maxLocals already updated above; maxStack will be recomputed by COMPUTE_MAXS
+        return transformed;
     }
     /* ------------------------ 工具与数据结构 ------------------------ */
 
@@ -363,21 +424,13 @@ public final class JavaControlFlowFlattener implements Opcodes {
                     injectOpaquePredicates(method, 0.1);
                     break;
                 case MEDIUM:
-                    // MEDIUM: Light flattening + opaque predicates
-                    if (shouldFlatten(method, 0.3)) {
-                        applyControlFlowFlattening(method, false, ownerInternalName, ownerSuperName, ownerInterfaces);
-                    } else {
-                        injectOpaquePredicates(method, 0.2);
-                    }
+                    // MEDIUM: Conservative – opaque predicates only
+                    injectOpaquePredicates(method, 0.2);
                     break;
                 case HIGH:
-                    // HIGH: Full flattening + opaque predicates
-                    if (shouldFlatten(method, 0.6)) {
-                        applyControlFlowFlattening(method, true, ownerInternalName, ownerSuperName, ownerInterfaces);
-                    } else {
-                        injectOpaquePredicates(method, 0.3);
-                        injectDeadCode(method, 0.1);
-                    }
+                    // HIGH: Opaque predicates plus lightweight dead code
+                    injectOpaquePredicates(method, 0.3);
+                    injectDeadCode(method, 0.1);
                     break;
             }
         } catch (Exception e) {
@@ -434,12 +487,16 @@ public final class JavaControlFlowFlattener implements Opcodes {
         }
 
         // 新：优先尝试状态机扁平化（支持 try/catch）
-        try {
-            applySwitchStateMachineFlattening(method, ownerInternalName, ownerSuperName, ownerInterfaces);
-            if (addOpaquePredicates) injectOpaquePredicates(method, 0.10);
-            return; // 成功即返回
-        } catch (Throwable t) {
-            // 回退到原先的轻量方案
+        if (ENABLE_SWITCH_STATE_MACHINE) {
+            try {
+                boolean flattened = applySwitchStateMachineFlattening(method, ownerInternalName, ownerSuperName, ownerInterfaces);
+                if (flattened) {
+                    if (addOpaquePredicates) injectOpaquePredicates(method, 0.10);
+                    return; // 成功即返回
+                }
+            } catch (Throwable t) {
+                // 回退到原先的轻量方案
+            }
         }
 
         // 旧：退化为 bogus 分支与不破坏帧的轻度扰动

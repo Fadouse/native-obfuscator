@@ -41,7 +41,7 @@ public class JavaObfuscatorFlattenTest {
 
     @Test
     public void testJavaFlattenComplexCatchStack() throws Exception {
-        Path sampleRoot = Paths.get("obfuscator", "test_data", "tests", "java-obfuscator-test", "JavaObfuscatorTest");
+        Path sampleRoot = resolveTestDataPath("test_data", "tests", "java-obfuscator-test", "JavaObfuscatorTest");
         Path temp = Files.createTempDirectory("java-obf-pack-");
         try {
             Path srcDir = temp.resolve("src");
@@ -142,6 +142,18 @@ public class JavaObfuscatorFlattenTest {
             // best-effort cleanup
             try { Files.walk(temp).sorted(java.util.Comparator.reverseOrder()).forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) {} }); } catch (IOException ignored) {}
         }
+    }
+
+    private static Path resolveTestDataPath(String first, String... more) throws IOException {
+        Path relative = Paths.get(first, more);
+        if (Files.exists(relative)) {
+            return relative;
+        }
+        Path moduleRelative = Paths.get("obfuscator").resolve(relative);
+        if (Files.exists(moduleRelative)) {
+            return moduleRelative;
+        }
+        throw new IOException("Unable to locate test data directory: " + relative);
     }
 
     private static void copyTree(Path source, Path target) throws IOException {
