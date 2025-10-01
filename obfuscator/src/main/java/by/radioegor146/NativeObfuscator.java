@@ -358,7 +358,8 @@ public class NativeObfuscator {
 
                         cppBuilder.addHeader(cachedStrings.size(), cachedClasses.size(), cachedMethods.size(), cachedFields.size());
                         cppBuilder.addInstructions(instructions.toString());
-                        cppBuilder.registerMethods(cachedStrings, cachedClasses, nativeMethods.toString(), hiddenMethods);
+                        cppBuilder.registerMethods(cachedStrings, cachedClasses, cachedMethods, cachedFields,
+                                nativeMethods.toString(), hiddenMethods);
 
                         cMakeBuilder.addClassFile("output/" + cppBuilder.getHppFilename());
                         cMakeBuilder.addClassFile("output/" + cppBuilder.getCppFilename());

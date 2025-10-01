@@ -128,9 +128,9 @@ public class MethodProcessor {
         String flagName = context.verifiedClassFlagNames.get(classId);
 
         context.output.append(String.format(
-                "if (!%1$s) { %2$s = (jclass) env->NewLocalRef(cclasses[%3$d]); if (%2$s == nullptr) { cclasses_mtx[%3$d].lock(); "
-                        + "if (!cclasses[%3$d] || env->IsSameObject(cclasses[%3$d], NULL)) { if (jclass clazz = %4$s) { cclasses[%3$d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
-                        + "cclasses_mtx[%3$d].unlock(); %5$s %2$s = (jclass) env->NewLocalRef(cclasses[%3$d]); %5$s } %1$s = true; } ",
+                "if (!%1$s) { %2$s = cclasses[%3$d]; if (%2$s == nullptr) { cclasses_mtx[%3$d].lock(); "
+                        + "if (!cclasses[%3$d]) { if (jclass clazz = %4$s) { cclasses[%3$d] = (jclass) env->NewGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
+                        + "cclasses_mtx[%3$d].unlock(); %5$s %2$s = cclasses[%3$d]; %5$s } %1$s = true; } ",
                 flagName,
                 localName,
                 classId,
@@ -620,11 +620,9 @@ public class MethodProcessor {
                 int classId = context.getCachedClasses().getId(clazz);
 
                 context.output.append(String.format("    // try-catch-class %s\n", Util.escapeCommentString(clazz)));
-                context.output.append(String.format("    if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { cclasses_mtx[%d].lock(); "
-                                + "if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
+                context.output.append(String.format("    if (!cclasses[%d]) { cclasses_mtx[%d].lock(); "
+                                + "if (!cclasses[%d]) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
                                 + "cclasses_mtx[%d].unlock(); if (env->ExceptionCheck()) { return (%s) 0; } }\n",
-                        classId,
-                        classId,
                         classId,
                         classId,
                         classId,

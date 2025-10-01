@@ -16,6 +16,22 @@ public class CachedFieldInfo {
         this.isStatic = isStatic;
     }
 
+    public String getClazz() {
+        return clazz;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getDesc() {
+        return desc;
+    }
+
+    public boolean isStatic() {
+        return isStatic;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
