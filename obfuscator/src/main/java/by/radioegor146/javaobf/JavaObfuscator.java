@@ -116,7 +116,9 @@ public class JavaObfuscator {
 
                             try {
                                 logger.warn("Advanced flattening method: {}.{}{}", cn.name, mn.name, mn.desc);
-                                JavaControlFlowFlattener.flatten(mn, cn.name + "#" + mn.name + mn.desc, config.getStrength());
+                                String[] interfaces = cn.interfaces != null ? cn.interfaces.toArray(new String[0]) : new String[0];
+                                JavaControlFlowFlattener.flatten(mn, cn.name + "#" + mn.name + mn.desc, config.getStrength(),
+                                        cn.name, cn.superName, interfaces);
                                 methodsProcessed++;
                                 changed = true;
                             } catch (Exception e) {
