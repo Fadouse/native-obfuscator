@@ -655,7 +655,7 @@ public class MethodProcessor {
             output.append(";\n");
         }
 
-        output.append("    std::unordered_set<jobject> refs;\n");
+        output.append("    native_jvm::LocalRefSet refs;\n");
         output.append("\n");
         context.verifiedClassPreambleInsertionPoint = output.length();
 

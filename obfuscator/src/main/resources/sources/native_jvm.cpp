@@ -364,7 +364,7 @@ namespace native_jvm::utils {
         return lookup;
     }
 
-    void clear_refs(JNIEnv *env, std::unordered_set<jobject> &refs) {
+    void clear_refs(JNIEnv *env, LocalRefSet &refs) {
         // Avoid eagerly deleting local refs that might still be referenced via
         // cstack slots. Let the JVM clear locals at the end of the native call.
         // This prevents accidental invalidation of receiver/argument objects

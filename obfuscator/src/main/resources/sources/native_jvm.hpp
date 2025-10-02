@@ -8,7 +8,6 @@
 #include <cstring>
 #include <string>
 #include <cstdio>
-#include <unordered_set>
 #include <mutex>
 #include <atomic>
 #include <initializer_list>
@@ -18,7 +17,18 @@
 
 #define NATIVE_JVM_HPP_GUARD
 
-namespace native_jvm::utils {
+namespace native_jvm {
+
+    class LocalRefSet {
+    public:
+        inline void insert(jobject) noexcept {}
+
+        inline void erase(jobject) noexcept {}
+
+        inline void clear() noexcept {}
+    };
+
+    namespace utils {
 
     void init_utils(JNIEnv *env);
 
@@ -96,7 +106,7 @@ namespace native_jvm::utils {
     void bastore(JNIEnv *env, jarray array, jint index, jint value);
     jbyte baload(JNIEnv *env, jarray array, jint index);
 
-    void clear_refs(JNIEnv *env, std::unordered_set<jobject> &refs);
+    void clear_refs(JNIEnv *env, LocalRefSet &refs);
 
     jstring get_interned(JNIEnv *env, jstring value);
 
@@ -156,6 +166,8 @@ namespace native_jvm::utils {
         std::memcpy(&result, &dec, sizeof(result));
         return result;
     }
+    }
+
 }
 
 #endif
