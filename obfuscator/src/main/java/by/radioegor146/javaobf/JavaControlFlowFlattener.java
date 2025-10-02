@@ -9,6 +9,8 @@ import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.AnalyzerException;
 import org.objectweb.asm.tree.analysis.BasicValue;
 import org.objectweb.asm.tree.analysis.Frame;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
@@ -18,8 +20,9 @@ import java.util.*;
  */
 public final class JavaControlFlowFlattener implements Opcodes {
 
+    private static final Logger logger = LoggerFactory.getLogger(JavaControlFlowFlattener.class);
     private static final Random RANDOM = new Random();
-    private static final boolean DEBUG = false;
+    private static final boolean DEBUG = false; // Disable for production
     private static ClassProvider classProvider = ClassProvider.ofClasspathFallback();
     private static final boolean ENABLE_SWITCH_STATE_MACHINE = true;
 
@@ -34,10 +37,22 @@ public final class JavaControlFlowFlattener implements Opcodes {
             return false;
         }
 
+        // CRITICAL: Skip methods with try-catch blocks entirely
+        // Both state machine and opaque predicates can break exception handling
+        if (method.tryCatchBlocks != null && !method.tryCatchBlocks.isEmpty()) {
+            return false;
+        }
+
+        // CRITICAL: Skip methods that throw exceptions (ATHROW instruction)
+        // State machine transformation breaks exception propagation semantics
         int realInsnCount = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-            if (insn.getOpcode() >= 0) {
+            int op = insn.getOpcode();
+            if (op >= 0) {
                 realInsnCount++;
+            }
+            if (op == ATHROW) {
+                return false; // Cannot safely transform methods that throw exceptions
             }
         }
         return realInsnCount >= 8; // Require at least 8 instructions
@@ -46,19 +61,32 @@ public final class JavaControlFlowFlattener implements Opcodes {
     /**
      * Frame-safe switch-based state machine flattening:
      * Only rewrites at safe points where stack height == 0
-     * IMPROVED: Uses in-place label replacement and proper frame cleanup
+     * IMPROVED: Uses in-place label replacement, proper frame cleanup, and try-catch support
      */
     private static boolean applySwitchStateMachineFlattening(MethodNode method, String ownerInternalName, String ownerSuperName, String[] ownerInterfaces) {
         boolean transformed = false;
 
         // 0) Conservative filtering
-        if ((method.access & ACC_ABSTRACT) != 0 || (method.access & ACC_NATIVE) != 0) return false;
-        if (method.tryCatchBlocks != null && !method.tryCatchBlocks.isEmpty()) return false;
+        if ((method.access & ACC_ABSTRACT) != 0 || (method.access & ACC_NATIVE) != 0) {
+            if (DEBUG) logger.warn("[StateMachine] Skipping abstract/native method");
+            return false;
+        }
+        // IMPORTANT: Skip methods with try-catch blocks for now
+        // State machine transformation can break exception handler control flow
+        // because the transformation changes basic block connectivity in ways that
+        // make it difficult to preserve exception handler semantics correctly.
+        if (method.tryCatchBlocks != null && !method.tryCatchBlocks.isEmpty()) {
+            if (DEBUG) logger.warn("[StateMachine] Skipping method with try-catch blocks");
+            return false;
+        }
 
         // Check for problematic instructions
         for (AbstractInsnNode p = method.instructions.getFirst(); p != null; p = p.getNext()) {
             int op = p.getOpcode();
-            if (op == MONITORENTER || op == MONITOREXIT || op == JSR || op == RET) return false;
+            if (op == MONITORENTER || op == MONITOREXIT || op == JSR || op == RET) {
+                if (DEBUG) logger.warn("[StateMachine] Skipping method with monitor/jsr/ret");
+                return false;
+            }
         }
 
         // Skip complex methods with backward edges (loops). The current state
@@ -80,27 +108,32 @@ public final class JavaControlFlowFlattener implements Opcodes {
             if (insn instanceof JumpInsnNode jump) {
                 Integer target = labelPositions.get(jump.label);
                 if (target != null && target <= insnIndex) {
+                    if (DEBUG) logger.warn("[StateMachine] Skipping method with backward jump (loop)");
                     return false;
                 }
             } else if (insn instanceof TableSwitchInsnNode tableSwitch) {
                 Integer target = labelPositions.get(tableSwitch.dflt);
                 if (target != null && target <= insnIndex) {
+                    if (DEBUG) logger.warn("[StateMachine] Skipping method with backward tableswitch");
                     return false;
                 }
                 for (LabelNode label : tableSwitch.labels) {
                     Integer t = labelPositions.get(label);
                     if (t != null && t <= insnIndex) {
+                        if (DEBUG) logger.warn("[StateMachine] Skipping method with backward tableswitch");
                         return false;
                     }
                 }
             } else if (insn instanceof LookupSwitchInsnNode lookupSwitch) {
                 Integer target = labelPositions.get(lookupSwitch.dflt);
                 if (target != null && target <= insnIndex) {
+                    if (DEBUG) logger.warn("[StateMachine] Skipping method with backward lookupswitch");
                     return false;
                 }
                 for (LabelNode label : lookupSwitch.labels) {
                     Integer t = labelPositions.get(label);
                     if (t != null && t <= insnIndex) {
+                        if (DEBUG) logger.warn("[StateMachine] Skipping method with backward lookupswitch");
                         return false;
                     }
                 }
@@ -110,7 +143,9 @@ public final class JavaControlFlowFlattener implements Opcodes {
 
         // 1) Build basic blocks
         List<BlockInfo2> blocks = buildBasicBlocks(method);
-        if (blocks.size() <= 1) return false;
+        if (blocks.size() <= 1) {
+            return false;
+        }
 
         // Ensure every block has a tangible entry label so switch dispatch targets
         // point at stable instruction positions. Without this ASM may recycle or
@@ -145,6 +180,22 @@ public final class JavaControlFlowFlattener implements Opcodes {
             newLabel2block.put(freshLabel, b);
         }
 
+        // 1.2.1) Handle try-catch blocks: update all try-catch label references
+        if (method.tryCatchBlocks != null && !method.tryCatchBlocks.isEmpty()) {
+            for (TryCatchBlockNode tcb : method.tryCatchBlocks) {
+                // Map old labels to new labels for try-catch blocks
+                if (tcb.start != null && old2new.containsKey(tcb.start)) {
+                    tcb.start = old2new.get(tcb.start);
+                }
+                if (tcb.end != null && old2new.containsKey(tcb.end)) {
+                    tcb.end = old2new.get(tcb.end);
+                }
+                if (tcb.handler != null && old2new.containsKey(tcb.handler)) {
+                    tcb.handler = old2new.get(tcb.handler);
+                }
+            }
+        }
+
         // 1.3) Pre-analyze frames for stack depth checking (safe points)
         final Frame<BasicValue>[] frames;
         try {
@@ -169,11 +220,13 @@ public final class JavaControlFlowFlattener implements Opcodes {
         }
 
         // Ensure that every block is entered with an empty operand stack.
+        int blockIdx = 0;
         for (BlockInfo2 block : blocks) {
             Frame<?> entryFrame = findEntryFrame(method, block, frames);
             if (entryFrame == null || entryFrame.getStackSize() != 0) {
                 return false;
             }
+            blockIdx++;
         }
 
         // Ensure we can rewrite every outgoing transition safely before mutating the method.
@@ -218,9 +271,18 @@ public final class JavaControlFlowFlattener implements Opcodes {
 
         // 5) Insert at method start
         AbstractInsnNode head = method.instructions.getFirst();
-        if (head == null) return false;
+        if (head == null) {
+            return false;
+        }
+
+        // CRITICAL: Save prologue.getLast() BEFORE inserting, because insertion modifies the internal links
+        AbstractInsnNode prologueLast = prologue.getLast();
+        if (prologueLast == null) {
+            return false;
+        }
+
         method.instructions.insertBefore(head, prologue);
-        method.instructions.insert(prologue.getLast(), dispatcher);
+        method.instructions.insert(prologueLast, dispatcher);
 
         transformed = true;
 
@@ -333,6 +395,18 @@ public final class JavaControlFlowFlattener implements Opcodes {
         AbstractInsnNode first = m.instructions.getFirst();
         if (first != null) leaders.add(first);
 
+        // Add exception handler labels as leaders
+        if (m.tryCatchBlocks != null) {
+            for (TryCatchBlockNode tcb : m.tryCatchBlocks) {
+                if (tcb.handler != null) leaders.add(tcb.handler);
+                if (tcb.start != null) leaders.add(tcb.start);
+                // tcb.end is exclusive, so the instruction after it starts a new block
+                if (tcb.end != null && tcb.end.getNext() != null) {
+                    leaders.add(tcb.end);
+                }
+            }
+        }
+
         for (AbstractInsnNode p = first; p != null; p = p.getNext()) {
             if (p instanceof JumpInsnNode) {
                 leaders.add(((JumpInsnNode) p).label);
@@ -417,11 +491,30 @@ public final class JavaControlFlowFlattener implements Opcodes {
             return null;
         }
 
+        // Start from block.begin and find first real instruction
         AbstractInsnNode cursor = block.begin;
+
+        // If the block starts with a label/pseudo instruction, look through the entire block
         while (cursor != null && (cursor instanceof LabelNode || cursor instanceof LineNumberNode || cursor instanceof FrameNode)) {
+            // Check if this cursor is still within the block's instructions
+            if (!block.insns.contains(cursor)) {
+                break; // We've left the block
+            }
             cursor = cursor.getNext();
         }
-        if (cursor == null) {
+
+        if (cursor == null || !block.insns.contains(cursor)) {
+            // Block contains only pseudo-instructions, or we've left the block
+            // Look for the first real instruction in the block's instruction list
+            for (AbstractInsnNode insn : block.insns) {
+                if (insn.getOpcode() >= 0) {
+                    int idx = method.instructions.indexOf(insn);
+                    if (idx >= 0 && idx < frames.length) {
+                        return frames[idx];
+                    }
+                }
+            }
+            // Truly empty block - return null to skip
             return null;
         }
 
@@ -501,6 +594,37 @@ public final class JavaControlFlowFlattener implements Opcodes {
                 }
             }
         }
+
+        // Additional check: analyze local variable usage across all blocks
+        // State machine transformation can cause COMPUTE_FRAMES to fail when methods use
+        // many local variables, because the transformed control flow makes it difficult
+        // for ASM to infer correct local variable table states at all entry points.
+
+        // Count max local variable index used in the method
+        int maxLocalUsed = -1;
+        for (BlockInfo2 block : blocks) {
+            for (AbstractInsnNode insn : block.insns) {
+                if (insn instanceof VarInsnNode) {
+                    VarInsnNode varInsn = (VarInsnNode) insn;
+                    if (varInsn.var > maxLocalUsed) {
+                        maxLocalUsed = varInsn.var;
+                    }
+                } else if (insn instanceof IincInsnNode) {
+                    IincInsnNode iinc = (IincInsnNode) insn;
+                    if (iinc.var > maxLocalUsed) {
+                        maxLocalUsed = iinc.var;
+                    }
+                }
+            }
+        }
+
+        // If method uses more than 3 local variable slots (beyond 'this'), be conservative
+        // This prevents frame inconsistencies where COMPUTE_FRAMES cannot infer
+        // which locals are live at each block entry point after state machine transformation
+        if (maxLocalUsed > 3) {
+            return false;
+        }
+
         return true;
     }
 
@@ -540,21 +664,44 @@ public final class JavaControlFlowFlattener implements Opcodes {
             return;
         }
 
+        // DEBUG: Confirm this method is called
+
         try {
-            switch (strength) {
-                case LOW:
-                    // LOW: Basic opaque predicates only
-                    injectOpaquePredicates(method, 0.1);
-                    break;
-                case MEDIUM:
-                    // MEDIUM: Conservative – opaque predicates only
-                    injectOpaquePredicates(method, 0.2);
-                    break;
-                case HIGH:
-                    // HIGH: Opaque predicates plus lightweight dead code
-                    injectOpaquePredicates(method, 0.3);
-                    injectDeadCode(method, 0.1);
-                    break;
+            // Try state machine flattening first (works for all strength levels)
+            boolean flattened = false;
+            if (ENABLE_SWITCH_STATE_MACHINE) {
+                flattened = applySwitchStateMachineFlattening(method, ownerInternalName, ownerSuperName, ownerInterfaces);
+            }
+
+            // If state machine flattening succeeded, optionally add light obfuscation on top
+            if (flattened) {
+                switch (strength) {
+                    case LOW:
+                        // State machine only, minimal additional obfuscation
+                        break;
+                    case MEDIUM:
+                        // State machine + light opaque predicates
+                        injectOpaquePredicates(method, 0.05);
+                        break;
+                    case HIGH:
+                        // State machine + moderate opaque predicates
+                        injectOpaquePredicates(method, 0.1);
+                        break;
+                }
+            } else {
+                // Fallback: use legacy obfuscation methods when state machine fails
+                switch (strength) {
+                    case LOW:
+                        injectOpaquePredicates(method, 0.1);
+                        break;
+                    case MEDIUM:
+                        injectOpaquePredicates(method, 0.2);
+                        break;
+                    case HIGH:
+                        injectOpaquePredicates(method, 0.3);
+                        injectDeadCode(method, 0.1);
+                        break;
+                }
             }
         } catch (Exception e) {
             if (DEBUG) {
@@ -810,10 +957,39 @@ public final class JavaControlFlowFlattener implements Opcodes {
      * Inject opaque predicates
      */
     private static void injectOpaquePredicates(MethodNode method, double probability) {
+        // Build set of labels that are inside try-catch blocks
+        Set<LabelNode> tryCatchLabels = new HashSet<>();
+        if (method.tryCatchBlocks != null) {
+            for (TryCatchBlockNode tcb : method.tryCatchBlocks) {
+                // Collect all labels between tcb.start and tcb.end
+                boolean inRange = false;
+                for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn == tcb.start) {
+                        inRange = true;
+                    }
+                    if (inRange && insn instanceof LabelNode) {
+                        tryCatchLabels.add((LabelNode) insn);
+                    }
+                    if (insn == tcb.end) {
+                        inRange = false;
+                    }
+                }
+                // Also mark handler labels
+                if (tcb.handler != null) {
+                    tryCatchLabels.add(tcb.handler);
+                }
+            }
+        }
+
         List<AbstractInsnNode> safePoints = new ArrayList<>();
 
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             if (!(insn instanceof LabelNode)) continue;
+
+            // Skip labels inside try-catch blocks
+            if (tryCatchLabels.contains((LabelNode) insn)) {
+                continue;
+            }
 
             AbstractInsnNode next = insn.getNext();
             while (next != null && (next instanceof LineNumberNode || next instanceof FrameNode)) {
