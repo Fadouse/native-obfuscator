@@ -589,9 +589,10 @@ public class NativeObfuscator {
 
         AbstractInsnNode first = clinit.instructions.getFirst();
         if (first != null) {
-            clinit.instructions.insertBefore(first, invokeRegister);
-            clinit.instructions.insertBefore(first, pushClass);
+            // Insert instructions in correct order: pushIndex, then pushClass, then invokeRegister
             clinit.instructions.insertBefore(first, pushIndex);
+            clinit.instructions.insert(pushIndex, pushClass);
+            clinit.instructions.insert(pushClass, invokeRegister);
         } else {
             clinit.instructions.add(pushIndex);
             clinit.instructions.add(pushClass);
