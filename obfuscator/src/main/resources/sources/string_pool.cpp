@@ -3,6 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <array>
+#include <vector>
+#include <mutex>
 
 namespace native_jvm::string_pool {
     static unsigned char pool[$size] = $value;
@@ -62,37 +65,93 @@ namespace native_jvm::string_pool {
         }
     }
 
+    namespace {
+        struct CachedKey {
+            const unsigned char *data;
+            uint32_t seed;
+            std::array<unsigned char, 32> value;
+        };
+
+        struct CachedNonce {
+            const unsigned char *data;
+            uint32_t seed;
+            std::array<unsigned char, 12> value;
+        };
+
+        std::mutex key_cache_mutex;
+        std::vector<CachedKey> key_cache;
+        std::vector<unsigned char *> key_buffer_pool;
+
+        std::mutex nonce_cache_mutex;
+        std::vector<CachedNonce> nonce_cache;
+        std::vector<unsigned char *> nonce_buffer_pool;
+    }
+
     unsigned char *decode_key(const unsigned char in[32], uint32_t seed) {
-        auto *out = new unsigned char[32];
-        std::size_t i = 0;
-        unsigned char *ptr = out;
-        unsigned char tmp;
-        goto CHECK;
-    LOOP:
-        tmp = static_cast<unsigned char>(
-                vm::run_arith_vm(nullptr, vm::OP_XOR, in[i],
-                                  seed >> ((i & 3) * 8), seed));
-        *ptr++ = tmp;
-        ++i;
-    CHECK:
-        if (i < 32) goto LOOP;
+        std::lock_guard<std::mutex> guard(key_cache_mutex);
+        for (const auto &entry : key_cache) {
+            if (entry.data == in && entry.seed == seed) {
+                unsigned char *out;
+                if (!key_buffer_pool.empty()) {
+                    out = key_buffer_pool.back();
+                    key_buffer_pool.pop_back();
+                } else {
+                    out = new unsigned char[32];
+                }
+                std::memcpy(out, entry.value.data(), 32);
+                return out;
+            }
+        }
+
+        CachedKey entry{in, seed, {}};
+        for (std::size_t i = 0; i < entry.value.size(); ++i) {
+            entry.value[i] = static_cast<unsigned char>(
+                    vm::run_arith_vm(nullptr, vm::OP_XOR, in[i],
+                                      seed >> ((i & 3) * 8), seed));
+        }
+        key_cache.push_back(entry);
+        unsigned char *out;
+        if (!key_buffer_pool.empty()) {
+            out = key_buffer_pool.back();
+            key_buffer_pool.pop_back();
+        } else {
+            out = new unsigned char[32];
+        }
+        std::memcpy(out, key_cache.back().value.data(), 32);
         return out;
     }
 
     unsigned char *decode_nonce(const unsigned char in[12], uint32_t seed) {
-        auto *out = new unsigned char[12];
-        std::size_t i = 0;
-        unsigned char *ptr = out;
-        unsigned char tmp;
-        goto N_CHECK;
-    N_LOOP:
-        tmp = static_cast<unsigned char>(
-                vm::run_arith_vm(nullptr, vm::OP_XOR, in[i],
-                                  seed >> ((i & 3) * 8), seed));
-        *ptr++ = tmp;
-        ++i;
-    N_CHECK:
-        if (i < 12) goto N_LOOP;
+        std::lock_guard<std::mutex> guard(nonce_cache_mutex);
+        for (const auto &entry : nonce_cache) {
+            if (entry.data == in && entry.seed == seed) {
+                unsigned char *out;
+                if (!nonce_buffer_pool.empty()) {
+                    out = nonce_buffer_pool.back();
+                    nonce_buffer_pool.pop_back();
+                } else {
+                    out = new unsigned char[12];
+                }
+                std::memcpy(out, entry.value.data(), 12);
+                return out;
+            }
+        }
+
+        CachedNonce entry{in, seed, {}};
+        for (std::size_t i = 0; i < entry.value.size(); ++i) {
+            entry.value[i] = static_cast<unsigned char>(
+                    vm::run_arith_vm(nullptr, vm::OP_XOR, in[i],
+                                      seed >> ((i & 3) * 8), seed));
+        }
+        nonce_cache.push_back(entry);
+        unsigned char *out;
+        if (!nonce_buffer_pool.empty()) {
+            out = nonce_buffer_pool.back();
+            nonce_buffer_pool.pop_back();
+        } else {
+            out = new unsigned char[12];
+        }
+        std::memcpy(out, nonce_cache.back().value.data(), 12);
         return out;
     }
 
@@ -105,8 +164,14 @@ namespace native_jvm::string_pool {
         }
         std::memset(key, 0, 32);
         std::memset(nonce, 0, 12);
-        delete[] key;
-        delete[] nonce;
+        {
+            std::lock_guard<std::mutex> guard(key_cache_mutex);
+            key_buffer_pool.push_back(key);
+        }
+        {
+            std::lock_guard<std::mutex> guard(nonce_cache_mutex);
+            nonce_buffer_pool.push_back(nonce);
+        }
     }
 
     void encrypt_string(unsigned char *key, unsigned char *nonce,
@@ -118,8 +183,14 @@ namespace native_jvm::string_pool {
         }
         std::memset(key, 0, 32);
         std::memset(nonce, 0, 12);
-        delete[] key;
-        delete[] nonce;
+        {
+            std::lock_guard<std::mutex> guard(key_cache_mutex);
+            key_buffer_pool.push_back(key);
+        }
+        {
+            std::lock_guard<std::mutex> guard(nonce_cache_mutex);
+            nonce_buffer_pool.push_back(nonce);
+        }
     }
 
     void clear_string(std::size_t offset, std::size_t len) {
