@@ -10,12 +10,15 @@ import by.radioegor146.source.StringPool;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.ClassRemapper;
 import org.objectweb.asm.commons.Remapper;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.InsnNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.gravit.launchserver.asm.ClassMetadataReader;
@@ -29,6 +32,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.jar.JarFile;
@@ -267,9 +271,28 @@ public class NativeObfuscator {
                     ClassNode rawClassNode = new ClassNode(Opcodes.ASM7);
                     classReader.accept(rawClassNode, 0);
 
-                    if (!classMethodFilter.shouldProcess(rawClassNode) ||
-                            rawClassNode.methods.stream().noneMatch(method -> MethodProcessor.shouldProcess(method) &&
-                                    classMethodFilter.shouldProcess(rawClassNode, method))) {
+                    boolean shouldProcessClass = classMethodFilter.shouldProcess(rawClassNode);
+                    LinkedHashSet<String> nativeMethodKeys = rawClassNode.methods.stream()
+                            .filter(MethodProcessor::shouldProcess)
+                            .filter(method -> classMethodFilter.shouldProcess(rawClassNode, method))
+                            .map(method -> MethodProcessor.nameFromNode(method, rawClassNode))
+                            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+                    boolean hasPartialNative = classMethodFilter.hasPartialMethodObfuscation(rawClassNode);
+                    if (hasPartialNative && logger.isDebugEnabled()) {
+                        logger.debug("Class {} will be partially transpiled to native code", rawClassNode.name);
+                    }
+
+                    if (!nativeMethodKeys.isEmpty()) {
+                        boolean hasClinit = rawClassNode.methods.stream()
+                                .filter(method -> "<clinit>".equals(method.name) && "()V".equals(method.desc))
+                                .anyMatch(method -> nativeMethodKeys.contains(MethodProcessor.nameFromNode(method, rawClassNode)));
+                        if (!hasClinit) {
+                            nativeMethodKeys.add(rawClassNode.name + "#<clinit>!()V");
+                        }
+                    }
+
+                    if (!shouldProcessClass || nativeMethodKeys.isEmpty()) {
                         logger.info("Skipping {}", rawClassNode.name);
                         if (useAnnotations) {
                             ClassMethodFilter.cleanAnnotations(rawClassNode);
@@ -291,8 +314,7 @@ public class NativeObfuscator {
                     logger.info("Preprocessing {}", rawClassNode.name);
 
                     rawClassNode.methods.stream()
-                            .filter(MethodProcessor::shouldProcess)
-                            .filter(methodNode -> classMethodFilter.shouldProcess(rawClassNode, methodNode))
+                            .filter(methodNode -> nativeMethodKeys.contains(MethodProcessor.nameFromNode(methodNode, rawClassNode)))
                             .forEach(methodNode -> PreprocessorRunner.preprocess(rawClassNode, methodNode, platform));
 
                     ClassWriter preprocessorClassWriter = new SafeClassWriter(metadataReader, Opcodes.ASM7 | ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
@@ -316,9 +338,12 @@ public class NativeObfuscator {
                     cachedMethods.clear();
                     cachedFields.clear();
 
+                    int registrationClassIndex = currentClassId;
+
                     try (ClassSourceBuilder cppBuilder =
                                  new ClassSourceBuilder(cppOutput, classNode.name, classIndexReference[0]++, stringPool)) {
                         StringBuilder instructions = new StringBuilder();
+                        boolean loaderInjected = false;
 
                         for (int i = 0; i < classNode.methods.size(); i++) {
                             MethodNode method = classNode.methods.get(i);
@@ -327,7 +352,7 @@ public class NativeObfuscator {
                                 continue;
                             }
 
-                            if (!classMethodFilter.shouldProcess(classNode, method)) {
+                            if (!nativeMethodKeys.contains(MethodProcessor.nameFromNode(method, classNode))) {
                                 continue;
                             }
 
@@ -341,9 +366,17 @@ public class NativeObfuscator {
                                 hiddenMethods.add(new HiddenCppMethod(context.proxyMethod, context.cppNativeMethodName));
                             }
 
+                            if ("<clinit>".equals(method.name) && "()V".equals(method.desc) && !context.skipNative) {
+                                loaderInjected = true;
+                            }
+
                             if ((classNode.access & Opcodes.ACC_INTERFACE) > 0) {
                                 method.access &= ~Opcodes.ACC_NATIVE;
                             }
+                        }
+
+                        if (!nativeMethodKeys.isEmpty() && !loaderInjected) {
+                            ensureLoaderInvocation(classNode, registrationClassIndex);
                         }
 
                         if (useAnnotations) {
@@ -527,6 +560,55 @@ public class NativeObfuscator {
             // Update the generated native_jvm_output.cpp to include anti-debug initialization
             updateNativeJvmOutputWithAntiDebug(outputDir.resolve("cpp"), antiDebugConfig);
         }
+    }
+
+    private void ensureLoaderInvocation(ClassNode classNode, int registrationClassIndex) {
+        MethodNode clinit = classNode.methods.stream()
+                .filter(method -> "<clinit>".equals(method.name) && "()V".equals(method.desc))
+                .findFirst()
+                .orElseGet(() -> {
+                    MethodNode methodNode = new MethodNode(Opcodes.ASM7, Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+                    classNode.methods.add(methodNode);
+                    return methodNode;
+                });
+
+        if (containsLoaderCall(clinit)) {
+            return;
+        }
+
+        LdcInsnNode pushIndex = new LdcInsnNode(registrationClassIndex);
+        LdcInsnNode pushClass = new LdcInsnNode(Type.getObjectType(classNode.name));
+        MethodInsnNode invokeRegister = new MethodInsnNode(Opcodes.INVOKESTATIC, nativeDir + "/Loader",
+                "registerNativesForClass", "(ILjava/lang/Class;)V", false);
+
+        AbstractInsnNode first = clinit.instructions.getFirst();
+        if (first != null) {
+            clinit.instructions.insertBefore(first, invokeRegister);
+            clinit.instructions.insertBefore(first, pushClass);
+            clinit.instructions.insertBefore(first, pushIndex);
+        } else {
+            clinit.instructions.add(pushIndex);
+            clinit.instructions.add(pushClass);
+            clinit.instructions.add(invokeRegister);
+            clinit.instructions.add(new InsnNode(Opcodes.RETURN));
+        }
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("Injected native loader call into <clinit> of {}", classNode.name);
+        }
+    }
+
+    private boolean containsLoaderCall(MethodNode clinit) {
+        for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode methodInsn
+                    && methodInsn.getOpcode() == Opcodes.INVOKESTATIC
+                    && methodInsn.owner.equals(nativeDir + "/Loader")
+                    && methodInsn.name.equals("registerNativesForClass")
+                    && methodInsn.desc.equals("(ILjava/lang/Class;)V")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

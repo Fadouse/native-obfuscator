@@ -3,6 +3,7 @@ package by.radioegor146;
 import by.radioegor146.nativeobfuscator.Native;
 import by.radioegor146.nativeobfuscator.NotNative;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -28,6 +29,18 @@ public class ClassMethodFilter {
         return list.contains(name);
     }
 
+    private static boolean hasAnnotation(Iterable<AnnotationNode> annotations, String desc) {
+        if (annotations == null) {
+            return false;
+        }
+        for (AnnotationNode annotationNode : annotations) {
+            if (annotationNode.desc.equals(desc)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public boolean shouldProcess(ClassNode classNode) {
         if (hasInList(blackList, classNode.name)) {
             return false;
@@ -38,12 +51,15 @@ public class ClassMethodFilter {
         if (!useAnnotations) {
             return true;
         }
-        if (classNode.invisibleAnnotations != null && 
-            classNode.invisibleAnnotations.stream().anyMatch(annotationNode ->
-                annotationNode.desc.equals(NATIVE_ANNOTATION_DESC))) {
+        if (hasAnnotation(classNode.invisibleAnnotations, NOT_NATIVE_ANNOTATION_DESC)) {
+            return false;
+        }
+        if (hasAnnotation(classNode.invisibleAnnotations, NATIVE_ANNOTATION_DESC)) {
             return true;
         }
-        return classNode.methods.stream().anyMatch(methodNode -> this.shouldProcess(classNode, methodNode));
+        return classNode.methods.stream()
+                .filter(MethodProcessor::shouldProcess)
+                .anyMatch(methodNode -> this.shouldProcess(classNode, methodNode));
     }
 
     public boolean shouldProcess(ClassNode classNode, MethodNode methodNode) {
@@ -56,17 +72,32 @@ public class ClassMethodFilter {
         if (!useAnnotations) {
             return true;
         }
-        boolean classIsMarked = classNode.invisibleAnnotations != null &&
-                classNode.invisibleAnnotations.stream().anyMatch(annotationNode ->
-                        annotationNode.desc.equals(NATIVE_ANNOTATION_DESC));
-        if (methodNode.invisibleAnnotations != null && 
-            methodNode.invisibleAnnotations.stream().anyMatch(annotationNode ->
-                annotationNode.desc.equals(NATIVE_ANNOTATION_DESC))) {
+        if (hasAnnotation(classNode.invisibleAnnotations, NOT_NATIVE_ANNOTATION_DESC)) {
+            return false;
+        }
+        if (hasAnnotation(methodNode.invisibleAnnotations, NOT_NATIVE_ANNOTATION_DESC)) {
+            return false;
+        }
+        if (hasAnnotation(methodNode.invisibleAnnotations, NATIVE_ANNOTATION_DESC)) {
             return true;
         }
-        return classIsMarked && (methodNode.invisibleAnnotations == null || methodNode.invisibleAnnotations
-                .stream().noneMatch(annotationNode -> annotationNode.desc.equals(
-                        NOT_NATIVE_ANNOTATION_DESC)));
+        return hasAnnotation(classNode.invisibleAnnotations, NATIVE_ANNOTATION_DESC);
+    }
+
+    public boolean hasPartialMethodObfuscation(ClassNode classNode) {
+        if (!shouldProcess(classNode)) {
+            return false;
+        }
+        boolean hasNativeMethods = classNode.methods.stream()
+                .filter(MethodProcessor::shouldProcess)
+                .anyMatch(methodNode -> shouldProcess(classNode, methodNode));
+        if (!hasNativeMethods) {
+            return false;
+        }
+        boolean hasJavaMethods = classNode.methods.stream()
+                .filter(MethodProcessor::shouldProcess)
+                .anyMatch(methodNode -> !shouldProcess(classNode, methodNode));
+        return hasJavaMethods;
     }
 
     public static void cleanAnnotations(ClassNode classNode) {
