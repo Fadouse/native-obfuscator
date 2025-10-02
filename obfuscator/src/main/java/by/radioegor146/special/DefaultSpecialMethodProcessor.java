@@ -37,8 +37,8 @@ public class DefaultSpecialMethodProcessor implements SpecialMethodProcessor {
 
     @Override
     public void postProcess(MethodContext context) {
-        context.method.instructions.clear();
         if (Util.getFlag(context.clazz.access, Opcodes.ACC_INTERFACE)) {
+            context.method.instructions.clear();
             InsnList list = new InsnList();
 
             if (Util.getFlag(context.method.access, Opcodes.ACC_STATIC)) {
@@ -60,6 +60,13 @@ public class DefaultSpecialMethodProcessor implements SpecialMethodProcessor {
                     context.proxyMethod.getMethodNode().desc, false));
             list.add(new InsnNode(Type.getReturnType(context.method.desc).getOpcode(Opcodes.IRETURN)));
             context.method.instructions = list;
+        } else {
+            // For concrete classes the Java method is converted to a true native declaration.
+            // Ensure there is no residual bytecode, otherwise ASM will attempt to compute
+            // stack frames for a method flagged as native, leading to verification errors.
+            context.method.instructions.clear();
+            context.method.maxStack = 0;
+            context.method.maxLocals = 0;
         }
     }
 }
