@@ -1,7 +1,5 @@
 package by.radioegor146;
 
-import by.radioegor146.javaobf.JavaObfuscationConfig;
-
 import java.nio.file.Path;
 import java.util.List;
 

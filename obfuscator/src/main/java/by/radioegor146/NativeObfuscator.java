@@ -1,12 +1,12 @@
 package by.radioegor146;
 
 import by.radioegor146.bytecode.PreprocessorRunner;
-import by.radioegor146.javaobf.JavaObfuscationConfig;
-import by.radioegor146.javaobf.JavaObfuscator;
 import by.radioegor146.source.CMakeFilesBuilder;
 import by.radioegor146.source.ClassSourceBuilder;
 import by.radioegor146.source.MainSourceBuilder;
 import by.radioegor146.source.StringPool;
+import dev.skidfuscator.obfuscator.Skidfuscator;
+import dev.skidfuscator.obfuscator.SkidfuscatorSession;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -137,21 +137,31 @@ public class NativeObfuscator {
         // Step 1: Apply Java obfuscation if enabled
         Path processedJarPath = inputJarPath;
         if (enableJavaObfuscation) {
-            logger.info("Starting Java-layer obfuscation...");
-            JavaObfuscationConfig.Strength strength;
-            try {
-                strength = JavaObfuscationConfig.Strength.valueOf(javaObfuscationStrength.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                logger.warn("Invalid Java obfuscation strength '{}', using MEDIUM", javaObfuscationStrength);
-                strength = JavaObfuscationConfig.Strength.MEDIUM;
-            }
+            logger.info("Starting Skidfuscator obfuscation...");
+            Path javaObfOutputDir = outputDir.resolve("java-obf-skid");
+            Files.createDirectories(javaObfOutputDir);
 
-            JavaObfuscationConfig javaConfig = new JavaObfuscationConfig(true, strength, javaBlackList, javaWhiteList);
-            JavaObfuscator javaObfuscator = new JavaObfuscator();
+            Path skidOutputJar = javaObfOutputDir.resolve(inputJarPath.getFileName().toString());
+            Path skidConfig = createSkidConfig(javaBlackList, javaWhiteList, javaObfOutputDir);
+            File[] skidLibs = inputLibs.stream().map(Path::toFile).toArray(File[]::new);
 
-            Path javaObfOutputDir = outputDir.resolve("java-obf-temp");
-            processedJarPath = javaObfuscator.process(inputJarPath, javaObfOutputDir, inputLibs, javaConfig, useAnnotations);
-            logger.info("Java-layer obfuscation completed. Output: {}", processedJarPath);
+            SkidfuscatorSession session = SkidfuscatorSession.builder()
+                    .input(inputJarPath.toFile())
+                    .output(skidOutputJar.toFile())
+                    .libs(skidLibs)
+                    .config(skidConfig != null ? skidConfig.toFile() : null)
+                    .analytics(false)
+                    .phantom(false)
+                    .fuckit(false)
+                    .renamer(false)
+                    .debug(logger.isDebugEnabled())
+                    .build();
+
+            Skidfuscator skidfuscator = new Skidfuscator(session);
+            skidfuscator.run();
+
+            processedJarPath = skidOutputJar;
+            logger.info("Skidfuscator obfuscation completed. Output: {}", processedJarPath);
         }
 
         // Step 2: Check if native obfuscation is disabled
@@ -389,7 +399,11 @@ public class NativeObfuscator {
                             ClassMethodFilter.cleanAnnotations(classNode);
                         }
 
-                        classNode.version = 52;
+                        // Preserve original class version if >= 52 (Java 8+) to maintain compatibility
+                        // with newer features like NestHost/NestMembers (Java 11+)
+                        if (classNode.version < 52) {
+                            classNode.version = 52;
+                        }
                         ClassWriter classWriter = new SafeClassWriter(metadataReader,
                                 Opcodes.ASM7 | ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
                         classNode.accept(classWriter);
@@ -840,6 +854,92 @@ public class NativeObfuscator {
         code.append("        if (env->ExceptionCheck())\n");
         code.append("            return;");
         return code.toString();
+    }
+
+    private Path createSkidConfig(List<String> javaBlackList, List<String> javaWhiteList, Path outputDir) throws IOException {
+        boolean hasBlacklist = javaBlackList != null && !javaBlackList.isEmpty();
+        boolean hasWhitelist = javaWhiteList != null && !javaWhiteList.isEmpty();
+
+        if (hasWhitelist) {
+            logger.warn("Skidfuscator migration does not support java whitelist entries; ignoring provided list.");
+        }
+
+        if (!hasBlacklist) {
+            return null;
+        }
+
+        List<String> rendered = new ArrayList<>();
+        for (String entry : javaBlackList) {
+            String pattern = convertToSkidPattern(entry);
+            if (pattern != null) {
+                rendered.add(pattern);
+            }
+        }
+
+        if (rendered.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("exempt = [\n");
+        for (int i = 0; i < rendered.size(); i++) {
+            builder.append("  \"").append(escapeForHocon(rendered.get(i))).append("\"");
+            if (i + 1 < rendered.size()) {
+                builder.append(',');
+            }
+            builder.append('\n');
+        }
+        builder.append("]\n");
+
+        Path configPath = outputDir.resolve("skidfuscator.hocon");
+        Files.writeString(configPath, builder.toString(), StandardCharsets.UTF_8);
+        return configPath;
+    }
+
+    private String convertToSkidPattern(String entry) {
+        if (entry == null) {
+            return null;
+        }
+
+        String normalized = entry.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        normalized = normalized.replace('.', '/');
+        if (normalized.contains("#")) {
+            String[] split = normalized.split("#", 2);
+            String classPattern = toRegexPattern(split[0]);
+            String methodPattern = toRegexPattern(split[1]);
+            return "method{" + classPattern + "#" + methodPattern + "}";
+        }
+
+        return "class{" + toRegexPattern(normalized) + "}";
+    }
+
+    private String toRegexPattern(String pattern) {
+        String trimmed = pattern.trim();
+        if (trimmed.isEmpty()) {
+            return ".*";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < trimmed.length(); i++) {
+            char ch = trimmed.charAt(i);
+            if (ch == '*') {
+                builder.append(".*");
+            } else if ("\\.[]{}()+-^$|?".indexOf(ch) >= 0) {
+                builder.append('\\').append(ch);
+            } else {
+                builder.append(ch);
+            }
+        }
+
+        return "^" + builder + "$";
+    }
+
+    private String escapeForHocon(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     public Snippets getSnippets() {
