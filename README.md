@@ -102,7 +102,19 @@ To use annotations for black/whitelisting methods/classes as `native` you can ad
 
 Also, you need to add [JitPack](https://jitpack.io) to your repositories.
 
-You can add `@Native` annotation to include classes/methods to the native obfuscation process and add `@NotNative` annotation to ignore methods in classes marked as `@Native`
+You can add the `@Native` annotation to include classes or individual methods in the native obfuscation process. Use
+`@NotNative` to ignore methods inside classes marked as `@Native`; you can also apply `@NotNative` directly to a class to skip
+native transpilation entirely when annotation processing is enabled.
+
+**Annotation combinations**
+
+- `@Native` on a class – every eligible method is transpiled to native code.
+- `@Native` on selected methods – only those methods are transpiled, other methods remain Java bytecode.
+- `@Native` on a class with `@NotNative` on specific methods – the marked methods stay as Java bytecode.
+- `@NotNative` on a class – the class is never transpiled even if individual members are annotated.
+
+When only a subset of methods is transpiled, the obfuscator keeps all remaining methods (and any existing static initializers)
+unchanged in the output JAR while still generating the registration stubs required for the native methods.
 
 Whitelist/Blacklist has higher priority than annotations.
 

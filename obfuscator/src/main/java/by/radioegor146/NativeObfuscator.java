@@ -29,6 +29,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.jar.JarFile;
@@ -267,9 +268,28 @@ public class NativeObfuscator {
                     ClassNode rawClassNode = new ClassNode(Opcodes.ASM7);
                     classReader.accept(rawClassNode, 0);
 
-                    if (!classMethodFilter.shouldProcess(rawClassNode) ||
-                            rawClassNode.methods.stream().noneMatch(method -> MethodProcessor.shouldProcess(method) &&
-                                    classMethodFilter.shouldProcess(rawClassNode, method))) {
+                    boolean shouldProcessClass = classMethodFilter.shouldProcess(rawClassNode);
+                    LinkedHashSet<String> nativeMethodKeys = rawClassNode.methods.stream()
+                            .filter(MethodProcessor::shouldProcess)
+                            .filter(method -> classMethodFilter.shouldProcess(rawClassNode, method))
+                            .map(method -> MethodProcessor.nameFromNode(method, rawClassNode))
+                            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+                    boolean hasPartialNative = classMethodFilter.hasPartialMethodObfuscation(rawClassNode);
+                    if (hasPartialNative && logger.isDebugEnabled()) {
+                        logger.debug("Class {} will be partially transpiled to native code", rawClassNode.name);
+                    }
+
+                    if (!nativeMethodKeys.isEmpty()) {
+                        boolean hasClinit = rawClassNode.methods.stream()
+                                .filter(method -> "<clinit>".equals(method.name) && "()V".equals(method.desc))
+                                .anyMatch(method -> nativeMethodKeys.contains(MethodProcessor.nameFromNode(method, rawClassNode)));
+                        if (!hasClinit) {
+                            nativeMethodKeys.add(rawClassNode.name + "#<clinit>!()V");
+                        }
+                    }
+
+                    if (!shouldProcessClass || nativeMethodKeys.isEmpty()) {
                         logger.info("Skipping {}", rawClassNode.name);
                         if (useAnnotations) {
                             ClassMethodFilter.cleanAnnotations(rawClassNode);
@@ -291,8 +311,7 @@ public class NativeObfuscator {
                     logger.info("Preprocessing {}", rawClassNode.name);
 
                     rawClassNode.methods.stream()
-                            .filter(MethodProcessor::shouldProcess)
-                            .filter(methodNode -> classMethodFilter.shouldProcess(rawClassNode, methodNode))
+                            .filter(methodNode -> nativeMethodKeys.contains(MethodProcessor.nameFromNode(methodNode, rawClassNode)))
                             .forEach(methodNode -> PreprocessorRunner.preprocess(rawClassNode, methodNode, platform));
 
                     ClassWriter preprocessorClassWriter = new SafeClassWriter(metadataReader, Opcodes.ASM7 | ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
@@ -327,7 +346,7 @@ public class NativeObfuscator {
                                 continue;
                             }
 
-                            if (!classMethodFilter.shouldProcess(classNode, method)) {
+                            if (!nativeMethodKeys.contains(MethodProcessor.nameFromNode(method, classNode))) {
                                 continue;
                             }
 
