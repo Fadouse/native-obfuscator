@@ -970,7 +970,7 @@ public class ObfuscatorFrame extends JFrame {
 
                 // Create protection configuration
                 ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
-                        stringObfuscation, constantObfuscation);
+                        stringObfuscation, constantObfuscation, false);
 
                 // Create anti-debug configuration
                 AntiDebugConfig.Builder antiDebugBuilder = new AntiDebugConfig.Builder()

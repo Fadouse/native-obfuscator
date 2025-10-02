@@ -171,7 +171,7 @@ public class Main {
 
             // Create protection configuration
             ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
-                    obfuscateStrings, obfuscateConstants);
+                    obfuscateStrings, obfuscateConstants, false);
 
             // Create anti-debug configuration
             AntiDebugConfig.Builder antiDebugBuilder = new AntiDebugConfig.Builder()

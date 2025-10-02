@@ -179,6 +179,12 @@ public class MethodProcessor {
             context.argTypes.addFirst(Type.getType(Object.class));
         }
 
+        if (context.directCallTargets != null) {
+            String targetKey = nameFromNode(method, context.clazz);
+            context.directCallTargets.put(targetKey,
+                    new MethodContext.DirectCallTarget(methodName, isStatic, context.ret, args));
+        }
+
         if (context.proxyMethod != null) {
             context.nativeMethod = context.proxyMethod.getMethodNode();
             context.nativeMethod.access |= Opcodes.ACC_NATIVE;
@@ -188,21 +194,28 @@ public class MethodProcessor {
                     obfuscator.getStringPool().get(method.desc), methodName));
         }
 
-        output.append(String.format("%s JNICALL %s(JNIEnv *env, ", CPP_TYPES[context.ret.getSort()], methodName));
+        StringBuilder signatureBuilder = new StringBuilder();
+        signatureBuilder.append(String.format("%s JNICALL %s(JNIEnv *env, ", CPP_TYPES[context.ret.getSort()], methodName));
         if (context.proxyMethod != null) {
-            output.append("jobject ignored_hidden, ");
+            signatureBuilder.append("jobject ignored_hidden, ");
         }
-        output.append(isStatic ? "jclass clazz" : "jobject obj");
+        signatureBuilder.append(isStatic ? "jclass clazz" : "jobject obj");
 
         ArrayList<String> argNames = new ArrayList<>();
         if (!isStatic) argNames.add("obj");
 
         for (int i = 0; i < args.length; i++) {
             argNames.add("arg" + i);
-            output.append(String.format(", %s arg%d", CPP_TYPES[args[i].getSort()], i));
+            signatureBuilder.append(String.format(", %s arg%d", CPP_TYPES[args[i].getSort()], i));
         }
 
-        output.append(") {").append("\n");
+        signatureBuilder.append(")");
+
+        if (context.classPrototypes != null) {
+            context.classPrototypes.add(signatureBuilder.toString() + ";");
+        }
+
+        output.append(signatureBuilder).append(" {\n");
 
         if (context.proxyMethod != null) {
             output.append("    env->DeleteLocalRef(ignored_hidden);\n");
@@ -226,6 +239,7 @@ public class MethodProcessor {
 
             boolean useJit = context.protectionConfig.isJitEnabled();
             vmTranslator = new VmTranslator(useJit);
+            vmTranslator.setAvoidStringHeavyVirtualization(context.protectionConfig.isMinimizeJniInVmEnabled());
             vmCode = vmTranslator.translate(method);
             // Avoid VM translation for interface methods to reduce risk of mismatched
             // dispatch (default/interface semantics) across JVM versions.
@@ -848,6 +862,12 @@ public class MethodProcessor {
 
     public static String nameFromNode(MethodNode m, ClassNode cn) {
         return cn.name + '#' + m.name + '!' + m.desc;
+    }
+
+    public static String computeCppNativeMethodName(MethodNode method, int methodIndex) {
+        String rawName = "native_" + method.name + methodIndex;
+        rawName = "__ngen_" + rawName.replace('/', '_');
+        return Util.escapeCppNameString(rawName);
     }
 
     private static void appendStateTransition(boolean flattenEnabled, StringBuilder block, String indent,

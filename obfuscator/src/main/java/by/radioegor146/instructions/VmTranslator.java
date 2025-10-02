@@ -14,6 +14,7 @@ import java.util.*;
 public class VmTranslator {
 
     private boolean useJit;
+    private boolean avoidStringHeavyVirtualization;
     private final List<FieldRefInfo> fieldRefs = new ArrayList<>();
     private final List<MethodRefInfo> methodRefs = new ArrayList<>();
     private final List<String> classRefs = new ArrayList<>();
@@ -38,6 +39,20 @@ public class VmTranslator {
 
     public void setUseJit(boolean useJit) {
         this.useJit = useJit;
+    }
+
+    public void setAvoidStringHeavyVirtualization(boolean avoid) {
+        this.avoidStringHeavyVirtualization = avoid;
+    }
+
+    private void resetState() {
+        fieldRefs.clear();
+        methodRefs.clear();
+        classRefs.clear();
+        multiArrayRefs.clear();
+        tableSwitches.clear();
+        lookupSwitches.clear();
+        constantPool.clear();
     }
 
     /** Representation of a VM instruction. */
@@ -303,10 +318,7 @@ public class VmTranslator {
      * so that the caller can provide a fallback implementation.
      */
     public Instruction[] translate(MethodNode method) {
-        fieldRefs.clear();
-        tableSwitches.clear();
-        lookupSwitches.clear();
-        constantPool.clear();
+        resetState();
         Map<LabelNode, Integer> labelIds = new HashMap<>();
         int index = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
@@ -319,6 +331,9 @@ public class VmTranslator {
 
         List<Instruction> result = new ArrayList<>();
         int invokeIndex = 0;
+        boolean hasBackwardBranch = false;
+        boolean hasHeavyStringInvoke = false;
+        int insnIndex = 0;
         Map<String, Integer> classIds = new HashMap<>();
         int classIndex = 0;
         Map<String, Integer> fieldIds = new HashMap<>();
@@ -326,6 +341,39 @@ public class VmTranslator {
         Map<String, Integer> methodIds = new HashMap<>();
         int methodIndex = 0;
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof JumpInsnNode) {
+                Integer target = labelIds.get(((JumpInsnNode) insn).label);
+                if (target != null && target <= insnIndex) {
+                    hasBackwardBranch = true;
+                }
+            } else if (insn instanceof TableSwitchInsnNode) {
+                TableSwitchInsnNode ts = (TableSwitchInsnNode) insn;
+                int def = labelIds.get(ts.dflt);
+                if (def <= insnIndex) {
+                    hasBackwardBranch = true;
+                }
+                for (LabelNode label : ts.labels) {
+                    Integer target = labelIds.get(label);
+                    if (target != null && target <= insnIndex) {
+                        hasBackwardBranch = true;
+                        break;
+                    }
+                }
+            } else if (insn instanceof LookupSwitchInsnNode) {
+                LookupSwitchInsnNode ls = (LookupSwitchInsnNode) insn;
+                int def = labelIds.get(ls.dflt);
+                if (def <= insnIndex) {
+                    hasBackwardBranch = true;
+                }
+                for (LabelNode label : ls.labels) {
+                    Integer target = labelIds.get(label);
+                    if (target != null && target <= insnIndex) {
+                        hasBackwardBranch = true;
+                        break;
+                    }
+                }
+            }
+
             int opcode = insn.getOpcode();
             switch (opcode) {
                 case Opcodes.ILOAD:
@@ -793,6 +841,9 @@ public class VmTranslator {
                 case Opcodes.INVOKEINTERFACE:
                 case Opcodes.INVOKESTATIC: {
                     MethodInsnNode mi = (MethodInsnNode) insn;
+                    if ("java/lang/StringBuilder".equals(mi.owner) || "java/lang/String".equals(mi.owner)) {
+                        hasHeavyStringInvoke = true;
+                    }
                     String key = mi.owner + '.' + mi.name + '!' + mi.desc;
                     Integer id = methodIds.get(key);
                     if (id == null) {
@@ -892,7 +943,15 @@ public class VmTranslator {
                 default:
                     return null; // unsupported instruction
             }
+            if (opcode != -1) {
+                insnIndex++;
+            }
         }
+        if (avoidStringHeavyVirtualization && hasBackwardBranch && hasHeavyStringInvoke) {
+            resetState();
+            return null;
+        }
+
         if (result.isEmpty()) {
             return null;
         }

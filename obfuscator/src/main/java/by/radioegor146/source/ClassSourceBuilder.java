@@ -83,6 +83,17 @@ public class ClassSourceBuilder implements AutoCloseable {
                 .append(" {\n\n");
     }
 
+    public void addPrototypes(Iterable<String> prototypes) throws IOException {
+        boolean wroteAny = false;
+        for (String prototype : prototypes) {
+            cppWriter.append("    ").append(prototype).append('\n');
+            wroteAny = true;
+        }
+        if (wroteAny) {
+            cppWriter.append('\n');
+        }
+    }
+
     public void addInstructions(String instructions) throws IOException {
         cppWriter.append(instructions);
         cppWriter.append("\n");

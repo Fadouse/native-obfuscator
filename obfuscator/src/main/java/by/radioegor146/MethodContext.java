@@ -67,6 +67,21 @@ public class MethodContext {
     public final StringBuilder verifiedClassPreamble;
     public int verifiedClassPreambleInsertionPoint;
 
+    /**
+     * Map of methods belonging to the current class that will be emitted as native stubs. The key uses
+     * {@link MethodProcessor#nameFromNode(MethodNode, ClassNode)} semantics. Each entry stores the
+     * generated C++ symbol alongside the JVM signature so that instruction handlers can perform
+     * direct calls without bouncing through JNI.
+     */
+    public Map<String, DirectCallTarget> directCallTargets;
+
+    /**
+     * Forward declarations emitted for every generated native stub within the current class. These
+     * declarations are inserted ahead of the method bodies so that native stubs can mutually call each
+     * other without incurring additional JNI round-trips.
+     */
+    public LinkedHashSet<String> classPrototypes;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
         this.obfuscator = obfuscator;
@@ -89,6 +104,23 @@ public class MethodContext {
         this.verifiedClassFlagNames = new HashMap<>();
         this.verifiedClassPreamble = new StringBuilder();
         this.verifiedClassPreambleInsertionPoint = -1;
+
+        this.directCallTargets = new HashMap<>();
+        this.classPrototypes = new LinkedHashSet<>();
+    }
+
+    public static final class DirectCallTarget {
+        public final String cppName;
+        public final boolean isStatic;
+        public final Type returnType;
+        public final Type[] argumentTypes;
+
+        public DirectCallTarget(String cppName, boolean isStatic, Type returnType, Type[] argumentTypes) {
+            this.cppName = cppName;
+            this.isStatic = isStatic;
+            this.returnType = returnType;
+            this.argumentTypes = argumentTypes;
+        }
     }
 
     public NodeCache<String> getCachedStrings() {

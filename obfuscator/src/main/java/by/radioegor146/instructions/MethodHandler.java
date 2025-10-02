@@ -172,6 +172,7 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
             argsBuilder.append(", ").append(context.getSnippet("INVOKE_ARG_" + args[i].getSort(),
                     Util.createMap("index", argOffsets.get(i))));
         }
+        String argsSnippet = argsBuilder.toString();
 
         // Receiver resides just below the arguments on the operand stack
         int objectStackIndex = stackOffset - objectOffset;
@@ -195,7 +196,7 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
 
         if (directSelfStaticVoidInvoke) {
             props.put("direct_method", context.cppNativeMethodName);
-            props.put("args", argsBuilder.toString());
+            props.put("args", argsSnippet);
             instructionName = "DIRECT_INVOKESTATIC_0";
             return;
         }
@@ -207,6 +208,22 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                     classId,
                     context.getCachedStrings().getPointer(dotted),
                     trimmedTryCatchBlock));
+        }
+
+        boolean directStaticInvoke = false;
+        if (isStatic && node.owner.equals(context.clazz.name)) {
+            String targetKey = context.clazz.name + '#' + node.name + '!' + node.desc;
+            MethodContext.DirectCallTarget target = context.directCallTargets.get(targetKey);
+            if (target != null && target.isStatic) {
+                props.put("direct_method", target.cppName);
+                props.put("args", argsSnippet);
+                instructionName = "DIRECT_INVOKESTATIC_" + returnType.getSort();
+                directStaticInvoke = true;
+            }
+        }
+
+        if (directStaticInvoke) {
+            return;
         }
 
         CachedMethodInfo methodInfo = new CachedMethodInfo(node.owner, node.name, node.desc, isStatic);
@@ -223,7 +240,7 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                         context.getStringPool().get(node.desc),
                         trimmedTryCatchBlock));
 
-        props.put("args", argsBuilder.toString());
+        props.put("args", argsSnippet);
 
         // Heuristic marker: if we're in the middle of an enum-switch mapping sequence
         // and we just encountered ordinal()I, remember it so we can rewrite the

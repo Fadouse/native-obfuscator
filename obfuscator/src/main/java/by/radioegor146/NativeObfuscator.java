@@ -125,7 +125,7 @@ public class NativeObfuscator {
                         boolean enableJavaObfuscation, String javaObfuscationStrength,
                         List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation) throws IOException {
         ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
-                obfuscateStrings, obfuscateConstants);
+                obfuscateStrings, obfuscateConstants, false);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
             throw new RuntimeException("Input jar can't be in the same directory as output directory");
         }
@@ -340,6 +340,29 @@ public class NativeObfuscator {
 
                     int registrationClassIndex = currentClassId;
 
+                    LinkedHashSet<String> classPrototypes = new LinkedHashSet<>();
+                    java.util.Map<String, MethodContext.DirectCallTarget> directCallTargets = new java.util.HashMap<>();
+
+                    for (int i = 0; i < classNode.methods.size(); i++) {
+                        MethodNode method = classNode.methods.get(i);
+                        if (!MethodProcessor.shouldProcess(method)) {
+                            continue;
+                        }
+                        String methodKey = MethodProcessor.nameFromNode(method, classNode);
+                        if (!nativeMethodKeys.contains(methodKey)) {
+                            continue;
+                        }
+                        if ("<clinit>".equals(method.name)) {
+                            continue;
+                        }
+                        boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
+                        Type returnType = Type.getReturnType(method.desc);
+                        Type[] argumentTypes = Type.getArgumentTypes(method.desc);
+                        String cppName = MethodProcessor.computeCppNativeMethodName(method, i);
+                        directCallTargets.put(methodKey,
+                                new MethodContext.DirectCallTarget(cppName, isStatic, returnType, argumentTypes));
+                    }
+
                     try (ClassSourceBuilder cppBuilder =
                                  new ClassSourceBuilder(cppOutput, classNode.name, classIndexReference[0]++, stringPool)) {
                         StringBuilder instructions = new StringBuilder();
@@ -357,6 +380,8 @@ public class NativeObfuscator {
                             }
 
                             MethodContext context = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
+                            context.classPrototypes = classPrototypes;
+                            context.directCallTargets = directCallTargets;
                             methodProcessor.processMethod(context);
                             instructions.append(context.output.toString().replace("\n", "\n    "));
 
@@ -390,6 +415,7 @@ public class NativeObfuscator {
                         Util.writeEntry(out, entry.getName(), classWriter.toByteArray());
 
                         cppBuilder.addHeader(cachedStrings.size(), cachedClasses.size(), cachedMethods.size(), cachedFields.size());
+                        cppBuilder.addPrototypes(classPrototypes);
                         cppBuilder.addInstructions(instructions.toString());
                         cppBuilder.registerMethods(cachedStrings, cachedClasses, cachedMethods, cachedFields,
                                 nativeMethods.toString(), hiddenMethods);

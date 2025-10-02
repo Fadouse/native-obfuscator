@@ -11,14 +11,17 @@ public class ProtectionConfig {
     private final boolean controlFlowFlatteningEnabled;
     private final boolean stringObfuscationEnabled;
     private final boolean constantObfuscationEnabled;
+    private final boolean minimizeJniInVm;
 
     public ProtectionConfig(boolean virtualizationEnabled, boolean jitEnabled, boolean controlFlowFlatteningEnabled,
-                            boolean stringObfuscationEnabled, boolean constantObfuscationEnabled) {
+                            boolean stringObfuscationEnabled, boolean constantObfuscationEnabled,
+                            boolean minimizeJniInVm) {
         this.virtualizationEnabled = virtualizationEnabled;
         this.jitEnabled = jitEnabled;
         this.controlFlowFlatteningEnabled = controlFlowFlatteningEnabled;
         this.stringObfuscationEnabled = stringObfuscationEnabled;
         this.constantObfuscationEnabled = constantObfuscationEnabled;
+        this.minimizeJniInVm = minimizeJniInVm;
     }
 
     /**
@@ -57,17 +60,24 @@ public class ProtectionConfig {
     }
 
     /**
+     * @return true if the VM translator should avoid virtualizing string-heavy loops to minimize JNI transitions.
+     */
+    public boolean isMinimizeJniInVmEnabled() {
+        return minimizeJniInVm;
+    }
+
+    /**
      * Creates a default configuration with all protection mechanisms disabled.
      */
     public static ProtectionConfig createDefault() {
-        return new ProtectionConfig(false, false, false, true, true);
+        return new ProtectionConfig(false, false, false, true, true, false);
     }
 
     /**
      * Creates a configuration for maximum protection.
      */
     public static ProtectionConfig createMaxProtection() {
-        return new ProtectionConfig(true, false, true, true, true); // JIT disabled by default for security
+        return new ProtectionConfig(true, false, true, true, true, false); // JIT disabled by default for security
     }
 
     /**
@@ -94,7 +104,8 @@ public class ProtectionConfig {
 
     @Override
     public String toString() {
-        return String.format("ProtectionConfig{virtualization=%s, jit=%s, controlFlowFlattening=%s, stringObf=%s, constObf=%s}",
-                virtualizationEnabled, jitEnabled, controlFlowFlatteningEnabled, stringObfuscationEnabled, constantObfuscationEnabled);
+        return String.format("ProtectionConfig{virtualization=%s, jit=%s, controlFlowFlattening=%s, stringObf=%s, constObf=%s, minimizeJni=%s}",
+                virtualizationEnabled, jitEnabled, controlFlowFlatteningEnabled, stringObfuscationEnabled,
+                constantObfuscationEnabled, minimizeJniInVm);
     }
 }
