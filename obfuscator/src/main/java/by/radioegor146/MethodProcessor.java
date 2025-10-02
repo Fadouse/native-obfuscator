@@ -170,6 +170,10 @@ public class MethodProcessor {
         methodName = Util.escapeCppNameString(methodName);
         context.cppNativeMethodName = methodName;
 
+        // Register this method in the transpiled methods map for direct call optimization
+        String methodKey = method.name + method.desc;
+        context.transpiledMethodNames.put(methodKey, methodName);
+
         boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
         context.ret = Type.getReturnType(method.desc);
         Type[] args = Type.getArgumentTypes(method.desc);
@@ -592,11 +596,18 @@ public class MethodProcessor {
                     .append(String.format("return (%s) 0;", CPP_TYPES[context.ret.getSort()]))
                     .append(" } }\n");
         }
-        output.append("    jobject classloader = utils::get_classloader_from_class(env, clazz);\n");
-        output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
+        // Use cached classloader to avoid repeated JNI calls
+        output.append("    jobject classloader = cached_classloader;\n");
+        output.append("    if (classloader == nullptr) {\n");
+        output.append("        classloader = utils::get_classloader_from_class(env, clazz);\n");
+        output.append("        if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
                 CPP_TYPES[context.ret.getSort()])).append(" }\n");
-        output.append("    if (classloader == nullptr) { env->FatalError(").append(context.getStringPool()
+        output.append("        if (classloader == nullptr) { env->FatalError(").append(context.getStringPool()
                 .get("classloader == null")).append(String.format("); return (%s) 0; }\n", CPP_TYPES[context.ret.getSort()]));
+        output.append("        cached_classloader = env->NewGlobalRef(classloader);\n");
+        output.append("        env->DeleteLocalRef(classloader);\n");
+        output.append("        classloader = cached_classloader;\n");
+        output.append("    }\n");
         output.append("\n");
         if (!isStatic) {
             output.append("    env->DeleteLocalRef(clazz);\n");

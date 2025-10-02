@@ -67,6 +67,10 @@ public class MethodContext {
     public final StringBuilder verifiedClassPreamble;
     public int verifiedClassPreambleInsertionPoint;
 
+    // Map of method signatures (name + descriptor) to their C++ native method names
+    // Used for direct C++ call optimization within the same class
+    public Map<String, String> transpiledMethodNames;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
         this.obfuscator = obfuscator;
@@ -89,6 +93,7 @@ public class MethodContext {
         this.verifiedClassFlagNames = new HashMap<>();
         this.verifiedClassPreamble = new StringBuilder();
         this.verifiedClassPreambleInsertionPoint = -1;
+        this.transpiledMethodNames = new HashMap<>();
     }
 
     public NodeCache<String> getCachedStrings() {

@@ -180,23 +180,44 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
         props.put("objectstackprev", String.valueOf(objectStackPrev));
         props.put("returnstackindex", String.valueOf(objectStackIndex));
 
+        // Check if we can use direct C++ call optimization
+        // This applies when calling another transpiled method in the same class
+        boolean canUseDirectCall = isStatic
+                && node.owner.equals(context.clazz.name);
+
+        boolean isDirectCall = false;
+        if (canUseDirectCall) {
+            String methodKey = node.name + node.desc;
+            String targetMethodName = context.transpiledMethodNames.get(methodKey);
+
+            if (targetMethodName != null) {
+                // Direct call optimization: call C++ function directly without JNI overhead
+                // Skip class verification since we're calling within the same already-initialized class
+                props.put("direct_method", targetMethodName);
+                props.put("args", argsBuilder.toString());
+                instructionName = "DIRECT_INVOKESTATIC_" + returnType.getSort();
+                isDirectCall = true;
+                // Don't return yet - we still need to setup some props below
+            }
+        }
+
         int classId = context.getCachedClasses().getId(node.owner);
-        String classPtr = MethodProcessor.ensureVerifiedClass(context, classId, node.owner, trimmedTryCatchBlock);
+        String classPtr;
+
+        if (isDirectCall) {
+            // For direct calls within same class, use 'clazz' directly without verification
+            classPtr = "clazz";
+        } else {
+            // For normal calls, verify and cache the class
+            classPtr = MethodProcessor.ensureVerifiedClass(context, classId, node.owner, trimmedTryCatchBlock);
+        }
 
         if (isStatic || node.getOpcode() == Opcodes.INVOKESPECIAL) {
             props.put("class_ptr", classPtr);
         }
 
-        boolean directSelfStaticVoidInvoke = isStatic
-                && returnType.getSort() == Type.VOID
-                && node.owner.equals(context.clazz.name)
-                && node.name.equals(context.method.name)
-                && node.desc.equals(context.method.desc);
-
-        if (directSelfStaticVoidInvoke) {
-            props.put("direct_method", context.cppNativeMethodName);
-            props.put("args", argsBuilder.toString());
-            instructionName = "DIRECT_INVOKESTATIC_0";
+        if (isDirectCall) {
+            // Direct call - skip class initialization check and method ID retrieval
             return;
         }
 
@@ -213,9 +234,9 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
         int methodId = context.getCachedMethods().getId(methodInfo);
         props.put("methodid", context.getCachedMethods().getPointer(methodInfo));
 
+        // Use std::call_once for lock-free thread-safe method ID initialization
         context.output.append(
-                String.format("if (!cmethods[%d]) { cmethods[%d] = env->Get%sMethodID(%s, %s, %s); %s  } ",
-                        methodId,
+                String.format("std::call_once(cmethods_init_flag[%1$d], [&]() { cmethods[%1$d] = env->Get%2$sMethodID(%3$s, %4$s, %5$s); }); %6$s ",
                         methodId,
                         isStatic ? "Static" : "",
                         classPtr,

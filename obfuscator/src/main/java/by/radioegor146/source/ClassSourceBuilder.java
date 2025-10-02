@@ -49,7 +49,8 @@ public class ClassSourceBuilder implements AutoCloseable {
         cppWriter.append("\n");
         cppWriter.append("// ").append(Util.escapeCommentString(className)).append("\n");
         cppWriter.append("namespace native_jvm::classes::__ngen_").append(filename).append(" {\n\n");
-        cppWriter.append("    char *string_pool;\n\n");
+        cppWriter.append("    char *string_pool;\n");
+        cppWriter.append("    jobject cached_classloader = nullptr;\n\n");
 
         if (strings > 0) {
             cppWriter.append(String.format("    jstring cstrings[%d];\n", strings));
@@ -60,9 +61,11 @@ public class ClassSourceBuilder implements AutoCloseable {
             cppWriter.append(String.format("    std::atomic_bool cclasses_initialized[%d] = {};\n", classes));
         }
         if (methods > 0) {
+            cppWriter.append(String.format("    std::once_flag cmethods_init_flag[%d];\n", methods));
             cppWriter.append(String.format("    jmethodID cmethods[%d];\n", methods));
         }
         if (fields > 0) {
+            cppWriter.append(String.format("    std::once_flag cfields_init_flag[%d];\n", fields));
             cppWriter.append(String.format("    jfieldID cfields[%d];\n", fields));
         }
 
