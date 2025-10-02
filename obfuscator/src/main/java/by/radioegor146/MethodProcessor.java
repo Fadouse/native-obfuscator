@@ -85,6 +85,46 @@ public class MethodProcessor {
         handlers[id] = new InstructionHandlerContainer<>(handler, instructionClass);
     }
 
+    public void prepareForProcessing(MethodContext context) {
+        if (context.prepared) {
+            return;
+        }
+        context.prepared = true;
+
+        MethodNode method = context.method;
+        SpecialMethodProcessor specialMethodProcessor = getSpecialMethodProcessor(method.name);
+        if (specialMethodProcessor == null) {
+            throw new RuntimeException(String.format("Could not find special method processor for %s", method.name));
+        }
+        context.specialProcessor = specialMethodProcessor;
+
+        String methodName = specialMethodProcessor.preProcess(context);
+        if (context.skipNative) {
+            return;
+        }
+
+        methodName = "__ngen_" + methodName.replace('/', '_');
+        methodName = Util.escapeCppNameString(methodName);
+        context.cppNativeMethodName = methodName;
+
+        boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
+        context.ret = Type.getReturnType(method.desc);
+        Type[] args = Type.getArgumentTypes(method.desc);
+        context.argTypes = new ArrayList<>(Arrays.asList(args));
+        if (!isStatic) {
+            context.argTypes.add(0, Type.getType(Object.class));
+        }
+
+        context.obfuscator.registerNativeMethodBinding(
+                context.clazz.name,
+                method.name,
+                method.desc,
+                isStatic,
+                methodName,
+                context.proxyMethod == null
+        );
+    }
+
     private SpecialMethodProcessor getSpecialMethodProcessor(String name) {
         switch (name) {
             case "<init>":
@@ -116,8 +156,14 @@ public class MethodProcessor {
     }
 
     public void processMethod(MethodContext context) {
+        prepareForProcessing(context);
+
         MethodNode method = context.method;
         StringBuilder output = context.output;
+
+        if (context.specialProcessor == null && !context.skipNative) {
+            throw new IllegalStateException("Special method processor not initialized");
+        }
 
         // Do not native-redirect methods of enum classes. Their initialization
         // and intrinsic methods (values/valueOf) are sensitive to init order
@@ -127,23 +173,11 @@ public class MethodProcessor {
             return;
         }
 
-        SpecialMethodProcessor specialMethodProcessor = getSpecialMethodProcessor(method.name);
-
-        if (specialMethodProcessor == null) {
-            throw new RuntimeException(String.format("Could not find special method processor for %s", method.name));
-        }
-
         output.append("// ").append(Util.escapeCommentString(method.name)).append(Util.escapeCommentString(method.desc)).append("\n");
 
-        String methodName = specialMethodProcessor.preProcess(context);
-        // Some special processors may decide to keep the method as-is (no native redirection)
-        // to preserve JVM semantics (e.g., certain <clinit> cases). In that case, bail out early.
         if (context.skipNative) {
             return;
         }
-        methodName = "__ngen_" + methodName.replace('/', '_');
-        methodName = Util.escapeCppNameString(methodName);
-        context.cppNativeMethodName = methodName;
 
         boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
         context.ret = Type.getReturnType(method.desc);
@@ -160,10 +194,10 @@ public class MethodProcessor {
         } else {
             context.nativeMethods.append(String.format("            { %s, %s, (void *)&%s },\n",
                     obfuscator.getStringPool().get(context.method.name),
-                    obfuscator.getStringPool().get(method.desc), methodName));
+                    obfuscator.getStringPool().get(method.desc), context.cppNativeMethodName));
         }
 
-        output.append(String.format("%s JNICALL %s(JNIEnv *env, ", CPP_TYPES[context.ret.getSort()], methodName));
+        output.append(String.format("%s JNICALL %s(JNIEnv *env, ", CPP_TYPES[context.ret.getSort()], context.cppNativeMethodName));
         if (context.proxyMethod != null) {
             output.append("jobject ignored_hidden, ");
         }
@@ -493,7 +527,7 @@ public class MethodProcessor {
             method.localVariables.clear();
             method.tryCatchBlocks.clear();
 
-            specialMethodProcessor.postProcess(context);
+            context.specialProcessor.postProcess(context);
             return;
         }
 
@@ -606,7 +640,7 @@ public class MethodProcessor {
             output.append("}\n");
             method.localVariables.clear();
             method.tryCatchBlocks.clear();
-            specialMethodProcessor.postProcess(context);
+        context.specialProcessor.postProcess(context);
             return;
         }
 
@@ -739,7 +773,7 @@ public class MethodProcessor {
         method.localVariables.clear();
         method.tryCatchBlocks.clear();
 
-        specialMethodProcessor.postProcess(context);
+        context.specialProcessor.postProcess(context);
     }
 
     public static String nameFromNode(MethodNode m, ClassNode cn) {

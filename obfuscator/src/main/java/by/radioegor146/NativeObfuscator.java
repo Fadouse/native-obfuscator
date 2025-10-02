@@ -27,7 +27,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -48,6 +50,7 @@ public class NativeObfuscator {
     private final NodeCache<String> cachedClasses;
     private final NodeCache<CachedMethodInfo> cachedMethods;
     private final NodeCache<CachedFieldInfo> cachedFields;
+    private final Map<CachedMethodInfo, NativeMethodBinding> nativeMethodBindings;
 
     public static class InvokeDynamicInfo {
         private final String methodName;
@@ -93,6 +96,35 @@ public class NativeObfuscator {
         cachedMethods = new NodeCache<>("(cmethods[%d])");
         cachedFields = new NodeCache<>("(cfields[%d])");
         methodProcessor = new MethodProcessor(this);
+        nativeMethodBindings = new HashMap<>();
+    }
+
+    public static final class NativeMethodBinding {
+        private final String cppName;
+        private final boolean directCallable;
+
+        public NativeMethodBinding(String cppName, boolean directCallable) {
+            this.cppName = cppName;
+            this.directCallable = directCallable;
+        }
+
+        public String getCppName() {
+            return cppName;
+        }
+
+        public boolean isDirectCallable() {
+            return directCallable;
+        }
+    }
+
+    public void registerNativeMethodBinding(String owner, String name, String desc,
+                                            boolean isStatic, String cppName, boolean directCallable) {
+        nativeMethodBindings.put(new CachedMethodInfo(owner, name, desc, isStatic),
+                new NativeMethodBinding(cppName, directCallable));
+    }
+
+    public NativeMethodBinding getNativeMethodBinding(String owner, String name, String desc, boolean isStatic) {
+        return nativeMethodBindings.get(new CachedMethodInfo(owner, name, desc, isStatic));
     }
 
     public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -306,6 +338,7 @@ public class NativeObfuscator {
                                  new ClassSourceBuilder(cppOutput, classNode.name, classIndexReference[0]++, stringPool)) {
                         StringBuilder instructions = new StringBuilder();
 
+                        List<MethodContext> methodContexts = new ArrayList<>();
                         for (int i = 0; i < classNode.methods.size(); i++) {
                             MethodNode method = classNode.methods.get(i);
 
@@ -318,6 +351,15 @@ public class NativeObfuscator {
                             }
 
                             MethodContext context = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
+                            methodProcessor.prepareForProcessing(context);
+                            methodContexts.add(context);
+                        }
+
+                        for (MethodContext context : methodContexts) {
+                            if (context.skipNative) {
+                                continue;
+                            }
+
                             methodProcessor.processMethod(context);
                             instructions.append(context.output.toString().replace("\n", "\n    "));
 
@@ -328,7 +370,7 @@ public class NativeObfuscator {
                             }
 
                             if ((classNode.access & Opcodes.ACC_INTERFACE) > 0) {
-                                method.access &= ~Opcodes.ACC_NATIVE;
+                                context.method.access &= ~Opcodes.ACC_NATIVE;
                             }
                         }
 

@@ -1,6 +1,7 @@
 package by.radioegor146;
 
 import by.radioegor146.source.StringPool;
+import by.radioegor146.special.SpecialMethodProcessor;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
@@ -46,6 +47,21 @@ public class MethodContext {
     public MethodNode nativeMethod;
 
     public int stackPointer;
+
+    /**
+     * Indicates that {@link MethodProcessor#prepareForProcessing(MethodContext)} has
+     * already been invoked for this context. This prevents multiple
+     * invocations from re-running the pre-processing pipeline, which could
+     * otherwise duplicate side effects (e.g., toggling the native flag).
+     */
+    public boolean prepared;
+
+    /**
+     * The {@link SpecialMethodProcessor} instance used for this method. It is
+     * captured during the preparation phase so that the main processing logic
+     * and the post-processing step operate on the same handler instance.
+     */
+    public SpecialMethodProcessor specialProcessor;
 
     private final LabelPool labelPool = new LabelPool();
 

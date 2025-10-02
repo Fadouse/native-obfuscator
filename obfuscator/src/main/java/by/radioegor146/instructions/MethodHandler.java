@@ -194,6 +194,60 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                     context.getCachedStrings().getPointer(dotted), trimmedTryCatchBlock));
         }
 
+        NativeObfuscator.NativeMethodBinding nativeBinding = null;
+        if (isStatic && node.owner.equals(context.clazz.name)) {
+            nativeBinding = context.obfuscator.getNativeMethodBinding(node.owner, node.name, node.desc, true);
+        }
+
+        if (nativeBinding != null && nativeBinding.isDirectCallable()) {
+            instructionName = null;
+
+            StringBuilder callBuilder = new StringBuilder();
+            callBuilder.append(nativeBinding.getCppName()).append("(env, ").append(classAccess.local());
+            for (int i = 0; i < argOffsets.size(); i++) {
+                callBuilder.append(", ").append(context.getSnippet("INVOKE_ARG_" + args[i].getSort(),
+                        Util.createMap("index", argOffsets.get(i))));
+            }
+            callBuilder.append(")");
+
+            String callExpr = callBuilder.toString();
+            String returnIndex = props.get("returnstackindex");
+            switch (returnType.getSort()) {
+                case Type.VOID:
+                    context.output.append(callExpr).append("; ").append(trimmedTryCatchBlock);
+                    break;
+                case Type.BOOLEAN:
+                case Type.CHAR:
+                case Type.BYTE:
+                case Type.SHORT:
+                    context.output.append("cstack").append(returnIndex).append(".i = (jint)(").append(callExpr)
+                            .append("); ").append(trimmedTryCatchBlock);
+                    break;
+                case Type.INT:
+                    context.output.append("cstack").append(returnIndex).append(".i = ").append(callExpr)
+                            .append("; ").append(trimmedTryCatchBlock);
+                    break;
+                case Type.FLOAT:
+                    context.output.append("cstack").append(returnIndex).append(".f = ").append(callExpr)
+                            .append("; ").append(trimmedTryCatchBlock);
+                    break;
+                case Type.LONG:
+                    context.output.append("cstack").append(returnIndex).append(".j = ").append(callExpr)
+                            .append("; ").append(trimmedTryCatchBlock);
+                    break;
+                case Type.DOUBLE:
+                    context.output.append("cstack").append(returnIndex).append(".d = ").append(callExpr)
+                            .append("; ").append(trimmedTryCatchBlock);
+                    break;
+                default:
+                    context.output.append("cstack").append(returnIndex).append(".l = ").append(callExpr)
+                            .append("; refs.insert(cstack").append(returnIndex).append(".l); ")
+                            .append(trimmedTryCatchBlock);
+                    break;
+            }
+            return;
+        }
+
         CachedMethodInfo methodInfo = new CachedMethodInfo(node.owner, node.name, node.desc, isStatic);
         int methodId = context.getCachedMethods().getId(methodInfo);
         props.put("methodid", context.getCachedMethods().getPointer(methodInfo));
