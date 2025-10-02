@@ -389,7 +389,11 @@ public class NativeObfuscator {
                             ClassMethodFilter.cleanAnnotations(classNode);
                         }
 
-                        classNode.version = 52;
+                        // Preserve original class version if >= 52 (Java 8+) to maintain compatibility
+                        // with newer features like NestHost/NestMembers (Java 11+)
+                        if (classNode.version < 52) {
+                            classNode.version = 52;
+                        }
                         ClassWriter classWriter = new SafeClassWriter(metadataReader,
                                 Opcodes.ASM7 | ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
                         classNode.accept(classWriter);
