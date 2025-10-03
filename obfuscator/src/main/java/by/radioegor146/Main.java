@@ -61,11 +61,11 @@ public class Main {
         @CommandLine.Option(names = {"--flatten-control-flow"}, description = "Enable control flow flattening in native methods")
         private boolean flattenControlFlow;
 
-        @CommandLine.Option(names = {"--obfuscate-strings"}, defaultValue = "true",
+        @CommandLine.Option(names = {"--obfuscate-strings"}, negatable = true, defaultValue = "true",
                 description = "Encrypt string literals stored in the native string pool")
         private boolean obfuscateStrings = true;
 
-        @CommandLine.Option(names = {"--obfuscate-constants"}, defaultValue = "true",
+        @CommandLine.Option(names = {"--obfuscate-constants"}, negatable = true, defaultValue = "true",
                 description = "Encode primitive LDC constants and decode them at runtime")
         private boolean obfuscateConstants = true;
 

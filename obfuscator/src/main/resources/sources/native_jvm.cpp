@@ -336,6 +336,417 @@ namespace native_jvm::utils {
         return ret_value;
     }
 
+    PrimitiveArrayCache::PrimitiveArrayCache(JNIEnv *env) : env(env) {}
+
+    PrimitiveArrayCache::~PrimitiveArrayCache() {
+        release_all();
+    }
+
+    PrimitiveArrayCache::Entry *PrimitiveArrayCache::ensure_entry(jarray array, Kind kind) {
+        for (auto &entry : entries) {
+            if (entry.array == array) {
+                return &entry;
+            }
+        }
+
+        if (array == nullptr) {
+            return nullptr;
+        }
+
+        Entry entry{};
+        entry.array = array;
+        entry.kind = kind;
+        entry.dirty = false;
+        entry.isBoolean = false;
+        entry.length = env->GetArrayLength(array);
+        if (env->ExceptionCheck()) {
+            return nullptr;
+        }
+
+        switch (kind) {
+            case Kind::BooleanOrByte: {
+                if (env->IsInstanceOf(array, boolean_array_class)) {
+                    entry.isBoolean = true;
+                    entry.elements = env->GetBooleanArrayElements((jbooleanArray) array, nullptr);
+                } else {
+                    entry.elements = env->GetByteArrayElements((jbyteArray) array, nullptr);
+                }
+                break;
+            }
+            case Kind::Char: {
+                entry.elements = env->GetCharArrayElements((jcharArray) array, nullptr);
+                break;
+            }
+            case Kind::Short: {
+                entry.elements = env->GetShortArrayElements((jshortArray) array, nullptr);
+                break;
+            }
+            case Kind::Int: {
+                entry.elements = env->GetIntArrayElements((jintArray) array, nullptr);
+                break;
+            }
+            case Kind::Long: {
+                entry.elements = env->GetLongArrayElements((jlongArray) array, nullptr);
+                break;
+            }
+            case Kind::Float: {
+                entry.elements = env->GetFloatArrayElements((jfloatArray) array, nullptr);
+                break;
+            }
+            case Kind::Double: {
+                entry.elements = env->GetDoubleArrayElements((jdoubleArray) array, nullptr);
+                break;
+            }
+        }
+
+        if (env->ExceptionCheck() || entry.elements == nullptr) {
+            return nullptr;
+        }
+
+        entries.push_back(entry);
+        return &entries.back();
+    }
+
+    bool PrimitiveArrayCache::check_index(const Entry &entry, jint index, int line, const char *opcode) {
+        if (index < 0 || index >= entry.length) {
+            std::string message = std::string(opcode) + " index out of range";
+            throw_re(env, "java/lang/ArrayIndexOutOfBoundsException", message.c_str(), line);
+            return false;
+        }
+        return true;
+    }
+
+    void PrimitiveArrayCache::release_all() {
+        for (auto &entry : entries) {
+            switch (entry.kind) {
+                case Kind::BooleanOrByte: {
+                    if (entry.isBoolean) {
+                        env->ReleaseBooleanArrayElements((jbooleanArray) entry.array,
+                                (jboolean *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    } else {
+                        env->ReleaseByteArrayElements((jbyteArray) entry.array,
+                                (jbyte *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    }
+                    break;
+                }
+                case Kind::Char: {
+                    env->ReleaseCharArrayElements((jcharArray) entry.array,
+                            (jchar *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    break;
+                }
+                case Kind::Short: {
+                    env->ReleaseShortArrayElements((jshortArray) entry.array,
+                            (jshort *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    break;
+                }
+                case Kind::Int: {
+                    env->ReleaseIntArrayElements((jintArray) entry.array,
+                            (jint *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    break;
+                }
+                case Kind::Long: {
+                    env->ReleaseLongArrayElements((jlongArray) entry.array,
+                            (jlong *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    break;
+                }
+                case Kind::Float: {
+                    env->ReleaseFloatArrayElements((jfloatArray) entry.array,
+                            (jfloat *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    break;
+                }
+                case Kind::Double: {
+                    env->ReleaseDoubleArrayElements((jdoubleArray) entry.array,
+                            (jdouble *) entry.elements, entry.dirty ? 0 : JNI_ABORT);
+                    break;
+                }
+            }
+        }
+        entries.clear();
+    }
+
+    bool PrimitiveArrayCache::load_boolean_or_byte(jarray array, jint index, jint &out, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::BooleanOrByte);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        if (entry->isBoolean) {
+            out = static_cast<jint>(static_cast<jboolean *>(entry->elements)[index] != 0);
+        } else {
+            out = static_cast<jint>(static_cast<jbyte *>(entry->elements)[index]);
+        }
+        return true;
+    }
+
+    bool PrimitiveArrayCache::store_boolean_or_byte(jarray array, jint index, jint value, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::BooleanOrByte);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        entry->dirty = true;
+        if (entry->isBoolean) {
+            static_cast<jboolean *>(entry->elements)[index] = value == 0 ? JNI_FALSE : JNI_TRUE;
+        } else {
+            static_cast<jbyte *>(entry->elements)[index] = static_cast<jbyte>(value);
+        }
+        return true;
+    }
+
+    bool PrimitiveArrayCache::load_char(jcharArray array, jint index, jint &out, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Char);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        out = static_cast<jint>(static_cast<jchar *>(entry->elements)[index]);
+        return true;
+    }
+
+    bool PrimitiveArrayCache::store_char(jcharArray array, jint index, jint value, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Char);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        entry->dirty = true;
+        static_cast<jchar *>(entry->elements)[index] = static_cast<jchar>(value);
+        return true;
+    }
+
+    bool PrimitiveArrayCache::load_short(jshortArray array, jint index, jint &out, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Short);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        out = static_cast<jint>(static_cast<jshort *>(entry->elements)[index]);
+        return true;
+    }
+
+    bool PrimitiveArrayCache::store_short(jshortArray array, jint index, jint value, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Short);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        entry->dirty = true;
+        static_cast<jshort *>(entry->elements)[index] = static_cast<jshort>(value);
+        return true;
+    }
+
+    bool PrimitiveArrayCache::load_int(jintArray array, jint index, jint &out, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Int);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        out = static_cast<jint *>(entry->elements)[index];
+        return true;
+    }
+
+    bool PrimitiveArrayCache::store_int(jintArray array, jint index, jint value, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Int);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        entry->dirty = true;
+        static_cast<jint *>(entry->elements)[index] = value;
+        return true;
+    }
+
+    bool PrimitiveArrayCache::load_long(jlongArray array, jint index, jlong &out, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Long);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        out = static_cast<jlong *>(entry->elements)[index];
+        return true;
+    }
+
+    bool PrimitiveArrayCache::store_long(jlongArray array, jint index, jlong value, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Long);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        entry->dirty = true;
+        static_cast<jlong *>(entry->elements)[index] = value;
+        return true;
+    }
+
+    bool PrimitiveArrayCache::load_float(jfloatArray array, jint index, jfloat &out, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Float);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        out = static_cast<jfloat *>(entry->elements)[index];
+        return true;
+    }
+
+    bool PrimitiveArrayCache::store_float(jfloatArray array, jint index, jfloat value, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Float);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        entry->dirty = true;
+        static_cast<jfloat *>(entry->elements)[index] = value;
+        return true;
+    }
+
+    bool PrimitiveArrayCache::load_double(jdoubleArray array, jint index, jdouble &out, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Double);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        out = static_cast<jdouble *>(entry->elements)[index];
+        return true;
+    }
+
+    bool PrimitiveArrayCache::store_double(jdoubleArray array, jint index, jdouble value, int line, const char *opcode) {
+        Entry *entry = ensure_entry(array, Kind::Double);
+        if (entry == nullptr) {
+            return false;
+        }
+        if (!check_index(*entry, index, line, opcode)) {
+            return false;
+        }
+        entry->dirty = true;
+        static_cast<jdouble *>(entry->elements)[index] = value;
+        return true;
+    }
+
+    ObjectArrayCache::ObjectArrayCache(JNIEnv *env) : env(env) {}
+
+    ObjectArrayCache::Entry *ObjectArrayCache::find_entry(jobjectArray array, jint index) {
+        for (auto &entry : entries) {
+            if (entry.array == array && entry.index == index) {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    bool ObjectArrayCache::check_index(jsize length, jint index, int line, const char *opcode) {
+        if (index < 0 || index >= length) {
+            std::string message = std::string(opcode) + " index out of range";
+            throw_re(env, "java/lang/ArrayIndexOutOfBoundsException", message.c_str(), line);
+            return false;
+        }
+        return true;
+    }
+
+    bool ObjectArrayCache::load(jobjectArray array, jint index, jobject &out, int line, const char *opcode) {
+        if (array == nullptr) {
+            return false;
+        }
+
+        if (index < 0) {
+            std::string message = std::string(opcode) + " index out of range";
+            throw_re(env, "java/lang/ArrayIndexOutOfBoundsException", message.c_str(), line);
+            return false;
+        }
+
+        if (Entry *entry = find_entry(array, index)) {
+            out = entry->value;
+            return true;
+        }
+
+        Entry entry{};
+        entry.array = array;
+        entry.index = index;
+        entry.length = env->GetArrayLength(array);
+        if (env->ExceptionCheck()) {
+            return false;
+        }
+        if (!check_index(entry.length, index, line, opcode)) {
+            return false;
+        }
+
+        entry.value = env->GetObjectArrayElement(array, index);
+        if (env->ExceptionCheck()) {
+            return false;
+        }
+
+        entries.push_back(entry);
+        out = entries.back().value;
+        return true;
+    }
+
+    bool ObjectArrayCache::store(jobjectArray array, jint index, jobject value, int line, const char *opcode) {
+        if (array == nullptr) {
+            return false;
+        }
+
+        if (index < 0) {
+            std::string message = std::string(opcode) + " index out of range";
+            throw_re(env, "java/lang/ArrayIndexOutOfBoundsException", message.c_str(), line);
+            return false;
+        }
+
+        if (Entry *entry = find_entry(array, index)) {
+            env->SetObjectArrayElement(array, index, value);
+            if (env->ExceptionCheck()) {
+                return false;
+            }
+            entry->value = value;
+            return true;
+        }
+
+        jsize length = env->GetArrayLength(array);
+        if (env->ExceptionCheck()) {
+            return false;
+        }
+        if (!check_index(length, index, line, opcode)) {
+            return false;
+        }
+
+        env->SetObjectArrayElement(array, index, value);
+        if (env->ExceptionCheck()) {
+            return false;
+        }
+
+        Entry new_entry{};
+        new_entry.array = array;
+        new_entry.index = index;
+        new_entry.length = length;
+        new_entry.value = value;
+        entries.push_back(new_entry);
+
+        return true;
+    }
+
     jclass get_class_from_object(JNIEnv *env, jobject object) {
         jobject result_class = env->CallObjectMethod(object, get_class_method);
         if (env->ExceptionCheck()) {

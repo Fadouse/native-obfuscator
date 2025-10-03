@@ -12,6 +12,7 @@
 #include <atomic>
 #include <initializer_list>
 #include <cstdint>
+#include <vector>
 
 #ifndef NATIVE_JVM_HPP_GUARD
 
@@ -115,6 +116,82 @@ namespace native_jvm {
     // trigger <clinit> on first use.
     void ensure_initialized(JNIEnv *env, jobject classloader, const char *class_name_dot);
     void ensure_initialized(JNIEnv *env, jobject classloader, jstring class_name_dot);
+
+    class PrimitiveArrayCache {
+    public:
+        explicit PrimitiveArrayCache(JNIEnv *env);
+        ~PrimitiveArrayCache();
+
+        bool load_boolean_or_byte(jarray array, jint index, jint &out, int line, const char *opcode);
+        bool store_boolean_or_byte(jarray array, jint index, jint value, int line, const char *opcode);
+
+        bool load_char(jcharArray array, jint index, jint &out, int line, const char *opcode);
+        bool store_char(jcharArray array, jint index, jint value, int line, const char *opcode);
+
+        bool load_short(jshortArray array, jint index, jint &out, int line, const char *opcode);
+        bool store_short(jshortArray array, jint index, jint value, int line, const char *opcode);
+
+        bool load_int(jintArray array, jint index, jint &out, int line, const char *opcode);
+        bool store_int(jintArray array, jint index, jint value, int line, const char *opcode);
+
+        bool load_long(jlongArray array, jint index, jlong &out, int line, const char *opcode);
+        bool store_long(jlongArray array, jint index, jlong value, int line, const char *opcode);
+
+        bool load_float(jfloatArray array, jint index, jfloat &out, int line, const char *opcode);
+        bool store_float(jfloatArray array, jint index, jfloat value, int line, const char *opcode);
+
+        bool load_double(jdoubleArray array, jint index, jdouble &out, int line, const char *opcode);
+        bool store_double(jdoubleArray array, jint index, jdouble value, int line, const char *opcode);
+
+    private:
+        enum class Kind {
+            BooleanOrByte,
+            Char,
+            Short,
+            Int,
+            Long,
+            Float,
+            Double
+        };
+
+        struct Entry {
+            jarray array;
+            void *elements;
+            jsize length;
+            Kind kind;
+            bool dirty;
+            bool isBoolean;
+        };
+
+        Entry *ensure_entry(jarray array, Kind kind);
+        bool check_index(const Entry &entry, jint index, int line, const char *opcode);
+        void release_all();
+
+        JNIEnv *env;
+        std::vector<Entry> entries;
+    };
+
+    class ObjectArrayCache {
+    public:
+        explicit ObjectArrayCache(JNIEnv *env);
+
+        bool load(jobjectArray array, jint index, jobject &out, int line, const char *opcode);
+        bool store(jobjectArray array, jint index, jobject value, int line, const char *opcode);
+
+    private:
+        struct Entry {
+            jobjectArray array;
+            jint index;
+            jobject value;
+            jsize length;
+        };
+
+        Entry *find_entry(jobjectArray array, jint index);
+        bool check_index(jsize length, jint index, int line, const char *opcode);
+
+        JNIEnv *env;
+        std::vector<Entry> entries;
+    };
 
     inline uint32_t rotl32(uint32_t v, int r) {
         return (v << r) | (v >> (32 - r));

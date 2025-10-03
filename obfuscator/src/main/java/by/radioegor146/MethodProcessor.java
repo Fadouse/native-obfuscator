@@ -667,6 +667,8 @@ public class MethodProcessor {
         }
 
         output.append("    native_jvm::LocalRefSet refs;\n");
+        output.append("    native_jvm::utils::PrimitiveArrayCache primitive_arrays(env);\n");
+        output.append("    native_jvm::utils::ObjectArrayCache object_arrays(env);\n");
         output.append("\n");
         context.verifiedClassPreambleInsertionPoint = output.length();
 
