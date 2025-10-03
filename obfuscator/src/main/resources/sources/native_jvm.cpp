@@ -336,7 +336,8 @@ namespace native_jvm::utils {
         return ret_value;
     }
 
-    PrimitiveArrayCache::PrimitiveArrayCache(JNIEnv *env) : env(env), last_index(0), has_last(false) {}
+    PrimitiveArrayCache::PrimitiveArrayCache(JNIEnv *env)
+        : env(env), last_index(0), has_last(false), using_map(false) {}
 
     PrimitiveArrayCache::~PrimitiveArrayCache() {
         release_all();
@@ -354,10 +355,24 @@ namespace native_jvm::utils {
             }
         }
 
-        if (auto it = index_map.find(array); it != index_map.end()) {
-            last_index = it->second;
-            has_last = true;
-            return &entries[last_index];
+        if (!using_map && entries.size() >= MAP_THRESHOLD) {
+            rebuild_index_map();
+        }
+
+        if (using_map) {
+            if (auto it = index_map.find(array); it != index_map.end()) {
+                last_index = it->second;
+                has_last = true;
+                return &entries[last_index];
+            }
+        } else {
+            for (size_t i = 0; i < entries.size(); ++i) {
+                if (entries[i].array == array) {
+                    last_index = i;
+                    has_last = true;
+                    return &entries[i];
+                }
+            }
         }
 
         Entry entry{};
@@ -412,7 +427,11 @@ namespace native_jvm::utils {
 
         entries.push_back(entry);
         size_t new_index = entries.size() - 1;
-        index_map[array] = new_index;
+        if (using_map) {
+            index_map[array] = new_index;
+        } else if (entries.size() >= MAP_THRESHOLD) {
+            rebuild_index_map();
+        }
         last_index = new_index;
         has_last = true;
         return &entries.back();
@@ -475,6 +494,16 @@ namespace native_jvm::utils {
         entries.clear();
         index_map.clear();
         has_last = false;
+        using_map = false;
+    }
+
+    void PrimitiveArrayCache::rebuild_index_map() {
+        index_map.clear();
+        index_map.reserve(entries.size());
+        for (size_t i = 0; i < entries.size(); ++i) {
+            index_map[entries[i].array] = i;
+        }
+        using_map = true;
     }
 
     bool PrimitiveArrayCache::load_boolean_or_byte(jarray array, jint index, jint &out, int line, const char *opcode) {
@@ -660,12 +689,38 @@ namespace native_jvm::utils {
         return true;
     }
 
-    ObjectArrayCache::ObjectArrayCache(JNIEnv *env) : env(env) {}
+    ObjectArrayCache::ObjectArrayCache(JNIEnv *env)
+        : env(env), last_parent_index(0), has_last_parent(false), using_map(false) {}
 
     ObjectArrayCache::ParentEntry *ObjectArrayCache::find_parent(jobjectArray array) {
-        for (auto &entry : parents) {
-            if (entry.array == array) {
-                return &entry;
+        if (array == nullptr) {
+            return nullptr;
+        }
+
+        if (has_last_parent) {
+            ParentEntry &cached = parents[last_parent_index];
+            if (cached.array == array) {
+                return &cached;
+            }
+        }
+
+        if (!using_map && parents.size() >= MAP_THRESHOLD) {
+            rebuild_parent_index();
+        }
+
+        if (using_map) {
+            if (auto it = parent_index.find(array); it != parent_index.end()) {
+                last_parent_index = it->second;
+                has_last_parent = true;
+                return &parents[last_parent_index];
+            }
+        } else {
+            for (size_t i = 0; i < parents.size(); ++i) {
+                if (parents[i].array == array) {
+                    last_parent_index = i;
+                    has_last_parent = true;
+                    return &parents[i];
+                }
             }
         }
         return nullptr;
@@ -691,6 +746,14 @@ namespace native_jvm::utils {
         entry.lastIndex = 0;
         entry.lastValue = nullptr;
         entry.hasLast = false;
+        size_t new_index = parents.size() - 1;
+        if (using_map) {
+            parent_index[array] = new_index;
+        } else if (parents.size() >= MAP_THRESHOLD) {
+            rebuild_parent_index();
+        }
+        last_parent_index = new_index;
+        has_last_parent = true;
         return &entry;
     }
 
@@ -793,6 +856,15 @@ namespace native_jvm::utils {
         parent->hasLast = true;
 
         return true;
+    }
+
+    void ObjectArrayCache::rebuild_parent_index() {
+        parent_index.clear();
+        parent_index.reserve(parents.size());
+        for (size_t i = 0; i < parents.size(); ++i) {
+            parent_index[parents[i].array] = i;
+        }
+        using_map = true;
     }
 
     jclass get_class_from_object(JNIEnv *env, jobject object) {

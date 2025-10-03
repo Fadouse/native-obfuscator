@@ -167,12 +167,15 @@ namespace native_jvm {
         Entry *ensure_entry(jarray array, Kind kind);
         bool check_index(const Entry &entry, jint index, int line, const char *opcode);
         void release_all();
+        void rebuild_index_map();
 
         JNIEnv *env;
         std::vector<Entry> entries;
         std::unordered_map<jarray, size_t> index_map;
         size_t last_index;
         bool has_last;
+        bool using_map;
+        static constexpr size_t MAP_THRESHOLD = 8;
     };
 
     class ObjectArrayCache {
@@ -196,9 +199,15 @@ namespace native_jvm {
         ParentEntry *find_parent(jobjectArray array);
         ParentEntry *ensure_parent(jobjectArray array);
         bool check_index(const ParentEntry &entry, jint index, int line, const char *opcode);
+        void rebuild_parent_index();
 
         JNIEnv *env;
         std::vector<ParentEntry> parents;
+        std::unordered_map<jobjectArray, size_t> parent_index;
+        size_t last_parent_index;
+        bool has_last_parent;
+        bool using_map;
+        static constexpr size_t MAP_THRESHOLD = 8;
     };
 
     inline uint32_t rotl32(uint32_t v, int r) {
