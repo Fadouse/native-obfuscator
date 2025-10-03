@@ -86,7 +86,7 @@ public class MethodProcessor {
         handlers[id] = new InstructionHandlerContainer<>(handler, instructionClass);
     }
 
-    private SpecialMethodProcessor getSpecialMethodProcessor(String name) {
+    public SpecialMethodProcessor getSpecialMethodProcessor(String name) {
         return switch (name) {
             case "<init>" -> null;
             case "<clinit>" -> new ClInitSpecialMethodProcessor();
@@ -166,13 +166,20 @@ public class MethodProcessor {
         if (context.skipNative) {
             return;
         }
-        methodName = "__ngen_" + methodName.replace('/', '_');
-        methodName = Util.escapeCppNameString(methodName);
-        context.cppNativeMethodName = methodName;
+        if (context.previewedCppMethodName != null) {
+            // When the pre-pass already determined the native symbol, reuse it so direct-call
+            // lookups remain stable regardless of processing order.
+            methodName = context.previewedCppMethodName;
+            context.cppNativeMethodName = methodName;
+        } else {
+            methodName = "__ngen_" + methodName.replace('/', '_');
+            methodName = Util.escapeCppNameString(methodName);
+            context.cppNativeMethodName = methodName;
 
-        // Register this method in the transpiled methods map for direct call optimization
-        String methodKey = method.name + method.desc;
-        context.transpiledMethodNames.put(methodKey, methodName);
+            // Register this method in the transpiled methods map for direct call optimization
+            String methodKey = method.name + method.desc;
+            context.transpiledMethodNames.put(methodKey, methodName);
+        }
 
         boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
         context.ret = Type.getReturnType(method.desc);
@@ -667,8 +674,8 @@ public class MethodProcessor {
         }
 
         output.append("    native_jvm::LocalRefSet refs;\n");
-        output.append("    native_jvm::utils::PrimitiveArrayCache primitive_arrays(env);\n");
-        output.append("    native_jvm::utils::ObjectArrayCache object_arrays(env);\n");
+        output.append("    std::unique_ptr<native_jvm::utils::PrimitiveArrayCache> primitive_arrays;\n");
+        output.append("    std::unique_ptr<native_jvm::utils::ObjectArrayCache> object_arrays;\n");
         output.append("\n");
         context.verifiedClassPreambleInsertionPoint = output.length();
 

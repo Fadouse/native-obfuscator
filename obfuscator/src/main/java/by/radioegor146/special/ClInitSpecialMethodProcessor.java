@@ -10,6 +10,14 @@ import java.util.ArrayList;
 public class ClInitSpecialMethodProcessor implements SpecialMethodProcessor {
 
     @Override
+    public String previewName(MethodContext context) {
+        if (shouldKeepOriginalClinit(context)) {
+            return null;
+        }
+        return String.format("special_clinit_%d_%d", context.classIndex, context.methodIndex);
+    }
+
+    @Override
     public String preProcess(MethodContext context) {
         // Avoid transforming <clinit> for classes that are known to be fragile under
         // redirection on newer JVMs (e.g., enum classes and synthetic switch-map holders).

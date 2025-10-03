@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include <memory>
 
 #ifndef NATIVE_JVM_HPP_GUARD
 
@@ -93,8 +94,9 @@ namespace native_jvm {
     }
 
 #ifdef USE_HOTSPOT
-    jobject link_call_site(JNIEnv *env, jobject caller_obj, jobject bootstrap_method_obj,
-            jobject name_obj, jobject type_obj, jobject static_arguments, jobject appendix_result);
+    jobject link_call_site_cached(JNIEnv *env, jint class_index, jint method_index, jint site_index,
+            jobject caller_obj, jobject bootstrap_method_obj, jobject name_obj, jobject type_obj,
+            jobject static_arguments, jobject appendix_result);
 #endif
 
     jclass find_class_wo_static(JNIEnv *env, jobject classloader, jstring class_name);

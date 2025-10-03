@@ -20,8 +20,121 @@ public class IndyPreprocessor implements Preprocessor {
         return mapped instanceof Handle ? (Handle) mapped : handle;
     }
 
+    private static boolean isSimpleStringConcat(InvokeDynamicInsnNode indy) {
+        if (!"java/lang/invoke/StringConcatFactory".equals(indy.bsm.getOwner())) {
+            return false;
+        }
+        if (!"makeConcatWithConstants".equals(indy.bsm.getName())) {
+            return false;
+        }
+        if (indy.bsmArgs.length != 1 || !(indy.bsmArgs[0] instanceof String)) {
+            return false;
+        }
+        Type returnType = Type.getReturnType(indy.desc);
+        if (!Type.getObjectType("java/lang/String").equals(returnType)) {
+            return false;
+        }
+        String recipe = (String) indy.bsmArgs[0];
+        Type[] args = Type.getArgumentTypes(indy.desc);
+        int placeholders = 0;
+        for (int i = 0; i < recipe.length(); i++) {
+            char ch = recipe.charAt(i);
+            if (ch == 1) {
+                placeholders++;
+            } else if (ch == 0 || ch == 2) {
+                // Other control characters indicate complex recipes; fall back to the default flow.
+                return false;
+            }
+        }
+        return placeholders == args.length;
+    }
+
+    private static String stringBuilderAppendDescriptor(Type type) {
+        return switch (type.getSort()) {
+            case Type.BOOLEAN -> "(Z)Ljava/lang/StringBuilder;";
+            case Type.BYTE, Type.SHORT, Type.INT -> "(I)Ljava/lang/StringBuilder;";
+            case Type.CHAR -> "(C)Ljava/lang/StringBuilder;";
+            case Type.LONG -> "(J)Ljava/lang/StringBuilder;";
+            case Type.FLOAT -> "(F)Ljava/lang/StringBuilder;";
+            case Type.DOUBLE -> "(D)Ljava/lang/StringBuilder;";
+            case Type.ARRAY, Type.OBJECT -> {
+                if (Type.getObjectType("java/lang/String").equals(type)) {
+                    yield "(Ljava/lang/String;)Ljava/lang/StringBuilder;";
+                }
+                yield "(Ljava/lang/Object;)Ljava/lang/StringBuilder;";
+            }
+            default -> throw new IllegalArgumentException("Unsupported concat argument type: " + type);
+        };
+    }
+
+    private static void rewriteSimpleStringConcat(MethodNode methodNode, InvokeDynamicInsnNode indy) {
+        Type[] argTypes = Type.getArgumentTypes(indy.desc);
+        int nextLocal = methodNode.maxLocals;
+        int[] localIndices = new int[argTypes.length];
+        InsnList prologue = new InsnList();
+
+        for (int i = argTypes.length - 1; i >= 0; i--) {
+            Type arg = argTypes[i];
+            int localIndex = nextLocal;
+            nextLocal += arg.getSize();
+            localIndices[i] = localIndex;
+            prologue.add(new VarInsnNode(arg.getOpcode(Opcodes.ISTORE), localIndex));
+        }
+
+        methodNode.instructions.insertBefore(indy, prologue);
+        methodNode.maxLocals = Math.max(methodNode.maxLocals, nextLocal);
+
+        InsnList replacement = new InsnList();
+        replacement.add(new TypeInsnNode(Opcodes.NEW, "java/lang/StringBuilder"));
+        replacement.add(new InsnNode(Opcodes.DUP));
+        replacement.add(new MethodInsnNode(Opcodes.INVOKESPECIAL,
+                "java/lang/StringBuilder", "<init>", "()V", false));
+
+        String recipe = (String) indy.bsmArgs[0];
+        StringBuilder literalBuffer = new StringBuilder();
+        int argIndex = 0;
+
+        for (int i = 0; i < recipe.length(); i++) {
+            char ch = recipe.charAt(i);
+            if (ch == 1) {
+                if (literalBuffer.length() > 0) {
+                    replacement.add(new LdcInsnNode(literalBuffer.toString()));
+                    replacement.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+                            "java/lang/StringBuilder", "append",
+                            "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false));
+                    literalBuffer.setLength(0);
+                }
+                Type arg = argTypes[argIndex];
+                replacement.add(new VarInsnNode(arg.getOpcode(Opcodes.ILOAD), localIndices[argIndex]));
+                replacement.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+                        "java/lang/StringBuilder", "append",
+                        stringBuilderAppendDescriptor(arg), false));
+                argIndex++;
+            } else {
+                literalBuffer.append(ch);
+            }
+        }
+
+        if (literalBuffer.length() > 0) {
+            replacement.add(new LdcInsnNode(literalBuffer.toString()));
+            replacement.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+                    "java/lang/StringBuilder", "append",
+                    "(Ljava/lang/String;)Ljava/lang/StringBuilder;", false));
+        }
+
+        replacement.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL,
+                "java/lang/StringBuilder", "toString", "()Ljava/lang/String;", false));
+
+        methodNode.instructions.insert(indy, replacement);
+        methodNode.instructions.remove(indy);
+    }
+
     private static void processIndy(ClassNode classNode, MethodNode methodNode,
                                     InvokeDynamicInsnNode invokeDynamicInsnNode, Platform platform) {
+        if (isSimpleStringConcat(invokeDynamicInsnNode)) {
+            rewriteSimpleStringConcat(methodNode, invokeDynamicInsnNode);
+            return;
+        }
         LabelNode bootstrapStart = new LabelNode(new Label());
         LabelNode bootstrapEnd = new LabelNode(new Label());
         LabelNode bsmeStart = new LabelNode(new Label());

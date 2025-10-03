@@ -13,6 +13,18 @@ import java.util.stream.Collectors;
 
 public class DefaultSpecialMethodProcessor implements SpecialMethodProcessor {
 
+    private static String computeBaseName(MethodContext context) {
+        if (Util.getFlag(context.clazz.access, Opcodes.ACC_INTERFACE)) {
+            return String.format("interfacestatic_%d_%d", context.classIndex, context.methodIndex);
+        }
+        return "native_" + context.method.name + context.methodIndex;
+    }
+
+    @Override
+    public String previewName(MethodContext context) {
+        return computeBaseName(context);
+    }
+
     @Override
     public String preProcess(MethodContext context) {
         if (Util.getFlag(context.clazz.access, Opcodes.ACC_INTERFACE)) {
@@ -20,7 +32,7 @@ public class DefaultSpecialMethodProcessor implements SpecialMethodProcessor {
             arguments.add(0, Type.getType(Object.class));
             String resultDesc = Type.getMethodDescriptor(Type.getReturnType(context.method.desc), arguments.toArray(new Type[0]));
 
-            String methodName = String.format("interfacestatic_%d_%d", context.classIndex, context.methodIndex);
+            String methodName = computeBaseName(context);
             context.proxyMethod = context.obfuscator.getHiddenMethodsPool()
                     .getMethod(methodName, resultDesc, methodNode -> {
                         methodNode.signature = context.method.signature;
@@ -32,7 +44,7 @@ public class DefaultSpecialMethodProcessor implements SpecialMethodProcessor {
             return methodName;
         }
         context.method.access |= Opcodes.ACC_NATIVE;
-        return "native_" + context.method.name + context.methodIndex;
+        return computeBaseName(context);
     }
 
     @Override

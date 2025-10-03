@@ -71,6 +71,16 @@ public class MethodContext {
     // Used for direct C++ call optimization within the same class
     public Map<String, String> transpiledMethodNames;
 
+    // Pre-pass computed names for the currently processed method. The base name matches the
+    // value returned by {@link by.radioegor146.special.SpecialMethodProcessor#previewName}, while
+    // the C++ name already includes the generated prefix and escaping applied during codegen.
+    public String previewedBaseName;
+    public String previewedCppMethodName;
+
+    // Sequential index assigned to each INVOKEDYNAMIC site encountered while translating the
+    // current method. Used to build stable cache keys for MethodHandle call sites at runtime.
+    public int nextInvokeDynamicIndex;
+
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
         this.obfuscator = obfuscator;

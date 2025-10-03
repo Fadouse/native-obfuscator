@@ -52,7 +52,6 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
             Type[] args = Type.getArgumentTypes(node.desc);
             instructionName += "_" + returnType.getSort();
 
-            StringBuilder argsBuilder = new StringBuilder();
             List<Integer> argOffsets = new ArrayList<>();
 
             int stackOffset = context.stackPointer;
@@ -65,13 +64,22 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                 argumentOffset += argType.getSize();
             }
 
-            for (int i = 0; i < argOffsets.size(); i++) {
-                argsBuilder.append(", ").append(context.getSnippet("INVOKE_ARG_" + args[i].getSort(),
-                        Util.createMap("index", argOffsets.get(i))));
-            }
+            int siteIndex = context.nextInvokeDynamicIndex++;
 
-            context.output.append("cstack").append(stackOffset).append(".l = utils::link_call_site(env")
-                    .append(argsBuilder).append("); ");
+            StringBuilder callBuilder = new StringBuilder();
+            callBuilder.append("cstack").append(stackOffset).append(".l = utils::link_call_site_cached(env, ")
+                    .append(context.classIndex).append(", ")
+                    .append(context.methodIndex).append(", ")
+                    .append(siteIndex);
+
+            for (int i = 0; i < argOffsets.size(); i++) {
+                callBuilder.append(", ")
+                        .append(context.getSnippet("INVOKE_ARG_" + args[i].getSort(),
+                                Util.createMap("index", argOffsets.get(i))));
+            }
+            callBuilder.append("); ");
+
+            context.output.append(callBuilder);
             context.output.append(trimmedTryCatchBlock);
             instructionName = null;
             return;

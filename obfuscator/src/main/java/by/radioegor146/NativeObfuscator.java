@@ -7,6 +7,7 @@ import by.radioegor146.source.CMakeFilesBuilder;
 import by.radioegor146.source.ClassSourceBuilder;
 import by.radioegor146.source.MainSourceBuilder;
 import by.radioegor146.source.StringPool;
+import by.radioegor146.special.SpecialMethodProcessor;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -33,6 +34,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -349,6 +351,70 @@ public class NativeObfuscator {
 
                         // Build a map of all transpiled methods in this class for direct call optimization
                         Map<String, String> transpiledMethodNames = new HashMap<>();
+                        IdentityHashMap<MethodNode, String> previewBaseNames = new IdentityHashMap<>();
+                        IdentityHashMap<MethodNode, String> previewCppNames = new IdentityHashMap<>();
+                        StringBuilder forwardDeclarations = new StringBuilder();
+
+                        // Pre-pass: determine the native symbol for every method that will be transpiled so
+                        // direct-call lookups work regardless of processing order.
+                        for (int i = 0; i < classNode.methods.size(); i++) {
+                            MethodNode method = classNode.methods.get(i);
+
+                            if (!MethodProcessor.shouldProcess(method)) {
+                                continue;
+                            }
+
+                            if (!nativeMethodKeys.contains(MethodProcessor.nameFromNode(method, classNode))) {
+                                continue;
+                            }
+
+                            MethodContext previewContext = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
+                            previewContext.transpiledMethodNames = transpiledMethodNames;
+
+                            SpecialMethodProcessor specialMethodProcessor = methodProcessor.getSpecialMethodProcessor(method.name);
+                            if (specialMethodProcessor == null) {
+                                continue;
+                            }
+
+                            String baseName = specialMethodProcessor.previewName(previewContext);
+                            if (baseName == null) {
+                                continue;
+                            }
+
+                            String cppName = "__ngen_" + baseName.replace('/', '_');
+                            cppName = Util.escapeCppNameString(cppName);
+
+                            previewBaseNames.put(method, baseName);
+                            previewCppNames.put(method, cppName);
+                            transpiledMethodNames.put(method.name + method.desc, cppName);
+
+                            boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
+                            Type returnType = Type.getReturnType(method.desc);
+                            Type[] argTypes = Type.getArgumentTypes(method.desc);
+                            boolean hasHiddenParam = (classNode.access & Opcodes.ACC_INTERFACE) != 0
+                                    || "<clinit>".equals(method.name);
+
+                            forwardDeclarations.append("    ")
+                                    .append(MethodProcessor.CPP_TYPES[returnType.getSort()])
+                                    .append(" JNICALL ")
+                                    .append(cppName)
+                                    .append("(JNIEnv *env, ");
+                            if (hasHiddenParam) {
+                                forwardDeclarations.append("jobject ignored_hidden, ");
+                            }
+                            forwardDeclarations.append(isStatic ? "jclass clazz" : "jobject obj");
+                            for (int argIndex = 0; argIndex < argTypes.length; argIndex++) {
+                                forwardDeclarations.append(", ")
+                                        .append(MethodProcessor.CPP_TYPES[argTypes[argIndex].getSort()])
+                                        .append(" arg")
+                                        .append(argIndex);
+                            }
+                            forwardDeclarations.append(");\n");
+                        }
+
+                        if (forwardDeclarations.length() > 0) {
+                            instructions.append(forwardDeclarations).append('\n');
+                        }
 
                         for (int i = 0; i < classNode.methods.size(); i++) {
                             MethodNode method = classNode.methods.get(i);
@@ -363,6 +429,8 @@ public class NativeObfuscator {
 
                             MethodContext context = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
                             context.transpiledMethodNames = transpiledMethodNames;
+                            context.previewedBaseName = previewBaseNames.get(method);
+                            context.previewedCppMethodName = previewCppNames.get(method);
                             methodProcessor.processMethod(context);
                             instructions.append(context.output.toString().replace("\n", "\n    "));
 

@@ -22,6 +22,12 @@ namespace native_jvm::utils {
     jclass methodhandle_natives_class;
     jmethodID link_call_site_method;
     bool is_jvm11_link_call_site;
+    struct CallSiteCacheEntry {
+        jobject member_name;
+        std::vector<jobject> appendix;
+    };
+    std::mutex call_site_cache_mutex;
+    std::unordered_map<uint64_t, CallSiteCacheEntry> call_site_cache;
 #endif
 
     void init_utils(JNIEnv *env) {
@@ -126,14 +132,73 @@ namespace native_jvm::utils {
     }
 
 #ifdef USE_HOTSPOT
-    jobject link_call_site(JNIEnv *env, jobject caller_obj, jobject bootstrap_method_obj,
-        jobject name_obj, jobject type_obj, jobject static_arguments, jobject appendix_result) {
+    jobject link_call_site_cached(JNIEnv *env, jint class_index, jint method_index, jint site_index,
+        jobject caller_obj, jobject bootstrap_method_obj, jobject name_obj, jobject type_obj,
+        jobject static_arguments, jobject appendix_result) {
+        uint64_t key = mix64(static_cast<uint64_t>(site_index), static_cast<uint32_t>(method_index),
+            static_cast<uint32_t>(class_index), 0);
+
+        {
+            std::lock_guard<std::mutex> lock(call_site_cache_mutex);
+            auto it = call_site_cache.find(key);
+            if (it != call_site_cache.end()) {
+                if (appendix_result != nullptr && !it->second.appendix.empty()) {
+                    jobjectArray appendix_array = static_cast<jobjectArray>(appendix_result);
+                    jsize length = env->GetArrayLength(appendix_array);
+                    jsize copy_count = std::min(length, static_cast<jsize>(it->second.appendix.size()));
+                    for (jsize i = 0; i < copy_count; ++i) {
+                        jobject cached = it->second.appendix[i];
+                        if (cached == nullptr) {
+                            env->SetObjectArrayElement(appendix_array, i, nullptr);
+                        } else {
+                            jobject local = env->NewLocalRef(cached);
+                            env->SetObjectArrayElement(appendix_array, i, local);
+                            env->DeleteLocalRef(local);
+                        }
+                    }
+                }
+                return env->NewLocalRef(it->second.member_name);
+            }
+        }
+
+        jobject result;
         if (is_jvm11_link_call_site) {
-            return env->CallStaticObjectMethod(methodhandle_natives_class, link_call_site_method, caller_obj, 0,
+            result = env->CallStaticObjectMethod(methodhandle_natives_class, link_call_site_method, caller_obj, 0,
+                bootstrap_method_obj, name_obj, type_obj, static_arguments, appendix_result);
+        } else {
+            result = env->CallStaticObjectMethod(methodhandle_natives_class, link_call_site_method, caller_obj,
                 bootstrap_method_obj, name_obj, type_obj, static_arguments, appendix_result);
         }
-        return env->CallStaticObjectMethod(methodhandle_natives_class, link_call_site_method, caller_obj,
-            bootstrap_method_obj, name_obj, type_obj, static_arguments, appendix_result);
+
+        if (!env->ExceptionCheck() && result != nullptr) {
+            CallSiteCacheEntry entry{};
+            entry.member_name = env->NewGlobalRef(result);
+            if (entry.member_name != nullptr && appendix_result != nullptr) {
+                jobjectArray appendix_array = static_cast<jobjectArray>(appendix_result);
+                jsize length = env->GetArrayLength(appendix_array);
+                entry.appendix.resize(length);
+                for (jsize i = 0; i < length; ++i) {
+                    jobject element = env->GetObjectArrayElement(appendix_array, i);
+                    if (env->ExceptionCheck()) {
+                        env->DeleteLocalRef(element);
+                        break;
+                    }
+                    if (element != nullptr) {
+                        entry.appendix[i] = env->NewGlobalRef(element);
+                    } else {
+                        entry.appendix[i] = nullptr;
+                    }
+                    env->DeleteLocalRef(element);
+                }
+            }
+
+            if (entry.member_name != nullptr) {
+                std::lock_guard<std::mutex> lock(call_site_cache_mutex);
+                call_site_cache.emplace(key, std::move(entry));
+            }
+        }
+
+        return result;
     }
 #endif
 
