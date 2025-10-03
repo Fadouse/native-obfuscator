@@ -649,17 +649,35 @@ namespace native_jvm::utils {
 
     ObjectArrayCache::ObjectArrayCache(JNIEnv *env) : env(env) {}
 
-    ObjectArrayCache::Entry *ObjectArrayCache::find_entry(jobjectArray array, jint index) {
-        for (auto &entry : entries) {
-            if (entry.array == array && entry.index == index) {
+    ObjectArrayCache::ParentEntry *ObjectArrayCache::find_parent(jobjectArray array) {
+        for (auto &entry : parents) {
+            if (entry.array == array) {
                 return &entry;
             }
         }
         return nullptr;
     }
 
-    bool ObjectArrayCache::check_index(jsize length, jint index, int line, const char *opcode) {
-        if (index < 0 || index >= length) {
+    ObjectArrayCache::ParentEntry *ObjectArrayCache::ensure_parent(jobjectArray array) {
+        if (ParentEntry *existing = find_parent(array)) {
+            return existing;
+        }
+
+        ParentEntry new_entry{};
+        new_entry.array = array;
+        new_entry.length = env->GetArrayLength(array);
+        if (env->ExceptionCheck()) {
+            return nullptr;
+        }
+        new_entry.lastIndex = 0;
+        new_entry.lastValue = nullptr;
+        new_entry.hasLast = false;
+        parents.push_back(new_entry);
+        return &parents.back();
+    }
+
+    bool ObjectArrayCache::check_index(const ParentEntry &entry, jint index, int line, const char *opcode) {
+        if (index < 0 || index >= entry.length) {
             std::string message = std::string(opcode) + " index out of range";
             throw_re(env, "java/lang/ArrayIndexOutOfBoundsException", message.c_str(), line);
             return false;
@@ -678,29 +696,39 @@ namespace native_jvm::utils {
             return false;
         }
 
-        if (Entry *entry = find_entry(array, index)) {
-            out = entry->value;
+        ParentEntry *parent = ensure_parent(array);
+        if (parent == nullptr) {
+            return false;
+        }
+
+        if (!check_index(*parent, index, line, opcode)) {
+            return false;
+        }
+
+        if (parent->hasLast && parent->lastIndex == index) {
+            out = parent->lastValue;
             return true;
         }
 
-        Entry entry{};
-        entry.array = array;
-        entry.index = index;
-        entry.length = env->GetArrayLength(array);
-        if (env->ExceptionCheck()) {
-            return false;
-        }
-        if (!check_index(entry.length, index, line, opcode)) {
-            return false;
+        auto it = parent->values.find(index);
+        if (it != parent->values.end()) {
+            parent->lastIndex = index;
+            parent->lastValue = it->second;
+            parent->hasLast = true;
+            out = it->second;
+            return true;
         }
 
-        entry.value = env->GetObjectArrayElement(array, index);
+        jobject value = env->GetObjectArrayElement(array, index);
         if (env->ExceptionCheck()) {
             return false;
         }
 
-        entries.push_back(entry);
-        out = entries.back().value;
+        parent->values.emplace(index, value);
+        parent->lastIndex = index;
+        parent->lastValue = value;
+        parent->hasLast = true;
+        out = value;
         return true;
     }
 
@@ -715,20 +743,12 @@ namespace native_jvm::utils {
             return false;
         }
 
-        if (Entry *entry = find_entry(array, index)) {
-            env->SetObjectArrayElement(array, index, value);
-            if (env->ExceptionCheck()) {
-                return false;
-            }
-            entry->value = value;
-            return true;
-        }
-
-        jsize length = env->GetArrayLength(array);
-        if (env->ExceptionCheck()) {
+        ParentEntry *parent = ensure_parent(array);
+        if (parent == nullptr) {
             return false;
         }
-        if (!check_index(length, index, line, opcode)) {
+
+        if (!check_index(*parent, index, line, opcode)) {
             return false;
         }
 
@@ -737,12 +757,10 @@ namespace native_jvm::utils {
             return false;
         }
 
-        Entry new_entry{};
-        new_entry.array = array;
-        new_entry.index = index;
-        new_entry.length = length;
-        new_entry.value = value;
-        entries.push_back(new_entry);
+        parent->values[index] = value;
+        parent->lastIndex = index;
+        parent->lastValue = value;
+        parent->hasLast = true;
 
         return true;
     }

@@ -13,6 +13,7 @@
 #include <initializer_list>
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 
 #ifndef NATIVE_JVM_HPP_GUARD
 
@@ -179,18 +180,21 @@ namespace native_jvm {
         bool store(jobjectArray array, jint index, jobject value, int line, const char *opcode);
 
     private:
-        struct Entry {
+        struct ParentEntry {
             jobjectArray array;
-            jint index;
-            jobject value;
             jsize length;
+            std::unordered_map<jint, jobject> values;
+            jint lastIndex;
+            jobject lastValue;
+            bool hasLast;
         };
 
-        Entry *find_entry(jobjectArray array, jint index);
-        bool check_index(jsize length, jint index, int line, const char *opcode);
+        ParentEntry *find_parent(jobjectArray array);
+        ParentEntry *ensure_parent(jobjectArray array);
+        bool check_index(const ParentEntry &entry, jint index, int line, const char *opcode);
 
         JNIEnv *env;
-        std::vector<Entry> entries;
+        std::vector<ParentEntry> parents;
     };
 
     inline uint32_t rotl32(uint32_t v, int r) {
