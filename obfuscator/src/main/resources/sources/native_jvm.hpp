@@ -13,6 +13,7 @@
 #include <initializer_list>
 #include <cstdint>
 #include <vector>
+#include <unordered_map>
 
 #ifndef NATIVE_JVM_HPP_GUARD
 
@@ -169,6 +170,9 @@ namespace native_jvm {
 
         JNIEnv *env;
         std::vector<Entry> entries;
+        std::unordered_map<jarray, size_t> index_map;
+        size_t last_index;
+        bool has_last;
     };
 
     class ObjectArrayCache {

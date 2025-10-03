@@ -336,21 +336,28 @@ namespace native_jvm::utils {
         return ret_value;
     }
 
-    PrimitiveArrayCache::PrimitiveArrayCache(JNIEnv *env) : env(env) {}
+    PrimitiveArrayCache::PrimitiveArrayCache(JNIEnv *env) : env(env), last_index(0), has_last(false) {}
 
     PrimitiveArrayCache::~PrimitiveArrayCache() {
         release_all();
     }
 
     PrimitiveArrayCache::Entry *PrimitiveArrayCache::ensure_entry(jarray array, Kind kind) {
-        for (auto &entry : entries) {
-            if (entry.array == array) {
-                return &entry;
+        if (array == nullptr) {
+            return nullptr;
+        }
+
+        if (has_last) {
+            Entry &cached = entries[last_index];
+            if (cached.array == array) {
+                return &cached;
             }
         }
 
-        if (array == nullptr) {
-            return nullptr;
+        if (auto it = index_map.find(array); it != index_map.end()) {
+            last_index = it->second;
+            has_last = true;
+            return &entries[last_index];
         }
 
         Entry entry{};
@@ -404,6 +411,10 @@ namespace native_jvm::utils {
         }
 
         entries.push_back(entry);
+        size_t new_index = entries.size() - 1;
+        index_map[array] = new_index;
+        last_index = new_index;
+        has_last = true;
         return &entries.back();
     }
 
@@ -462,6 +473,8 @@ namespace native_jvm::utils {
             }
         }
         entries.clear();
+        index_map.clear();
+        has_last = false;
     }
 
     bool PrimitiveArrayCache::load_boolean_or_byte(jarray array, jint index, jint &out, int line, const char *opcode) {
