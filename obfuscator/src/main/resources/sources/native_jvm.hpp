@@ -13,7 +13,6 @@
 #include <initializer_list>
 #include <cstdint>
 #include <vector>
-#include <unordered_map>
 
 #ifndef NATIVE_JVM_HPP_GUARD
 
@@ -183,7 +182,8 @@ namespace native_jvm {
         struct ParentEntry {
             jobjectArray array;
             jsize length;
-            std::unordered_map<jint, jobject> values;
+            std::vector<jobject> values;
+            std::vector<uint8_t> cached;
             jint lastIndex;
             jobject lastValue;
             bool hasLast;

@@ -663,17 +663,22 @@ namespace native_jvm::utils {
             return existing;
         }
 
-        ParentEntry new_entry{};
-        new_entry.array = array;
-        new_entry.length = env->GetArrayLength(array);
+        parents.emplace_back();
+        ParentEntry &entry = parents.back();
+        entry.array = array;
+        entry.length = env->GetArrayLength(array);
         if (env->ExceptionCheck()) {
+            parents.pop_back();
             return nullptr;
         }
-        new_entry.lastIndex = 0;
-        new_entry.lastValue = nullptr;
-        new_entry.hasLast = false;
-        parents.push_back(new_entry);
-        return &parents.back();
+
+        size_t len = static_cast<size_t>(entry.length);
+        entry.values.assign(len, nullptr);
+        entry.cached.assign(len, 0);
+        entry.lastIndex = 0;
+        entry.lastValue = nullptr;
+        entry.hasLast = false;
+        return &entry;
     }
 
     bool ObjectArrayCache::check_index(const ParentEntry &entry, jint index, int line, const char *opcode) {
@@ -710,12 +715,13 @@ namespace native_jvm::utils {
             return true;
         }
 
-        auto it = parent->values.find(index);
-        if (it != parent->values.end()) {
+        size_t slot = static_cast<size_t>(index);
+        if (slot < parent->cached.size() && parent->cached[slot]) {
+            jobject value = parent->values[slot];
             parent->lastIndex = index;
-            parent->lastValue = it->second;
+            parent->lastValue = value;
             parent->hasLast = true;
-            out = it->second;
+            out = value;
             return true;
         }
 
@@ -724,7 +730,12 @@ namespace native_jvm::utils {
             return false;
         }
 
-        parent->values.emplace(index, value);
+        if (slot >= parent->values.size()) {
+            parent->values.resize(slot + 1, nullptr);
+            parent->cached.resize(slot + 1, 0);
+        }
+        parent->values[slot] = value;
+        parent->cached[slot] = 1;
         parent->lastIndex = index;
         parent->lastValue = value;
         parent->hasLast = true;
@@ -757,7 +768,13 @@ namespace native_jvm::utils {
             return false;
         }
 
-        parent->values[index] = value;
+        size_t slot = static_cast<size_t>(index);
+        if (slot >= parent->values.size()) {
+            parent->values.resize(slot + 1, nullptr);
+            parent->cached.resize(slot + 1, 0);
+        }
+        parent->values[slot] = value;
+        parent->cached[slot] = 1;
         parent->lastIndex = index;
         parent->lastValue = value;
         parent->hasLast = true;
