@@ -10,6 +10,8 @@ Warning: blacklist/whitelist usage is recommended because this tool slows down c
  - 基本字符串，常量混淆
  - 基本控制流扁平化混淆
  - 基础虚拟化保护
+ - dev分支中优化了native性能
+ - windows/linux中的部分反调试
 
 **本项目仅作测试项目**
 
