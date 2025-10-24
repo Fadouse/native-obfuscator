@@ -34,6 +34,7 @@ public class Injector {
 
         public void mapInject(String original, String mapped) {
             fieldMap.put(original, mapped);
+            fieldMap.put(mapped, mapped);
         }
 
         public String getMapping(String original) {

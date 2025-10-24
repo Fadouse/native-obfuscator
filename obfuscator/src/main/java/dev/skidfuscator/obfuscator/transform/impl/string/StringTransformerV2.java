@@ -2,6 +2,7 @@ package dev.skidfuscator.obfuscator.transform.impl.string;
 
 import dev.skidfuscator.obfuscator.Skidfuscator;
 import dev.skidfuscator.obfuscator.event.annotation.Listen;
+import dev.skidfuscator.obfuscator.event.EventPriority;
 import dev.skidfuscator.obfuscator.event.impl.transform.method.RunMethodTransformEvent;
 import dev.skidfuscator.obfuscator.event.impl.transform.skid.PostSkidTransformEvent;
 import dev.skidfuscator.obfuscator.skidasm.SkidClassNode;
@@ -37,7 +38,7 @@ public class StringTransformerV2 extends AbstractTransformer {
         super(skidfuscator, "String Encryption", children);
     }
 
-    @Listen
+    @Listen(EventPriority.MONITOR)
     void handle(final RunMethodTransformEvent event) {
         final SkidMethodNode methodNode = event.getMethodNode();
 
