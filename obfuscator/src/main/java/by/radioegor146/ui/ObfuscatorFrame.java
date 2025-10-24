@@ -6,6 +6,7 @@ import by.radioegor146.AntiDebugConfig;
 import by.radioegor146.ProtectionConfig;
 import by.radioegor146.ObfuscatorConfig;
 import by.radioegor146.javaobf.JavaObfuscationConfig;
+import dev.skidfuscator.obfuscator.FlowExceptionMode;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -88,6 +89,7 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox javaStringObfBox = new JCheckBox("String encryption", true);
     private final JCheckBox javaNumberObfBox = new JCheckBox("Number encryption", true);
     private final JCheckBox javaFlowObfBox = new JCheckBox("Control-flow transforms", true);
+    private final JComboBox<FlowExceptionMode> javaFlowExceptionModeCombo = new JComboBox<>(FlowExceptionMode.values());
     private final JCheckBox javaSdkInjectionBox = new JCheckBox("Inject SDK runtime (experimental)", false);
     private final JCheckBox javaVmHashingBox = new JCheckBox("VM hashing (experimental)", false);
     private final JTextField javaBlacklistField = new JTextField();
@@ -538,6 +540,28 @@ public class ObfuscatorFrame extends JFrame {
                 "Scramble numeric constants and related instanceof checks"));
         featurePanel.add(checkWithHint(javaFlowObfBox,
                 "Apply switch flattening and bogus control-flow stages"));
+        featurePanel.add(Box.createRigidArea(new Dimension(0, 4)));
+
+        JPanel flowModePanel = new JPanel();
+        flowModePanel.setLayout(new BoxLayout(flowModePanel, BoxLayout.X_AXIS));
+        flowModePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        flowModePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+
+        JLabel flowModeLabel = new JLabel("⚙️ Flow exception mode");
+        flowModeLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        flowModeLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        flowModePanel.add(flowModeLabel);
+
+        javaFlowExceptionModeCombo.setMaximumSize(new Dimension(200, FIELD_H));
+        javaFlowExceptionModeCombo.setAlignmentY(Component.CENTER_ALIGNMENT);
+        flowModePanel.add(javaFlowExceptionModeCombo);
+
+        flowModePanel.add(Box.createRigidArea(new Dimension(8, 0)));
+        flowModePanel.add(makeHint("Choose the dispatched exception used by flow transforms"));
+        flowModePanel.add(Box.createHorizontalGlue());
+
+        featurePanel.add(flowModePanel);
+        featurePanel.add(Box.createRigidArea(new Dimension(0, 4)));
         featurePanel.add(checkWithHint(javaSdkInjectionBox,
                 "Bundle Skidfuscator's runtime SDK into the output jar"));
         featurePanel.add(checkWithHint(javaVmHashingBox,
@@ -571,9 +595,13 @@ public class ObfuscatorFrame extends JFrame {
             javaStringObfBox.setEnabled(enabled);
             javaNumberObfBox.setEnabled(enabled);
             javaFlowObfBox.setEnabled(enabled);
+            javaFlowExceptionModeCombo.setEnabled(enabled && javaFlowObfBox.isSelected());
             javaSdkInjectionBox.setEnabled(enabled);
             javaVmHashingBox.setEnabled(enabled);
         });
+
+        javaFlowObfBox.addActionListener(e ->
+                javaFlowExceptionModeCombo.setEnabled(enableJavaObfuscationBox.isSelected() && javaFlowObfBox.isSelected()));
 
         // Initially disable components
         javaObfStrengthCombo.setEnabled(false);
@@ -582,6 +610,7 @@ public class ObfuscatorFrame extends JFrame {
         javaStringObfBox.setEnabled(false);
         javaNumberObfBox.setEnabled(false);
         javaFlowObfBox.setEnabled(false);
+        javaFlowExceptionModeCombo.setEnabled(false);
         javaSdkInjectionBox.setEnabled(false);
         javaVmHashingBox.setEnabled(false);
 
@@ -985,6 +1014,9 @@ public class ObfuscatorFrame extends JFrame {
                     publish("    • String encryption: " + (javaStringObfBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • Number encryption: " + (javaNumberObfBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • Control-flow transforms: " + (javaFlowObfBox.isSelected() ? "✅ On" : "❌ Off"));
+                    if (javaFlowObfBox.isSelected()) {
+                        publish("      ↳ Exception mode: " + javaFlowExceptionModeCombo.getSelectedItem());
+                    }
                     publish("    • SDK injection: " + (javaSdkInjectionBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • VM hashing: " + (javaVmHashingBox.isSelected() ? "✅ On" : "❌ Off"));
                 }
@@ -1051,11 +1083,12 @@ public class ObfuscatorFrame extends JFrame {
                         .setJavaBlackList(javaBlackList)
                         .setJavaWhiteList(javaWhiteList)
                         .setEnableNativeObfuscation(enableNativeObfuscation)
-                        .setSkidStringObfuscation(javaStringObfBox.isSelected())
-                        .setSkidNumberObfuscation(javaNumberObfBox.isSelected())
-                        .setSkidFlowObfuscation(javaFlowObfBox.isSelected())
-                        .setSkidSdkInjection(javaSdkInjectionBox.isSelected())
-                        .setSkidVmHashing(javaVmHashingBox.isSelected())
+                    .setSkidStringObfuscation(javaStringObfBox.isSelected())
+                    .setSkidNumberObfuscation(javaNumberObfBox.isSelected())
+                    .setSkidFlowObfuscation(javaFlowObfBox.isSelected())
+                    .setSkidFlowExceptionMode((FlowExceptionMode) javaFlowExceptionModeCombo.getSelectedItem())
+                    .setSkidSdkInjection(javaSdkInjectionBox.isSelected())
+                    .setSkidVmHashing(javaVmHashingBox.isSelected())
                         .build();
 
                 // Validate configuration
@@ -1137,6 +1170,7 @@ public class ObfuscatorFrame extends JFrame {
         javaStringObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaNumberObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaFlowObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaFlowExceptionModeCombo.setEnabled(enabled && enableJavaObfuscationBox.isSelected() && javaFlowObfBox.isSelected());
         javaSdkInjectionBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaVmHashingBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
 

@@ -569,6 +569,8 @@ public class SkidHierarchy implements Hierarchy {
             group.setName(methodNode.getName());
             group.setDesc(methodNode.getDesc());
             group.setSynthetic(methodNode.isSynthetic());
+            group.setInterfacing(methods.stream()
+                    .anyMatch(m -> m.owner instanceof SkidClassNode && ((SkidClassNode) m.owner).isInterface()));
             //System.out.println(group.getDesc());
 
             for (MethodNode method : methods) {

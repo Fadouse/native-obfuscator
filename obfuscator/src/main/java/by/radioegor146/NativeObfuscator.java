@@ -5,6 +5,7 @@ import by.radioegor146.source.CMakeFilesBuilder;
 import by.radioegor146.source.ClassSourceBuilder;
 import by.radioegor146.source.MainSourceBuilder;
 import by.radioegor146.source.StringPool;
+import dev.skidfuscator.obfuscator.FlowExceptionMode;
 import dev.skidfuscator.obfuscator.Skidfuscator;
 import dev.skidfuscator.obfuscator.SkidfuscatorSession;
 import org.objectweb.asm.ClassReader;
@@ -116,7 +117,7 @@ public class NativeObfuscator {
                 platform, useAnnotations, generateDebugJar, enableVirtualization, enableJit, flattenControlFlow,
                 obfuscateStrings, obfuscateConstants,
                 false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true,
-                true, true, true, false, false);
+                true, true, true, false, false, FlowExceptionMode.STANDARD);
     }
 
     public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -129,7 +130,7 @@ public class NativeObfuscator {
                         List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation,
                         boolean skidStringObfuscation, boolean skidNumberObfuscation,
                         boolean skidFlowObfuscation, boolean skidSdkInjection,
-                        boolean skidVmHashing) throws IOException {
+                        boolean skidVmHashing, FlowExceptionMode skidFlowExceptionMode) throws IOException {
         ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
                 obfuscateStrings, obfuscateConstants);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
@@ -164,6 +165,7 @@ public class NativeObfuscator {
                     .skidFlowObfuscation(skidFlowObfuscation)
                     .skidSdkInjection(skidSdkInjection)
                     .skidVmHashing(skidVmHashing)
+                    .flowExceptionMode(skidFlowExceptionMode)
                     .build();
 
             Skidfuscator skidfuscator = new Skidfuscator(session);
@@ -566,7 +568,7 @@ public class NativeObfuscator {
                 config.getJavaBlackList(), config.getJavaWhiteList(), config.isEnableNativeObfuscation(),
                 config.isSkidStringObfuscation(), config.isSkidNumberObfuscation(),
                 config.isSkidFlowObfuscation(), config.isSkidSdkInjection(),
-                config.isSkidVmHashing());
+                config.isSkidVmHashing(), config.getSkidFlowExceptionMode());
     }
 
     private void processWithAntiDebug(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -578,7 +580,7 @@ public class NativeObfuscator {
                         List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation,
                         boolean skidStringObfuscation, boolean skidNumberObfuscation,
                         boolean skidFlowObfuscation, boolean skidSdkInjection,
-                        boolean skidVmHashing) throws IOException {
+                        boolean skidVmHashing, FlowExceptionMode skidFlowExceptionMode) throws IOException {
 
         // Call the existing process method but with extended functionality
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
@@ -587,7 +589,8 @@ public class NativeObfuscator {
                 protectionConfig.isControlFlowFlatteningEnabled(),
                 protectionConfig.isStringObfuscationEnabled(), protectionConfig.isConstantObfuscationEnabled(),
                 enableJavaObfuscation, javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation,
-                skidStringObfuscation, skidNumberObfuscation, skidFlowObfuscation, skidSdkInjection, skidVmHashing);
+                skidStringObfuscation, skidNumberObfuscation, skidFlowObfuscation, skidSdkInjection, skidVmHashing,
+                skidFlowExceptionMode);
 
         // Generate anti-debug configuration header if any anti-debug features are enabled
         if (antiDebugConfig.isAnyEnabled()) {

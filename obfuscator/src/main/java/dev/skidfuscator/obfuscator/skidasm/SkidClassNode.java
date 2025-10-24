@@ -17,7 +17,9 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.AbstractInsnNode;
 
 import java.util.ArrayList;
 
@@ -228,8 +230,49 @@ public class SkidClassNode extends ClassNode {
     }
 
     public byte[] toByteArray() {
+        fixInterfaceInvocationFlags();
         final ClassWriter classWriter = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
         this.node.accept(classWriter);
         return classWriter.toByteArray();
+    }
+
+    private void fixInterfaceInvocationFlags() {
+        if (skidfuscator == null) {
+            return;
+        }
+
+        for (MethodNode method : node.methods) {
+            if (method.instructions == null) {
+                continue;
+            }
+
+            for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                if (!(insn instanceof MethodInsnNode)) {
+                    continue;
+                }
+
+                final MethodInsnNode methodInsn = (MethodInsnNode) insn;
+                final boolean ownerIsInterface = isInterfaceOwner(methodInsn.owner);
+
+                if (ownerIsInterface && !methodInsn.itf) {
+                    methodInsn.itf = true;
+                } else if (!ownerIsInterface && methodInsn.itf && methodInsn.getOpcode() != Opcodes.INVOKEINTERFACE) {
+                    methodInsn.itf = false;
+                }
+            }
+        }
+    }
+
+    private boolean isInterfaceOwner(final String owner) {
+        if (owner == null) {
+            return false;
+        }
+
+        final org.mapleir.asm.ClassNode target = skidfuscator.getClassSource().findClassNode(owner);
+        if (target != null) {
+            return (target.node.access & Opcodes.ACC_INTERFACE) != 0;
+        }
+
+        return false;
     }
 }

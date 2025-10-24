@@ -10,6 +10,7 @@ import dev.skidfuscator.obfuscator.skidasm.cfg.SkidBlock;
 import dev.skidfuscator.obfuscator.skidasm.cfg.SkidControlFlowGraph;
 import dev.skidfuscator.obfuscator.skidasm.fake.FakeConditionalJumpStmt;
 import dev.skidfuscator.obfuscator.transform.AbstractTransformer;
+import dev.skidfuscator.obfuscator.transform.exempt.MethodExempt;
 import dev.skidfuscator.obfuscator.transform.Transformer;
 import org.mapleir.flowgraph.edges.ConditionalJumpEdge;
 import org.mapleir.flowgraph.edges.UnconditionalJumpEdge;
@@ -37,6 +38,11 @@ public class BasicConditionTransformer extends AbstractTransformer {
         final SkidMethodNode methodNode = event.getMethodNode();
 
         if (methodNode.isAbstract() || methodNode.isInit()) {
+            this.skip();
+            return;
+        }
+
+        if (methodNode.isExempt(MethodExempt.INTERFACE)) {
             this.skip();
             return;
         }

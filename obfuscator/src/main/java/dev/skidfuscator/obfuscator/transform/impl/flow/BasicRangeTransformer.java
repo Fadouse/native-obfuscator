@@ -13,6 +13,7 @@ import dev.skidfuscator.obfuscator.skidasm.fake.FakeConditionalJumpStmt;
 import dev.skidfuscator.obfuscator.skidasm.fake.FakeUnconditionalJumpStmt;
 import dev.skidfuscator.obfuscator.transform.AbstractTransformer;
 import dev.skidfuscator.obfuscator.transform.Transformer;
+import dev.skidfuscator.obfuscator.transform.exempt.MethodExempt;
 import dev.skidfuscator.obfuscator.util.RandomUtil;
 import dev.skidfuscator.obfuscator.verifier.alertable.AlertableConstantExpr;
 import org.mapleir.flowgraph.ExceptionRange;
@@ -79,6 +80,11 @@ public class BasicRangeTransformer extends AbstractTransformer {
         final SkidMethodNode methodNode = event.getMethodNode();
 
         if (methodNode.isAbstract() || methodNode.isInit()) {
+            this.skip();
+            return;
+        }
+
+        if (methodNode.isExempt(MethodExempt.INTERFACE)) {
             this.skip();
             return;
         }

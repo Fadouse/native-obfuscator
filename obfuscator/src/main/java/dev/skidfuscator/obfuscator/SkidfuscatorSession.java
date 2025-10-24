@@ -33,6 +33,7 @@ public class SkidfuscatorSession {
     @Builder.Default private boolean skidFlowObfuscation = true;
     @Builder.Default private boolean skidSdkInjection = false;
     @Builder.Default private boolean skidVmHashing = false;
+    @Builder.Default private FlowExceptionMode flowExceptionMode = FlowExceptionMode.STANDARD;
 
     /**
      *
@@ -152,5 +153,9 @@ public class SkidfuscatorSession {
 
     public boolean isSkidVmHashingEnabled() {
         return skidVmHashing;
+    }
+
+    public FlowExceptionMode getFlowExceptionMode() {
+        return flowExceptionMode;
     }
 }

@@ -1,5 +1,7 @@
 package by.radioegor146;
 
+import dev.skidfuscator.obfuscator.FlowExceptionMode;
+
 import java.nio.file.Path;
 import java.util.List;
 
@@ -39,6 +41,7 @@ public class ObfuscatorConfig {
     private final boolean skidFlowObfuscation;
     private final boolean skidSdkInjection;
     private final boolean skidVmHashing;
+    private final FlowExceptionMode skidFlowExceptionMode;
 
     public ObfuscatorConfig(Path inputJarPath, Path outputDir, List<Path> inputLibs,
                            List<String> blackList, List<String> whiteList,
@@ -50,7 +53,7 @@ public class ObfuscatorConfig {
                            boolean enableNativeObfuscation,
                            boolean skidStringObfuscation, boolean skidNumberObfuscation,
                            boolean skidFlowObfuscation, boolean skidSdkInjection,
-                           boolean skidVmHashing) {
+                           boolean skidVmHashing, FlowExceptionMode skidFlowExceptionMode) {
         this.inputJarPath = inputJarPath;
         this.outputDir = outputDir;
         this.inputLibs = inputLibs;
@@ -73,6 +76,7 @@ public class ObfuscatorConfig {
         this.skidFlowObfuscation = skidFlowObfuscation;
         this.skidSdkInjection = skidSdkInjection;
         this.skidVmHashing = skidVmHashing;
+        this.skidFlowExceptionMode = skidFlowExceptionMode;
     }
 
     // Getters for basic settings
@@ -102,6 +106,7 @@ public class ObfuscatorConfig {
     public boolean isSkidFlowObfuscation() { return skidFlowObfuscation; }
     public boolean isSkidSdkInjection() { return skidSdkInjection; }
     public boolean isSkidVmHashing() { return skidVmHashing; }
+    public FlowExceptionMode getSkidFlowExceptionMode() { return skidFlowExceptionMode; }
 
     // Convenience methods for accessing nested configuration properties
     public boolean isVirtualizationEnabled() { return protectionConfig.isVirtualizationEnabled(); }
@@ -145,12 +150,14 @@ public class ObfuscatorConfig {
                 "  skidFlowObfuscation=%s,\n" +
                 "  skidSdkInjection=%s,\n" +
                 "  skidVmHashing=%s,\n" +
+                "  skidFlowExceptionMode=%s,\n" +
                 "  protectionConfig=%s,\n" +
                 "  antiDebugConfig=%s\n" +
                 "}",
                 inputJarPath, outputDir, platform, enableJavaObfuscation,
                 enableNativeObfuscation, skidStringObfuscation, skidNumberObfuscation,
                 skidFlowObfuscation, skidSdkInjection, skidVmHashing,
+                skidFlowExceptionMode,
                 protectionConfig, antiDebugConfig);
     }
 
@@ -180,6 +187,7 @@ public class ObfuscatorConfig {
         private boolean skidFlowObfuscation = true;
         private boolean skidSdkInjection = false;
         private boolean skidVmHashing = false;
+        private FlowExceptionMode skidFlowExceptionMode = FlowExceptionMode.STANDARD;
 
         public Builder setInputJarPath(Path inputJarPath) {
             this.inputJarPath = inputJarPath;
@@ -291,6 +299,11 @@ public class ObfuscatorConfig {
             return this;
         }
 
+        public Builder setSkidFlowExceptionMode(FlowExceptionMode skidFlowExceptionMode) {
+            this.skidFlowExceptionMode = skidFlowExceptionMode;
+            return this;
+        }
+
         public ObfuscatorConfig build() {
             if (inputJarPath == null || outputDir == null) {
                 throw new IllegalArgumentException("Input JAR path and output directory are required");
@@ -300,7 +313,7 @@ public class ObfuscatorConfig {
                     protectionConfig, antiDebugConfig, enableJavaObfuscation, javaObfuscationStrength,
                     javaBlackList, javaWhiteList, enableNativeObfuscation,
                     skidStringObfuscation, skidNumberObfuscation,
-                    skidFlowObfuscation, skidSdkInjection, skidVmHashing);
+                    skidFlowObfuscation, skidSdkInjection, skidVmHashing, skidFlowExceptionMode);
         }
     }
 }

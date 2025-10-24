@@ -7,6 +7,7 @@ import dev.skidfuscator.obfuscator.event.impl.transform.method.InitMethodTransfo
 import dev.skidfuscator.obfuscator.skidasm.SkidMethodNode;
 import dev.skidfuscator.obfuscator.skidasm.stmt.SkidCopyVarStmt;
 import dev.skidfuscator.obfuscator.transform.AbstractTransformer;
+import dev.skidfuscator.obfuscator.transform.exempt.MethodExempt;
 import org.mapleir.flowgraph.edges.UnconditionalJumpEdge;
 import org.mapleir.ir.cfg.BasicBlock;
 import org.mapleir.ir.cfg.ControlFlowGraph;
@@ -27,6 +28,11 @@ public class BasicSimplifierTransformer extends AbstractTransformer {
     void handle(final InitMethodTransformEvent event) {
         final SkidMethodNode methodNode = event.getMethodNode();
         methodNode.getEntryBlock();
+
+        if (methodNode.isExempt(MethodExempt.INTERFACE)) {
+            this.skip();
+            return;
+        }
 
         final ControlFlowGraph cfg = methodNode.getCfg();
         for (BasicBlock block : new ArrayList<>(cfg.vertices())) {

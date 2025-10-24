@@ -61,6 +61,7 @@ public class BasicExceptionTransformer extends AbstractTransformer {
         if (methodNode.isExempt(
                 MethodExempt.ABSTRACT,
                 MethodExempt.INIT,
+                MethodExempt.INTERFACE,
                 MethodExempt.NULLCFG
         )) {
             this.skip();

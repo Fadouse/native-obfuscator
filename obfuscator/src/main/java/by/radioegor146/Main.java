@@ -1,5 +1,6 @@
 package by.radioegor146;
 
+import dev.skidfuscator.obfuscator.FlowExceptionMode;
 import picocli.CommandLine;
 
 import java.io.File;
@@ -92,6 +93,10 @@ public class Main {
 
         @CommandLine.Option(names = {"--java-flow-obfuscation"}, negatable = true, description = "Toggle Skidfuscator control-flow transformers (default: enabled)")
         private boolean javaFlowObfuscation = true;
+
+        @CommandLine.Option(names = {"--java-flow-exception-mode"}, defaultValue = "STANDARD",
+                description = "Control bogus flow exception strategy: ${COMPLETION-CANDIDATES}")
+        private FlowExceptionMode javaFlowExceptionMode = FlowExceptionMode.STANDARD;
 
         @CommandLine.Option(names = {"--java-sdk-injection"}, negatable = true, description = "Toggle Skidfuscator SDK runtime injection (default: disabled)")
         private boolean javaSdkInjection = false;
@@ -250,6 +255,7 @@ public class Main {
                     .setSkidStringObfuscation(javaStringEncryption)
                     .setSkidNumberObfuscation(javaNumberObfuscation)
                     .setSkidFlowObfuscation(javaFlowObfuscation)
+                    .setSkidFlowExceptionMode(javaFlowExceptionMode)
                     .setSkidSdkInjection(javaSdkInjection)
                     .setSkidVmHashing(javaVmHashing)
                     .build();

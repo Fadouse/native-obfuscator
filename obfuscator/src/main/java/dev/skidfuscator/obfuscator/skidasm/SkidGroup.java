@@ -29,6 +29,7 @@ public class SkidGroup {
     private boolean natived;
     private boolean mixin;
     private boolean enumerator;
+    private boolean interfacing;
     private String name;
     private String desc;
 
@@ -145,7 +146,8 @@ public class SkidGroup {
                 || this.getInvokers().stream().anyMatch(SkidInvocation::isExempt)
                 || this.getInvokers().stream().anyMatch(SkidInvocation::isDynamic)
                 || this.isAnnotation()
-                || this.isEnumerator();
+                || this.isEnumerator()
+                || this.isInterfacing();
     }
     @Override
     public boolean equals(Object o) {
