@@ -11,10 +11,11 @@ import org.objectweb.asm.tree.*;
 
 import java.lang.reflect.Field;
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import by.radioegor146.FastRandom;
 
 public class MethodProcessor {
 
@@ -86,14 +87,11 @@ public class MethodProcessor {
     }
 
     private SpecialMethodProcessor getSpecialMethodProcessor(String name) {
-        switch (name) {
-            case "<init>":
-                return null;
-            case "<clinit>":
-                return new ClInitSpecialMethodProcessor();
-            default:
-                return new DefaultSpecialMethodProcessor();
-        }
+        return switch (name) {
+            case "<init>" -> null;
+            case "<clinit>" -> new ClInitSpecialMethodProcessor();
+            default -> new DefaultSpecialMethodProcessor();
+        };
     }
 
     public static boolean shouldProcess(MethodNode method) {
@@ -101,8 +99,7 @@ public class MethodProcessor {
         if (Util.getFlag(method.access, Opcodes.ACC_NATIVE)) return false;
         if (method.name.equals("<init>")) return false;
         // Skip lambda body methods to avoid subtle JVM/linkage issues in JDK8/21
-        if (method.name.startsWith("lambda$")) return false;
-        return true;
+        return !method.name.startsWith("lambda$");
     }
 
     public static String getClassGetter(MethodContext context, String desc) {
@@ -113,6 +110,34 @@ public class MethodProcessor {
             desc = desc.substring(1, desc.length() - 1);
         }
         return "utils::find_class_wo_static(env, classloader, " + context.getCachedStrings().getPointer(desc.replace('/', '.')) + ")";
+    }
+
+    public static String ensureVerifiedClass(MethodContext context, int classId, String owner,
+                                             String trimmedTryCatchBlock) {
+        String localName = context.verifiedClassLocals.get(classId);
+        if (localName == null) {
+            localName = "cclass_local" + context.verifiedClassLocals.size();
+            context.verifiedClassLocals.put(classId, localName);
+
+            String flagName = localName + "_cached";
+            context.verifiedClassFlagNames.put(classId, flagName);
+            context.verifiedClassPreamble.append("    jclass ").append(localName).append(" = nullptr;\n");
+            context.verifiedClassPreamble.append("    bool ").append(flagName).append(" = false;\n");
+        }
+
+        String flagName = context.verifiedClassFlagNames.get(classId);
+
+        context.output.append(String.format(
+                "if (!%1$s) { %2$s = cclasses[%3$d]; if (%2$s == nullptr) { cclasses_mtx[%3$d].lock(); "
+                        + "if (!cclasses[%3$d]) { if (jclass clazz = %4$s) { cclasses[%3$d] = (jclass) env->NewGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
+                        + "cclasses_mtx[%3$d].unlock(); %5$s %2$s = cclasses[%3$d]; %5$s } %1$s = true; } ",
+                flagName,
+                localName,
+                classId,
+                getClassGetter(context, owner),
+                trimmedTryCatchBlock));
+
+        return localName;
     }
 
     public void processMethod(MethodContext context) {
@@ -145,13 +170,17 @@ public class MethodProcessor {
         methodName = Util.escapeCppNameString(methodName);
         context.cppNativeMethodName = methodName;
 
+        // Register this method in the transpiled methods map for direct call optimization
+        String methodKey = method.name + method.desc;
+        context.transpiledMethodNames.put(methodKey, methodName);
+
         boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
         context.ret = Type.getReturnType(method.desc);
         Type[] args = Type.getArgumentTypes(method.desc);
 
         context.argTypes = new ArrayList<>(Arrays.asList(args));
         if (!isStatic) {
-            context.argTypes.add(0, Type.getType(Object.class));
+            context.argTypes.addFirst(Type.getType(Object.class));
         }
 
         if (context.proxyMethod != null) {
@@ -189,12 +218,14 @@ public class MethodProcessor {
         List<VmTranslator.MultiArrayRefInfo> multiArrayRefs = new ArrayList<>();
         List<VmTranslator.MethodRefInfo> methodRefs = new ArrayList<>();
         List<VmTranslator.ConstantPoolEntry> constantPool = new ArrayList<>();
+        List<VmTranslator.TableSwitchInfo> tableSwitches = new ArrayList<>();
+        List<VmTranslator.LookupSwitchInfo> lookupSwitches = new ArrayList<>();
         VmTranslator vmTranslator = null;
         long vmKeySeed = 0;
 
         // Only use VM translation if virtualization is enabled
         if (context.protectionConfig.isVirtualizationEnabled()) {
-            vmKeySeed = ThreadLocalRandom.current().nextLong();
+            vmKeySeed = FastRandom.nextLong();
             output.append(String.format("    native_jvm::vm::init_key(%dLL);\n", vmKeySeed));
 
             boolean useJit = context.protectionConfig.isJitEnabled();
@@ -218,6 +249,8 @@ public class MethodProcessor {
                     vmCode = null;
                 }
                 constantPool = vmTranslator.getConstantPool();
+                tableSwitches = vmTranslator.getTableSwitches();
+                lookupSwitches = vmTranslator.getLookupSwitches();
             }
         }
         if (vmCode != null && vmCode.length > 0) {
@@ -310,6 +343,60 @@ public class MethodProcessor {
                 }
                 output.append(" };\n");
             }
+            if (!tableSwitches.isEmpty()) {
+                for (int i = 0; i < tableSwitches.size(); i++) {
+                    VmTranslator.TableSwitchInfo ts = tableSwitches.get(i);
+                    output.append("    static const size_t __ngen_vm_table_targets_").append(i).append("[] = {");
+                    for (int j = 0; j < ts.labels.length; j++) {
+                        if (j > 0) output.append(", ");
+                        output.append(ts.labels[j]);
+                    }
+                    output.append(" };\n");
+                }
+                output.append("    native_jvm::vm::TableSwitch __ngen_vm_tables[] = {");
+                for (int i = 0; i < tableSwitches.size(); i++) {
+                    VmTranslator.TableSwitchInfo ts = tableSwitches.get(i);
+                    output.append(String.format("{ %d, %d, static_cast<size_t>(%d), __ngen_vm_table_targets_%d }",
+                            ts.low, ts.high, ts.defaultLabel, i));
+                    if (i + 1 < tableSwitches.size()) output.append(", ");
+                }
+                output.append(" };\n");
+            }
+            if (!lookupSwitches.isEmpty()) {
+                List<String> lookupKeyVars = new ArrayList<>();
+                List<String> lookupTargetVars = new ArrayList<>();
+                for (int i = 0; i < lookupSwitches.size(); i++) {
+                    VmTranslator.LookupSwitchInfo ls = lookupSwitches.get(i);
+                    String keyVar = "nullptr";
+                    String targetVar = "nullptr";
+                    if (ls.keys.length > 0) {
+                        keyVar = String.format("__ngen_vm_lookup_keys_%d", i);
+                        targetVar = String.format("__ngen_vm_lookup_targets_%d", i);
+                        output.append("    static const int32_t ").append(keyVar).append("[] = {");
+                        for (int j = 0; j < ls.keys.length; j++) {
+                            if (j > 0) output.append(", ");
+                            output.append(ls.keys[j]);
+                        }
+                        output.append(" };\n");
+                        output.append("    static const size_t ").append(targetVar).append("[] = {");
+                        for (int j = 0; j < ls.labels.length; j++) {
+                            if (j > 0) output.append(", ");
+                            output.append(ls.labels[j]);
+                        }
+                        output.append(" };\n");
+                    }
+                    lookupKeyVars.add(keyVar);
+                    lookupTargetVars.add(targetVar);
+                }
+                output.append("    native_jvm::vm::LookupSwitch __ngen_vm_lookups[] = {");
+                for (int i = 0; i < lookupSwitches.size(); i++) {
+                    VmTranslator.LookupSwitchInfo ls = lookupSwitches.get(i);
+                    output.append(String.format("{ %d, %s, %s, static_cast<size_t>(%d) }",
+                            ls.keys.length, lookupKeyVars.get(i), lookupTargetVars.get(i), ls.defaultLabel));
+                    if (i + 1 < lookupSwitches.size()) output.append(", ");
+                }
+                output.append(" };\n");
+            }
             // Generate constant pool array
             if (!constantPool.isEmpty()) {
                 output.append("    native_jvm::vm::ConstantPoolEntry __ngen_vm_constants[").append(constantPool.size()).append("];\n");
@@ -318,38 +405,38 @@ public class MethodProcessor {
                     output.append(String.format("    __ngen_vm_constants[%d].type = native_jvm::vm::ConstantPoolEntry::", i));
                     switch (cp.type) {
                         case INTEGER:
-                            output.append(String.format("TYPE_INTEGER;\n"));
+                            output.append("TYPE_INTEGER;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].i_value = %d;\n", i, (Integer)cp.value));
                             break;
                         case FLOAT:
-                            output.append(String.format("TYPE_FLOAT;\n"));
+                            output.append("TYPE_FLOAT;\n");
                             // Print with enough precision to round-trip single-precision values
                             output.append(String.format(java.util.Locale.ROOT,
                                     "    __ngen_vm_constants[%d].f_value = %.9gF;\n", i, (Float)cp.value));
                             break;
                         case LONG:
-                            output.append(String.format("TYPE_LONG;\n"));
+                            output.append("TYPE_LONG;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].l_value = %dLL;\n", i, (Long)cp.value));
                             break;
                         case DOUBLE:
-                            output.append(String.format("TYPE_DOUBLE;\n"));
+                            output.append("TYPE_DOUBLE;\n");
                             // Print with enough precision to round-trip double-precision values
                             output.append(String.format(java.util.Locale.ROOT,
                                     "    __ngen_vm_constants[%d].d_value = %.17g;\n", i, (Double)cp.value));
                             break;
                         case STRING:
-                            output.append(String.format("TYPE_STRING;\n"));
+                            output.append("TYPE_STRING;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].str_value = %s;\n", i,
                                     context.getStringPool().get((String)cp.value)));
                             break;
                         case CLASS:
-                            output.append(String.format("TYPE_CLASS;\n"));
+                            output.append("TYPE_CLASS;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].class_name = %s;\n", i,
                                     context.getStringPool().get((String)cp.value)));
                             break;
                         default:
                             // Unsupported types - should not reach here
-                            output.append(String.format("TYPE_INTEGER;\n"));
+                            output.append("TYPE_INTEGER;\n");
                             output.append(String.format("    __ngen_vm_constants[%d].i_value = 0;\n", i));
                             break;
                     }
@@ -414,11 +501,11 @@ public class MethodProcessor {
             String multiRefsPtr = multiArrayRefs.isEmpty() ? "nullptr" : "__ngen_vm_multi";
             int multiRefsSize = multiArrayRefs.size();
 
-            // Determine class references parameters (for switches, not implemented yet)
-            String tableRefsPtr = "nullptr";
-            int tableRefsSize = 0;
-            String lookupRefsPtr = "nullptr";
-            int lookupRefsSize = 0;
+            // Determine switch references parameters
+            String tableRefsPtr = tableSwitches.isEmpty() ? "nullptr" : "__ngen_vm_tables";
+            int tableRefsSize = tableSwitches.size();
+            String lookupRefsPtr = lookupSwitches.isEmpty() ? "nullptr" : "__ngen_vm_lookups";
+            int lookupRefsSize = lookupSwitches.size();
 
             // Execute micro VM and correctly convert the encoded top-of-stack value
             // back to the Java return type. The VM encodes values on a 64-bit stack:
@@ -426,7 +513,7 @@ public class MethodProcessor {
             // - long/double use all 64 bits (double is raw IEEE754 bits)
             // - object/array are stored as their pointer cast to int64
             String vmCallFmt;
-            if (vmTranslator != null && vmTranslator.isUseJit()) {
+            if (vmTranslator.isUseJit()) {
                 vmCallFmt = String.format(
                         "    auto __ngen_vm_ret = native_jvm::vm::execute_jit(env, __ngen_vm_code, %d, __ngen_vm_locals, %d, %dLL, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d, %s, %d);\n",
                         vmCode.length, method.maxLocals, vmKeySeed, constantPoolPtr, constantPoolSize, methodRefsPtr, methodRefsSize, fieldRefsPtr, fieldRefsSize, multiRefsPtr, multiRefsSize, tableRefsPtr, tableRefsSize, lookupRefsPtr, lookupRefsSize);
@@ -454,12 +541,12 @@ public class MethodProcessor {
                 case Type.CHAR:
                 case Type.BYTE:
                 case Type.BOOLEAN: {
-                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") (jint)__ngen_vm_ret;\n");
+                    output.append("    return (").append(CPP_TYPES[context.ret.getSort()]).append(") (jint)__ngen_vm_ret;\n");
                     break;
                 }
                 case Type.OBJECT:
                 case Type.ARRAY: {
-                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") (jlong)__ngen_vm_ret;\n");
+                    output.append("    return (").append(CPP_TYPES[context.ret.getSort()]).append(") (jlong)__ngen_vm_ret;\n");
                     break;
                 }
                 case Type.VOID: {
@@ -467,7 +554,7 @@ public class MethodProcessor {
                     break;
                 }
                 default:
-                    output.append("    return (" + CPP_TYPES[context.ret.getSort()] + ") 0;\n");
+                    output.append("    return (").append(CPP_TYPES[context.ret.getSort()]).append(") 0;\n");
                     break;
             }
             output.append("}\n");
@@ -509,11 +596,18 @@ public class MethodProcessor {
                     .append(String.format("return (%s) 0;", CPP_TYPES[context.ret.getSort()]))
                     .append(" } }\n");
         }
-        output.append("    jobject classloader = utils::get_classloader_from_class(env, clazz);\n");
-        output.append("    if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
+        // Use cached classloader to avoid repeated JNI calls
+        output.append("    jobject classloader = cached_classloader;\n");
+        output.append("    if (classloader == nullptr) {\n");
+        output.append("        classloader = utils::get_classloader_from_class(env, clazz);\n");
+        output.append("        if (env->ExceptionCheck()) { ").append(String.format("return (%s) 0;",
                 CPP_TYPES[context.ret.getSort()])).append(" }\n");
-        output.append("    if (classloader == nullptr) { env->FatalError(").append(context.getStringPool()
+        output.append("        if (classloader == nullptr) { env->FatalError(").append(context.getStringPool()
                 .get("classloader == null")).append(String.format("); return (%s) 0; }\n", CPP_TYPES[context.ret.getSort()]));
+        output.append("        cached_classloader = env->NewGlobalRef(classloader);\n");
+        output.append("        env->DeleteLocalRef(classloader);\n");
+        output.append("        classloader = cached_classloader;\n");
+        output.append("    }\n");
         output.append("\n");
         if (!isStatic) {
             output.append("    env->DeleteLocalRef(clazz);\n");
@@ -537,11 +631,9 @@ public class MethodProcessor {
                 int classId = context.getCachedClasses().getId(clazz);
 
                 context.output.append(String.format("    // try-catch-class %s\n", Util.escapeCommentString(clazz)));
-                context.output.append(String.format("    if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { cclasses_mtx[%d].lock(); "
-                                + "if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
+                context.output.append(String.format("    if (!cclasses[%d]) { cclasses_mtx[%d].lock(); "
+                                + "if (!cclasses[%d]) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewGlobalRef(clazz); env->DeleteLocalRef(clazz); } } "
                                 + "cclasses_mtx[%d].unlock(); if (env->ExceptionCheck()) { return (%s) 0; } }\n",
-                        classId,
-                        classId,
                         classId,
                         classId,
                         classId,
@@ -574,9 +666,9 @@ public class MethodProcessor {
             output.append(";\n");
         }
 
-        output.append("    std::unordered_set<jobject> refs;\n");
+        output.append("    native_jvm::LocalRefSet refs;\n");
         output.append("\n");
-        context.classCacheInsertPosition = output.length();
+        context.verifiedClassPreambleInsertionPoint = output.length();
 
         int localIndex = 0;
         for (int i = 0; i < context.argTypes.size(); ++i) {
@@ -595,6 +687,7 @@ public class MethodProcessor {
         context.stackPointer = 0;
         context.dispatcherMode = true;
         boolean flattenControlFlow = context.protectionConfig.isControlFlowFlatteningEnabled();
+        Set<Integer> referencedStates = new HashSet<>();
 
         int instructionCount = method.instructions.size();
         if (instructionCount == 0) {
@@ -618,7 +711,7 @@ public class MethodProcessor {
                 context.getLabelPool().setState(((LabelNode) node).getLabel(), states[i]);
             }
         }
-        int fakeState = context.getLabelPool().generateStandaloneState();
+        int fakeState = flattenControlFlow ? context.getLabelPool().generateStandaloneState() : -1;
 
         ControlFlowFlattener.StateObfuscation stateObfuscation = null;
         if (flattenControlFlow) {
@@ -655,14 +748,34 @@ public class MethodProcessor {
             int opcode = node.getOpcode();
             if (opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) changesFlow = true;
             if (opcode == Opcodes.ATHROW) changesFlow = true;
-            if (!changesFlow) {
+            switch (node) {
+                case JumpInsnNode jumpInsnNode ->
+                        referencedStates.add(parseStateId(context.getLabelPool().getName(jumpInsnNode.label.getLabel())));
+                case TableSwitchInsnNode tableSwitch -> {
+                    referencedStates.add(parseStateId(context.getLabelPool().getName(tableSwitch.dflt.getLabel())));
+                    for (LabelNode labelNode : tableSwitch.labels) {
+                        referencedStates.add(parseStateId(context.getLabelPool().getName(labelNode.getLabel())));
+                    }
+                }
+                case LookupSwitchInsnNode lookupSwitch -> {
+                    referencedStates.add(parseStateId(context.getLabelPool().getName(lookupSwitch.dflt.getLabel())));
+                    for (LabelNode labelNode : lookupSwitch.labels) {
+                        referencedStates.add(parseStateId(context.getLabelPool().getName(labelNode.getLabel())));
+                    }
+                }
+                default -> {
+                }
+            }
+            if (!changesFlow && flattenControlFlow) {
                 int nextState = (instruction + 1 < instructionCount) ? states[instruction + 1] : fakeState;
-                appendStateTransition(flattenControlFlow, block, "            ", nextState, stateObfuscation);
+                appendStateTransition(true, block, "            ", nextState, stateObfuscation);
             }
         }
 
-        StringBuilder fakeBlock = stateBlocks.computeIfAbsent(fakeState, k -> new StringBuilder());
-        appendStateTransition(flattenControlFlow, fakeBlock, "            ", states[0], stateObfuscation);
+        if (flattenControlFlow) {
+            StringBuilder fakeBlock = stateBlocks.computeIfAbsent(fakeState, k -> new StringBuilder());
+            appendStateTransition(true, fakeBlock, "            ", states[0], stateObfuscation);
+        }
 
         boolean hasAddedNewBlocks = true;
         Set<CatchesBlock> proceedBlocks = new HashSet<>();
@@ -675,14 +788,16 @@ public class MethodProcessor {
                 }
                 proceedBlocks.add(catchBlock);
                 int catchState = Integer.parseInt(context.catches.get(catchBlock));
+                referencedStates.add(catchState);
                 StringBuilder catchBody = stateBlocks.computeIfAbsent(catchState, k -> new StringBuilder());
-                CatchesBlock.CatchBlock currentCatchBlock = catchBlock.getCatches().get(0);
+                CatchesBlock.CatchBlock currentCatchBlock = catchBlock.getCatches().getFirst();
                 if (currentCatchBlock.getClazz() == null) {
                     catchBody.append("            ")
                             .append(context.getSnippet("TRYCATCH_ANY_L", Util.createMap(
                                     "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
                             )))
                             .append("\n");
+                    referencedStates.add(parseStateId(context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())));
                     continue;
                 }
                 catchBody.append("            ")
@@ -691,6 +806,7 @@ public class MethodProcessor {
                                 "handler_block", context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())
                         )))
                         .append("\n");
+                referencedStates.add(parseStateId(context.getLabelPool().getName(currentCatchBlock.getHandler().getLabel())));
                 if (catchBlock.getCatches().size() == 1) {
                     catchBody.append("            ")
                             .append(context.getSnippet("TRYCATCH_END_STACK", Util.createMap(
@@ -709,13 +825,12 @@ public class MethodProcessor {
                                 "handler_block", context.catches.get(nextCatchesBlock)
                         )))
                         .append("\n");
+                referencedStates.add(parseStateId(context.catches.get(nextCatchesBlock)));
             }
         }
 
-        if (context.classCacheDeclarations.length() > 0 && context.classCacheInsertPosition >= 0) {
-            output.insert(context.classCacheInsertPosition, context.classCacheDeclarations.toString());
-            context.classCacheDeclarations.setLength(0);
-            context.classCacheInsertPosition = -1;
+        if (context.verifiedClassPreamble.length() > 0 && context.verifiedClassPreambleInsertionPoint >= 0) {
+            output.insert(context.verifiedClassPreambleInsertionPoint, context.verifiedClassPreamble.toString());
         }
 
         String defaultBlock = String.format("            return (%s) 0;\n", CPP_TYPES[context.ret.getSort()]);
@@ -730,7 +845,7 @@ public class MethodProcessor {
             );
             output.append(stateMachine);
         } else {
-            output.append(buildLinearControlFlow(stateBlocks, defaultBlock));
+            output.append(buildLinearControlFlow(stateBlocks, defaultBlock, referencedStates));
         }
         output.append("}\n");
 
@@ -758,65 +873,8 @@ public class MethodProcessor {
         }
     }
 
-    public static ClassCacheAccess ensureClassHandle(MethodContext context, String owner, String trimmedTryCatchBlock) {
-        int classId = context.getCachedClasses().getId(owner);
-        String localVar = context.verifiedClasses.computeIfAbsent(classId,
-                id -> String.format("__ngen_local_class_%d", id));
-        String flagName = String.format("__ngen_local_class_ready_%d", classId);
-
-        if (!context.verifiedClassFlags.get(classId)) {
-            context.verifiedClassFlags.set(classId);
-            context.classCacheDeclarations
-                    .append(String.format("    jclass %s = nullptr;\n", localVar))
-                    .append(String.format("    bool %s = false;\n\n", flagName));
-        }
-
-        StringBuilder guard = new StringBuilder();
-        guard.append("if (!").append(flagName).append(") {\n");
-        guard.append("        ").append(localVar)
-                .append(" = (jclass) env->NewLocalRef(cclasses[").append(classId).append("]);\n");
-        guard.append("        if (!").append(localVar).append(") {\n");
-        guard.append("            cclasses_mtx[").append(classId).append("].lock();\n");
-        guard.append("            if (!cclasses[").append(classId).append("] || env->IsSameObject(cclasses[")
-                .append(classId).append("], NULL)) {\n");
-        guard.append("                if (jclass clazz = ").append(getClassGetter(context, owner)).append(") {\n");
-        guard.append("                    cclasses[").append(classId)
-                .append("] = (jclass) env->NewWeakGlobalRef(clazz);\n");
-        guard.append("                    env->DeleteLocalRef(clazz);\n");
-        guard.append("                }\n");
-        guard.append("            }\n");
-        guard.append("            cclasses_mtx[").append(classId).append("].unlock(); ")
-                .append(trimmedTryCatchBlock).append("\n");
-        guard.append("            ").append(localVar)
-                .append(" = (jclass) env->NewLocalRef(cclasses[").append(classId).append("]);\n");
-        guard.append("        }\n");
-        guard.append("        ").append(flagName).append(" = ").append(localVar).append(" != nullptr;\n");
-        guard.append("        if (!").append(flagName).append(") { ")
-                .append(trimmedTryCatchBlock).append(" }\n");
-        guard.append("    }\n");
-
-        return new ClassCacheAccess(guard.toString(), localVar);
-    }
-
-    public static final class ClassCacheAccess {
-        private final String guard;
-        private final String local;
-
-        private ClassCacheAccess(String guard, String local) {
-            this.guard = guard;
-            this.local = local;
-        }
-
-        public String guard() {
-            return guard;
-        }
-
-        public String local() {
-            return local;
-        }
-    }
-
-    private static String buildLinearControlFlow(LinkedHashMap<Integer, StringBuilder> stateBlocks, String defaultBlock) {
+    private static String buildLinearControlFlow(LinkedHashMap<Integer, StringBuilder> stateBlocks, String defaultBlock,
+                                                 Set<Integer> referencedStates) {
         StringBuilder linear = new StringBuilder();
         boolean firstBlock = true;
         for (Map.Entry<Integer, StringBuilder> entry : stateBlocks.entrySet()) {
@@ -824,7 +882,10 @@ public class MethodProcessor {
                 linear.append('\n');
             }
             firstBlock = false;
-            linear.append("    ").append(getLinearLabelName(entry.getKey())).append(":\n");
+            boolean needLabel = referencedStates.contains(entry.getKey());
+            if (needLabel) {
+                linear.append("    ").append(getLinearLabelName(entry.getKey())).append(":\n");
+            }
             String blockContent = linearizeStateAssignments(entry.getValue().toString());
             if (!blockContent.isEmpty()) {
                 linear.append(blockContent);
@@ -835,7 +896,7 @@ public class MethodProcessor {
         }
         String fallback = linearizeStateAssignments(defaultBlock);
         if (!fallback.isEmpty()) {
-            if (linear.length() > 0 && linear.charAt(linear.length() - 1) != '\n') {
+            if (!linear.isEmpty() && linear.charAt(linear.length() - 1) != '\n') {
                 linear.append('\n');
             }
             linear.append(fallback);
@@ -851,7 +912,7 @@ public class MethodProcessor {
             return "";
         }
         Matcher matcher = STATE_ASSIGNMENT_PATTERN.matcher(code);
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
             String rawState = matcher.group(1);
             matcher.appendReplacement(sb, Matcher.quoteReplacement("goto " + getLinearLabelName(rawState) + ";"));
@@ -875,6 +936,17 @@ public class MethodProcessor {
             sanitized = "0";
         }
         return negative ? "__ngen_label_m" + sanitized : "__ngen_label_" + sanitized;
+    }
+
+    private static int parseStateId(String state) {
+        if (state == null || state.isEmpty()) {
+            throw new IllegalStateException("State id is null or empty");
+        }
+        try {
+            return Integer.parseInt(state);
+        } catch (NumberFormatException ex) {
+            throw new IllegalStateException("Unexpected state id: " + state, ex);
+        }
     }
 
 }

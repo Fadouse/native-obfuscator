@@ -1,5 +1,6 @@
 package by.radioegor146;
 
+import dev.skidfuscator.obfuscator.FlowExceptionMode;
 import picocli.CommandLine;
 
 import java.io.File;
@@ -61,6 +62,14 @@ public class Main {
         @CommandLine.Option(names = {"--flatten-control-flow"}, description = "Enable control flow flattening in native methods")
         private boolean flattenControlFlow;
 
+        @CommandLine.Option(names = {"--obfuscate-strings"}, defaultValue = "true",
+                description = "Encrypt string literals stored in the native string pool")
+        private boolean obfuscateStrings = true;
+
+        @CommandLine.Option(names = {"--obfuscate-constants"}, defaultValue = "true",
+                description = "Encode primitive LDC constants and decode them at runtime")
+        private boolean obfuscateConstants = true;
+
         @CommandLine.Option(names = {"--enable-java-obfuscation"}, description = "Enable Java-layer obfuscation with control flow flattening")
         private boolean enableJavaObfuscation;
 
@@ -75,6 +84,80 @@ public class Main {
 
         @CommandLine.Option(names = {"--enable-native-obfuscation"}, defaultValue = "true", description = "Enable native obfuscation (default: true)")
         private boolean enableNativeObfuscation;
+
+        @CommandLine.Option(names = {"--java-string-encryption"}, negatable = true, description = "Toggle Skidfuscator string encryption stage (default: enabled)")
+        private boolean javaStringEncryption = true;
+
+        @CommandLine.Option(names = {"--java-number-obfuscation"}, negatable = true, description = "Toggle Skidfuscator numeric constant obfuscation stage (default: enabled)")
+        private boolean javaNumberObfuscation = true;
+
+        @CommandLine.Option(names = {"--java-flow-obfuscation"}, negatable = true, description = "Toggle Skidfuscator control-flow transformers (default: enabled)")
+        private boolean javaFlowObfuscation = true;
+
+        @CommandLine.Option(names = {"--java-flow-exception-mode"}, defaultValue = "STANDARD",
+                description = "Control bogus flow exception strategy: ${COMPLETION-CANDIDATES}")
+        private FlowExceptionMode javaFlowExceptionMode = FlowExceptionMode.STANDARD;
+
+        @CommandLine.Option(names = {"--java-sdk-injection"}, negatable = true, description = "Toggle Skidfuscator SDK runtime injection (default: disabled)")
+        private boolean javaSdkInjection = false;
+
+        @CommandLine.Option(names = {"--java-vm-hashing"}, negatable = true, description = "Toggle Skidfuscator VM-based hashing (experimental, default: disabled)")
+        private boolean javaVmHashing = false;
+
+        @CommandLine.Option(names = {"--enable-anti-debug"}, description = "Enable anti-debug protection")
+        private boolean enableAntiDebug;
+
+        @CommandLine.Option(names = {"--ghot-struct-nullification"}, description = "Enable gHotSpotVMStructs nullification")
+        private boolean gHotStructNullification;
+
+        @CommandLine.Option(names = {"--debugger-detection"}, description = "Enable debugger detection")
+        private boolean debuggerDetection;
+
+        @CommandLine.Option(names = {"--vm-protection"}, description = "Enable VM protection")
+        private boolean vmProtection;
+
+        @CommandLine.Option(names = {"--anti-tamper"}, description = "Enable anti-tamper checks")
+        private boolean antiTamper;
+        @CommandLine.Option(names = {"--anti-debug-api-checks"}, negatable = true,
+                description = "Toggle API-based debugger detection (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugApiChecks;
+
+        @CommandLine.Option(names = {"--anti-debug-tracer-check"}, negatable = true,
+                description = "Toggle tracer PID checks (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugTracerCheck;
+
+        @CommandLine.Option(names = {"--anti-debug-ptrace-check"}, negatable = true,
+                description = "Toggle ptrace self-test detection (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugPtraceCheck;
+
+        @CommandLine.Option(names = {"--anti-debug-process-scan"}, negatable = true,
+                description = "Toggle debugger process scanning heuristics (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugProcessScan;
+
+        @CommandLine.Option(names = {"--anti-debug-module-scan"}, negatable = true,
+                description = "Toggle suspicious module scanning (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugModuleScan;
+
+        @CommandLine.Option(names = {"--anti-debug-env-scan"}, negatable = true,
+                description = "Toggle environment-based debugger detection (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugEnvScan;
+
+        @CommandLine.Option(names = {"--anti-debug-timing-check"}, negatable = true,
+                description = "Toggle timing anomaly detection (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugTimingCheck;
+
+        @CommandLine.Option(names = {"--anti-debug-agent-blocking"}, negatable = true,
+                description = "Toggle JVMTI agent blocking hooks (default: follows --vm-protection)")
+        private Boolean antiDebugAgentBlocking;
+
+        @CommandLine.Option(names = {"--anti-debug-register-scrub"}, negatable = true,
+                description = "Toggle hardware breakpoint scrubbing (default: enabled when debugger detection is enabled)")
+        private Boolean antiDebugRegisterScrub;
+
+        @CommandLine.Option(names = {"--anti-debug-logging"}, negatable = true,
+                description = "Toggle verbose anti-debug debug logging output")
+        private Boolean antiDebugLogging;
+
 
         @Override
         public Integer call() throws Exception {
@@ -106,10 +189,82 @@ public class Main {
                 javaWhiteList = Files.readAllLines(javaWhiteListFile.toPath(), StandardCharsets.UTF_8);
             }
 
-            new NativeObfuscator().process(jarFile.toPath(), Paths.get(outputDirectory),
-                    libs, blackList, whiteList, libraryName, customLibraryDirectory, platform, useAnnotations, generateDebugJar,
-                    enableVirtualization, enableJit, flattenControlFlow, enableJavaObfuscation, javaObfuscationStrength,
-                    javaBlackList, javaWhiteList, enableNativeObfuscation);
+            // Create protection configuration
+            ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
+                    obfuscateStrings, obfuscateConstants);
+
+            // Create anti-debug configuration
+            AntiDebugConfig.Builder antiDebugBuilder = new AntiDebugConfig.Builder()
+                    .setGHotSpotVMStructsNullification(gHotStructNullification)
+                    .setDebuggerDetection(debuggerDetection)
+                    .setVmProtectionEnabled(vmProtection)
+                    .setAntiTamperEnabled(antiTamper);
+
+            if (antiDebugAgentBlocking != null) {
+                antiDebugBuilder.setJvmtiAgentBlocking(antiDebugAgentBlocking);
+            }
+            if (antiDebugApiChecks != null) {
+                antiDebugBuilder.setDebuggerApiChecks(antiDebugApiChecks);
+            }
+            if (antiDebugTracerCheck != null) {
+                antiDebugBuilder.setDebuggerTracerCheck(antiDebugTracerCheck);
+            }
+            if (antiDebugPtraceCheck != null) {
+                antiDebugBuilder.setDebuggerPtraceCheck(antiDebugPtraceCheck);
+            }
+            if (antiDebugProcessScan != null) {
+                antiDebugBuilder.setDebuggerProcessScan(antiDebugProcessScan);
+            }
+            if (antiDebugModuleScan != null) {
+                antiDebugBuilder.setDebuggerModuleScan(antiDebugModuleScan);
+            }
+            if (antiDebugEnvScan != null) {
+                antiDebugBuilder.setDebuggerEnvironmentScan(antiDebugEnvScan);
+            }
+            if (antiDebugTimingCheck != null) {
+                antiDebugBuilder.setDebuggerTimingCheck(antiDebugTimingCheck);
+            }
+            if (antiDebugRegisterScrub != null) {
+                antiDebugBuilder.setDebugRegisterScrubbing(antiDebugRegisterScrub);
+            }
+            if (antiDebugLogging != null) {
+                antiDebugBuilder.setDebugLoggingEnabled(antiDebugLogging);
+            }
+
+            AntiDebugConfig antiDebugConfig = antiDebugBuilder.build();
+
+            // Create comprehensive configuration
+            ObfuscatorConfig config = new ObfuscatorConfig.Builder()
+                    .setInputJarPath(jarFile.toPath())
+                    .setOutputDir(Paths.get(outputDirectory))
+                    .setInputLibs(libs)
+                    .setBlackList(blackList)
+                    .setWhiteList(whiteList)
+                    .setPlainLibName(libraryName)
+                    .setCustomLibraryDirectory(customLibraryDirectory)
+                    .setPlatform(platform)
+                    .setUseAnnotations(useAnnotations)
+                    .setGenerateDebugJar(generateDebugJar)
+                    .setProtectionConfig(protectionConfig)
+                    .setAntiDebugConfig(antiDebugConfig)
+                    .setEnableJavaObfuscation(enableJavaObfuscation)
+                    .setJavaObfuscationStrength(javaObfuscationStrength)
+                    .setJavaBlackList(javaBlackList)
+                    .setJavaWhiteList(javaWhiteList)
+                    .setEnableNativeObfuscation(enableNativeObfuscation)
+                    .setSkidStringObfuscation(javaStringEncryption)
+                    .setSkidNumberObfuscation(javaNumberObfuscation)
+                    .setSkidFlowObfuscation(javaFlowObfuscation)
+                    .setSkidFlowExceptionMode(javaFlowExceptionMode)
+                    .setSkidSdkInjection(javaSdkInjection)
+                    .setSkidVmHashing(javaVmHashing)
+                    .build();
+
+            // Validate configuration
+            config.validateAndWarn();
+
+            // Process with new configuration structure
+            new NativeObfuscator().process(config);
 
             return 0;
         }

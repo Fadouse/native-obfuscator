@@ -1,15 +1,16 @@
 package by.radioegor146.javaobf;
 
-import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 
+/**
+ * Minimal compatibility container for UI components referencing the legacy Java obfuscation settings.
+ */
 public class JavaObfuscationConfig {
-
     public enum Strength {
-        LOW("Basic state machine with direct state transitions"),
-        MEDIUM("Enhanced state machine with arithmetic-based state calculations"),
-        HIGH("Advanced state machine with complex mathematical operations and dummy states");
+        LOW("Low (light transformations)"),
+        MEDIUM("Medium (balanced protection)"),
+        HIGH("High (aggressive transformations)");
 
         private final String description;
 
@@ -24,18 +25,18 @@ public class JavaObfuscationConfig {
 
     private final boolean enabled;
     private final Strength strength;
-    private final List<String> javaBlackList;
-    private final List<String> javaWhiteList;
+    private final List<String> blackList;
+    private final List<String> whiteList;
 
     public JavaObfuscationConfig(boolean enabled, Strength strength) {
-        this(enabled, strength, new ArrayList<>(), new ArrayList<>());
+        this(enabled, strength, Collections.emptyList(), Collections.emptyList());
     }
 
-    public JavaObfuscationConfig(boolean enabled, Strength strength, List<String> javaBlackList, List<String> javaWhiteList) {
+    public JavaObfuscationConfig(boolean enabled, Strength strength, List<String> blackList, List<String> whiteList) {
         this.enabled = enabled;
-        this.strength = Objects.requireNonNull(strength, "strength");
-        this.javaBlackList = new ArrayList<>(Objects.requireNonNull(javaBlackList, "javaBlackList"));
-        this.javaWhiteList = new ArrayList<>(Objects.requireNonNull(javaWhiteList, "javaWhiteList"));
+        this.strength = strength;
+        this.blackList = blackList == null ? Collections.emptyList() : blackList;
+        this.whiteList = whiteList == null ? Collections.emptyList() : whiteList;
     }
 
     public boolean isEnabled() {
@@ -46,20 +47,11 @@ public class JavaObfuscationConfig {
         return strength;
     }
 
-    public List<String> getJavaBlackList() {
-        return new ArrayList<>(javaBlackList);
+    public List<String> getBlackList() {
+        return blackList;
     }
 
-    public List<String> getJavaWhiteList() {
-        return new ArrayList<>(javaWhiteList);
-    }
-
-    public static JavaObfuscationConfig defaultConfig() {
-        return new JavaObfuscationConfig(false, Strength.MEDIUM);
-    }
-
-    public static JavaObfuscationConfig enabled(Strength strength) {
-        return new JavaObfuscationConfig(true, strength);
+    public List<String> getWhiteList() {
+        return whiteList;
     }
 }
-

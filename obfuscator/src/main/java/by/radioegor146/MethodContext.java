@@ -68,38 +68,15 @@ public class MethodContext {
     public boolean enumSwitchMapOnStack;
     public boolean lastWasEnumOrdinal;
 
-    /**
-     * Per-method cache of verified class references. Each entry keeps track of a
-     * lazily materialized strong local reference for the corresponding
-     * {@code classId}. Instruction handlers request these handles via
-     * {@link MethodProcessor#ensureClassHandle(MethodContext, String, String)},
-     * which also emits the runtime guard to refresh the weak global reference
-     * when necessary.
-     */
-    public final Map<Integer, String> verifiedClasses = new HashMap<>();
+    public final Map<Integer, String> verifiedClassLocals;
+    public final Map<Integer, String> verifiedClassFlagNames;
+    public final StringBuilder verifiedClassPreamble;
+    public int verifiedClassPreambleInsertionPoint;
 
-    /**
-     * Tracks which class identifiers already had their declaration emitted in
-     * the current native method body. Using a {@link BitSet} keeps lookups
-     * compact while avoiding duplicate declarations when the same class is
-     * requested multiple times.
-     */
-    public final BitSet verifiedClassFlags = new BitSet();
+    // Map of method signatures (name + descriptor) to their C++ native method names
+    // Used for direct C++ call optimization within the same class
+    public Map<String, String> transpiledMethodNames;
 
-    /**
-     * Buffer holding the C++ declarations for class cache locals. The contents
-     * are injected into the method prologue by {@link MethodProcessor} once all
-     * instruction handlers have run.
-     */
-    public final StringBuilder classCacheDeclarations = new StringBuilder();
-
-    /**
-     * Absolute position within {@link #output} where the class cache
-     * declarations should be inserted. This is populated by
-     * {@link MethodProcessor} after the generic prologue is emitted so that the
-     * declarations appear before the state machine implementation.
-     */
-    public int classCacheInsertPosition = -1;
 
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
@@ -118,6 +95,12 @@ public class MethodContext {
         this.locals = new ArrayList<>();
         this.tryCatches = new HashSet<>();
         this.catches = new HashMap<>();
+
+        this.verifiedClassLocals = new HashMap<>();
+        this.verifiedClassFlagNames = new HashMap<>();
+        this.verifiedClassPreamble = new StringBuilder();
+        this.verifiedClassPreambleInsertionPoint = -1;
+        this.transpiledMethodNames = new HashMap<>();
     }
 
     public NodeCache<String> getCachedStrings() {

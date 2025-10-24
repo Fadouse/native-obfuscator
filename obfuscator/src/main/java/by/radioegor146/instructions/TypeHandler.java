@@ -13,18 +13,9 @@ public class TypeHandler extends GenericInstructionHandler<TypeInsnNode> {
         props.put("desc", node.desc);
 
         int classId = context.getCachedClasses().getId(node.desc);
-        context.output.append(String.format("if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { cclasses_mtx[%d].lock(); if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } cclasses_mtx[%d].unlock(); %s } ",
-                classId,
-                classId,
-                classId,
-                classId,
-                classId,
-                MethodProcessor.getClassGetter(context, node.desc),
-                classId,
-                classId,
-                trimmedTryCatchBlock));
+        String classPtr = MethodProcessor.ensureVerifiedClass(context, classId, node.desc, trimmedTryCatchBlock);
 
-        props.put("desc_ptr", context.getCachedClasses().getPointer(node.desc));
+        props.put("class_ptr", classPtr);
     }
 
     @Override

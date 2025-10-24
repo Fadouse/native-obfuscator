@@ -16,29 +16,42 @@ public class FieldHandler extends GenericInstructionHandler<FieldInsnNode> {
         CachedFieldInfo info = new CachedFieldInfo(node.owner, node.name, node.desc, isStatic);
 
         instructionName += "_" + Type.getType(node.desc).getSort();
-        MethodProcessor.ClassCacheAccess classAccess = MethodProcessor.ensureClassHandle(
-                context, node.owner, trimmedTryCatchBlock);
-        context.output.append(classAccess.guard());
+        int classId = context.getCachedClasses().getId(node.owner);
 
-        if (isStatic) {
-            props.put("class_ptr", classAccess.local());
+        // Optimization: skip class verification and initialization for same-class field access
+        boolean isSameClass = node.owner.equals(context.clazz.name);
+        String classPtr;
+
+        if (isSameClass && isStatic) {
+            // Accessing our own static field - class must already be initialized
+            classPtr = "clazz";
+        } else {
+            // Different class - need full verification
+            classPtr = MethodProcessor.ensureVerifiedClass(context, classId, node.owner, trimmedTryCatchBlock);
+
+            // Mirror JVM semantics: static field access triggers class initialization
+            if (isStatic) {
+                String dotted = node.owner.replace('/', '.');
+                context.output.append(String.format(
+                        "if (!cclasses_initialized[%1$d].load()) { cclasses_mtx[%1$d].lock(); if (!cclasses_initialized[%1$d].load()) { utils::ensure_initialized(env, classloader, %2$s); if (!env->ExceptionCheck()) { cclasses_initialized[%1$d].store(true); } } cclasses_mtx[%1$d].unlock(); %3$s } ",
+                        classId,
+                        context.getCachedStrings().getPointer(dotted),
+                        trimmedTryCatchBlock));
+            }
         }
 
-        // Mirror JVM semantics: static field access triggers class initialization.
         if (isStatic) {
-            String dotted = node.owner.replace('/', '.');
-            context.output.append(String.format("utils::ensure_initialized(env, classloader, %s); %s ",
-                    context.getCachedStrings().getPointer(dotted), trimmedTryCatchBlock));
+            props.put("class_ptr", classPtr);
         }
 
         int fieldId = context.getCachedFields().getId(info);
         props.put("fieldid", context.getCachedFields().getPointer(info));
 
-        context.output.append(String.format("if (!cfields[%d]) { cfields[%d] = env->Get%sFieldID(%s, %s, %s); %s  } ",
-                fieldId,
+        // Use std::call_once for lock-free thread-safe field ID initialization
+        context.output.append(String.format("std::call_once(cfields_init_flag[%1$d], [&]() { cfields[%1$d] = env->Get%2$sFieldID(%3$s, %4$s, %5$s); }); %6$s ",
                 fieldId,
                 isStatic ? "Static" : "",
-                classAccess.local(),
+                classPtr,
                 context.getStringPool().get(node.name),
                 context.getStringPool().get(node.desc),
                 trimmedTryCatchBlock));

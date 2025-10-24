@@ -8,8 +8,8 @@
 #include <cstring>
 #include <string>
 #include <cstdio>
-#include <unordered_set>
 #include <mutex>
+#include <atomic>
 #include <initializer_list>
 #include <cstdint>
 
@@ -17,7 +17,18 @@
 
 #define NATIVE_JVM_HPP_GUARD
 
-namespace native_jvm::utils {
+namespace native_jvm {
+
+    class LocalRefSet {
+    public:
+        inline void insert(jobject) noexcept {}
+
+        inline void erase(jobject) noexcept {}
+
+        inline void clear() noexcept {}
+    };
+
+    namespace utils {
 
     void init_utils(JNIEnv *env);
 
@@ -95,7 +106,7 @@ namespace native_jvm::utils {
     void bastore(JNIEnv *env, jarray array, jint index, jint value);
     jbyte baload(JNIEnv *env, jarray array, jint index);
 
-    void clear_refs(JNIEnv *env, std::unordered_set<jobject> &refs);
+    void clear_refs(JNIEnv *env, LocalRefSet &refs);
 
     jstring get_interned(JNIEnv *env, jstring value);
 
@@ -105,10 +116,58 @@ namespace native_jvm::utils {
     void ensure_initialized(JNIEnv *env, jobject classloader, const char *class_name_dot);
     void ensure_initialized(JNIEnv *env, jobject classloader, jstring class_name_dot);
 
-    jint decode_int(jint enc, jint key, jint method_id, jint class_id, jint seed);
-    jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id, jint seed);
-    jfloat decode_float(jint enc, jint key, jint method_id, jint class_id, jint seed);
-    jdouble decode_double(jlong enc, jlong key, jint method_id, jint class_id, jint seed);
+    inline uint32_t rotl32(uint32_t v, int r) {
+        return (v << r) | (v >> (32 - r));
+    }
+
+    inline uint32_t chacha_round(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
+        a += b; d ^= a; d = rotl32(d, 16);
+        c += d; b ^= c; b = rotl32(b, 12);
+        a += b; d ^= a; d = rotl32(d, 8);
+        c += d; b ^= c; b = rotl32(b, 7);
+        return a;
+    }
+
+    inline uint32_t mix32(uint32_t key, uint32_t method_id, uint32_t class_id, uint32_t seed) {
+        return chacha_round(key, method_id, class_id, seed);
+    }
+
+    inline uint64_t mix64(uint64_t key, uint32_t method_id, uint32_t class_id, uint32_t seed) {
+        uint32_t k1 = static_cast<uint32_t>(key);
+        uint32_t k2 = static_cast<uint32_t>(key >> 32);
+        uint32_t s2 = seed ^ 0x9E3779B9u;
+        uint32_t r1 = chacha_round(k1, method_id, class_id, seed);
+        uint32_t r2 = chacha_round(k2, class_id, method_id, s2);
+        return (static_cast<uint64_t>(r2) << 32) | r1;
+    }
+
+    inline jint decode_int(jint enc, jint key, jint method_id, jint class_id, jint seed) {
+        uint32_t mixed = mix32(static_cast<uint32_t>(key), static_cast<uint32_t>(method_id),
+                static_cast<uint32_t>(class_id), static_cast<uint32_t>(seed));
+        return enc ^ static_cast<jint>(mixed);
+    }
+
+    inline jlong decode_long(jlong enc, jlong key, jint method_id, jint class_id, jint seed) {
+        uint64_t mixed = mix64(static_cast<uint64_t>(key), static_cast<uint32_t>(method_id),
+                static_cast<uint32_t>(class_id), static_cast<uint32_t>(seed));
+        return enc ^ static_cast<jlong>(mixed);
+    }
+
+    inline jfloat decode_float(jint enc, jint key, jint method_id, jint class_id, jint seed) {
+        jint dec = decode_int(enc, key, method_id, class_id, seed);
+        jfloat result;
+        std::memcpy(&result, &dec, sizeof(result));
+        return result;
+    }
+
+    inline jdouble decode_double(jlong enc, jlong key, jint method_id, jint class_id, jint seed) {
+        jlong dec = decode_long(enc, key, method_id, class_id, seed);
+        jdouble result;
+        std::memcpy(&result, &dec, sizeof(result));
+        return result;
+    }
+    }
+
 }
 
 #endif

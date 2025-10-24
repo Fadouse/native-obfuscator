@@ -55,6 +55,20 @@ public class StringPoolTest {
     }
 
     @Test
+    public void testGetWithoutObfuscation() {
+        StringPool stringPool = new StringPool(false);
+        String res = stringPool.get("plain");
+        assertEquals("(char *)(string_pool + 0LL)", res);
+        String again = stringPool.get("plain");
+        assertEquals(res, again);
+        assertFalse(res.contains("decrypt_string"));
+
+        String build = stringPool.build();
+        assertTrue(build.contains("static unsigned char pool[6LL]"));
+        assertFalse(build.contains("decode_key"));
+    }
+
+    @Test
     public void testRandomEncryptionAndCrypt() throws Exception {
         StringPool pool1 = new StringPool();
         pool1.get("test");

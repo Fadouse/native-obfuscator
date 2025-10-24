@@ -1,21 +1,25 @@
 package by.radioegor146;
 
 import by.radioegor146.bytecode.PreprocessorRunner;
-import by.radioegor146.javaobf.JavaObfuscationConfig;
-import by.radioegor146.javaobf.JavaObfuscator;
 import by.radioegor146.source.CMakeFilesBuilder;
 import by.radioegor146.source.ClassSourceBuilder;
 import by.radioegor146.source.MainSourceBuilder;
 import by.radioegor146.source.StringPool;
+import dev.skidfuscator.obfuscator.FlowExceptionMode;
+import dev.skidfuscator.obfuscator.Skidfuscator;
+import dev.skidfuscator.obfuscator.SkidfuscatorSession;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.ClassRemapper;
 import org.objectweb.asm.commons.Remapper;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.InsnNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.gravit.launchserver.asm.ClassMetadataReader;
@@ -25,9 +29,14 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
@@ -48,6 +57,8 @@ public class NativeObfuscator {
     private final NodeCache<String> cachedClasses;
     private final NodeCache<CachedMethodInfo> cachedMethods;
     private final NodeCache<CachedFieldInfo> cachedFields;
+    private byte[] lastStringPoolBytes;
+    private byte[] lastNativeJvmSourceBytes;
 
     public static class InvokeDynamicInfo {
         private final String methodName;
@@ -99,11 +110,14 @@ public class NativeObfuscator {
                         List<String> blackList, List<String> whiteList, String plainLibName,
                         String customLibraryDirectory,
                         Platform platform, boolean useAnnotations, boolean generateDebugJar,
-                        boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow) throws IOException {
+                        boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow,
+                        boolean obfuscateStrings, boolean obfuscateConstants) throws IOException {
         // Default Java obfuscation disabled, native obfuscation enabled
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
                 platform, useAnnotations, generateDebugJar, enableVirtualization, enableJit, flattenControlFlow,
-                false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true);
+                obfuscateStrings, obfuscateConstants,
+                false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true,
+                true, true, true, false, false, FlowExceptionMode.STANDARD);
     }
 
     public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -111,31 +125,54 @@ public class NativeObfuscator {
                         String customLibraryDirectory,
                         Platform platform, boolean useAnnotations, boolean generateDebugJar,
                         boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow,
+                        boolean obfuscateStrings, boolean obfuscateConstants,
                         boolean enableJavaObfuscation, String javaObfuscationStrength,
-                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation) throws IOException {
-        ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow);
+                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation,
+                        boolean skidStringObfuscation, boolean skidNumberObfuscation,
+                        boolean skidFlowObfuscation, boolean skidSdkInjection,
+                        boolean skidVmHashing, FlowExceptionMode skidFlowExceptionMode) throws IOException {
+        ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
+                obfuscateStrings, obfuscateConstants);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
             throw new RuntimeException("Input jar can't be in the same directory as output directory");
         }
 
+        stringPool.reset(protectionConfig.isStringObfuscationEnabled());
+
         // Step 1: Apply Java obfuscation if enabled
         Path processedJarPath = inputJarPath;
         if (enableJavaObfuscation) {
-            logger.info("Starting Java-layer obfuscation...");
-            JavaObfuscationConfig.Strength strength;
-            try {
-                strength = JavaObfuscationConfig.Strength.valueOf(javaObfuscationStrength.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                logger.warn("Invalid Java obfuscation strength '{}', using MEDIUM", javaObfuscationStrength);
-                strength = JavaObfuscationConfig.Strength.MEDIUM;
-            }
+            logger.info("Starting Skidfuscator obfuscation...");
+            Path javaObfOutputDir = outputDir.resolve("java-obf-skid");
+            Files.createDirectories(javaObfOutputDir);
 
-            JavaObfuscationConfig javaConfig = new JavaObfuscationConfig(true, strength, javaBlackList, javaWhiteList);
-            JavaObfuscator javaObfuscator = new JavaObfuscator();
+            Path skidOutputJar = javaObfOutputDir.resolve(inputJarPath.getFileName().toString());
+            Path skidConfig = createSkidConfig(javaBlackList, javaWhiteList, javaObfOutputDir);
+            File[] skidLibs = inputLibs.stream().map(Path::toFile).toArray(File[]::new);
 
-            Path javaObfOutputDir = outputDir.resolve("java-obf-temp");
-            processedJarPath = javaObfuscator.process(inputJarPath, javaObfOutputDir, inputLibs, javaConfig, useAnnotations);
-            logger.info("Java-layer obfuscation completed. Output: {}", processedJarPath);
+            SkidfuscatorSession session = SkidfuscatorSession.builder()
+                    .input(inputJarPath.toFile())
+                    .output(skidOutputJar.toFile())
+                    .libs(skidLibs)
+                    .config(skidConfig != null ? skidConfig.toFile() : null)
+                    .analytics(false)
+                    .phantom(false)
+                    .fuckit(false)
+                    .renamer(false)
+                    .debug(logger.isDebugEnabled())
+                    .skidStringObfuscation(skidStringObfuscation)
+                    .skidNumberObfuscation(skidNumberObfuscation)
+                    .skidFlowObfuscation(skidFlowObfuscation)
+                    .skidSdkInjection(skidSdkInjection)
+                    .skidVmHashing(skidVmHashing)
+                    .flowExceptionMode(skidFlowExceptionMode)
+                    .build();
+
+            Skidfuscator skidfuscator = new Skidfuscator(session);
+            skidfuscator.run();
+
+            processedJarPath = skidOutputJar;
+            logger.info("Skidfuscator obfuscation completed. Output: {}", processedJarPath);
         }
 
         // Step 2: Check if native obfuscation is disabled
@@ -172,6 +209,8 @@ public class NativeObfuscator {
         Util.copyResource("sources/micro_vm.hpp", cppDir);
         Util.copyResource("sources/vm_jit.cpp", cppDir);
         Util.copyResource("sources/vm_jit.hpp", cppDir);
+        Util.copyResource("sources/anti_debug.cpp", cppDir);
+        Util.copyResource("sources/anti_debug.hpp", cppDir);
 
         String projectName = "native_library";
 
@@ -186,6 +225,8 @@ public class NativeObfuscator {
         cMakeBuilder.addMainFile("micro_vm.cpp");
         cMakeBuilder.addMainFile("vm_jit.hpp");
         cMakeBuilder.addMainFile("vm_jit.cpp");
+        cMakeBuilder.addMainFile("anti_debug.hpp");
+        cMakeBuilder.addMainFile("anti_debug.cpp");
 
         if (platform != Platform.ANDROID) {
             cMakeBuilder.addFlag("USE_HOTSPOT");
@@ -253,9 +294,28 @@ public class NativeObfuscator {
                     ClassNode rawClassNode = new ClassNode(Opcodes.ASM7);
                     classReader.accept(rawClassNode, 0);
 
-                    if (!classMethodFilter.shouldProcess(rawClassNode) ||
-                            rawClassNode.methods.stream().noneMatch(method -> MethodProcessor.shouldProcess(method) &&
-                                    classMethodFilter.shouldProcess(rawClassNode, method))) {
+                    boolean shouldProcessClass = classMethodFilter.shouldProcess(rawClassNode);
+                    LinkedHashSet<String> nativeMethodKeys = rawClassNode.methods.stream()
+                            .filter(MethodProcessor::shouldProcess)
+                            .filter(method -> classMethodFilter.shouldProcess(rawClassNode, method))
+                            .map(method -> MethodProcessor.nameFromNode(method, rawClassNode))
+                            .collect(Collectors.toCollection(LinkedHashSet::new));
+
+                    boolean hasPartialNative = classMethodFilter.hasPartialMethodObfuscation(rawClassNode);
+                    if (hasPartialNative && logger.isDebugEnabled()) {
+                        logger.debug("Class {} will be partially transpiled to native code", rawClassNode.name);
+                    }
+
+                    if (!nativeMethodKeys.isEmpty()) {
+                        boolean hasClinit = rawClassNode.methods.stream()
+                                .filter(method -> "<clinit>".equals(method.name) && "()V".equals(method.desc))
+                                .anyMatch(method -> nativeMethodKeys.contains(MethodProcessor.nameFromNode(method, rawClassNode)));
+                        if (!hasClinit) {
+                            nativeMethodKeys.add(rawClassNode.name + "#<clinit>!()V");
+                        }
+                    }
+
+                    if (!shouldProcessClass || nativeMethodKeys.isEmpty()) {
                         logger.info("Skipping {}", rawClassNode.name);
                         if (useAnnotations) {
                             ClassMethodFilter.cleanAnnotations(rawClassNode);
@@ -277,8 +337,7 @@ public class NativeObfuscator {
                     logger.info("Preprocessing {}", rawClassNode.name);
 
                     rawClassNode.methods.stream()
-                            .filter(MethodProcessor::shouldProcess)
-                            .filter(methodNode -> classMethodFilter.shouldProcess(rawClassNode, methodNode))
+                            .filter(methodNode -> nativeMethodKeys.contains(MethodProcessor.nameFromNode(methodNode, rawClassNode)))
                             .forEach(methodNode -> PreprocessorRunner.preprocess(rawClassNode, methodNode, platform));
 
                     ClassWriter preprocessorClassWriter = new SafeClassWriter(metadataReader, Opcodes.ASM7 | ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
@@ -302,9 +361,15 @@ public class NativeObfuscator {
                     cachedMethods.clear();
                     cachedFields.clear();
 
+                    int registrationClassIndex = currentClassId;
+
                     try (ClassSourceBuilder cppBuilder =
                                  new ClassSourceBuilder(cppOutput, classNode.name, classIndexReference[0]++, stringPool)) {
                         StringBuilder instructions = new StringBuilder();
+                        boolean loaderInjected = false;
+
+                        // Build a map of all transpiled methods in this class for direct call optimization
+                        Map<String, String> transpiledMethodNames = new HashMap<>();
 
                         for (int i = 0; i < classNode.methods.size(); i++) {
                             MethodNode method = classNode.methods.get(i);
@@ -313,11 +378,12 @@ public class NativeObfuscator {
                                 continue;
                             }
 
-                            if (!classMethodFilter.shouldProcess(classNode, method)) {
+                            if (!nativeMethodKeys.contains(MethodProcessor.nameFromNode(method, classNode))) {
                                 continue;
                             }
 
                             MethodContext context = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
+                            context.transpiledMethodNames = transpiledMethodNames;
                             methodProcessor.processMethod(context);
                             instructions.append(context.output.toString().replace("\n", "\n    "));
 
@@ -327,16 +393,28 @@ public class NativeObfuscator {
                                 hiddenMethods.add(new HiddenCppMethod(context.proxyMethod, context.cppNativeMethodName));
                             }
 
+                            if ("<clinit>".equals(method.name) && "()V".equals(method.desc) && !context.skipNative) {
+                                loaderInjected = true;
+                            }
+
                             if ((classNode.access & Opcodes.ACC_INTERFACE) > 0) {
                                 method.access &= ~Opcodes.ACC_NATIVE;
                             }
+                        }
+
+                        if (!nativeMethodKeys.isEmpty() && !loaderInjected) {
+                            ensureLoaderInvocation(classNode, registrationClassIndex);
                         }
 
                         if (useAnnotations) {
                             ClassMethodFilter.cleanAnnotations(classNode);
                         }
 
-                        classNode.version = 52;
+                        // Preserve original class version if >= 52 (Java 8+) to maintain compatibility
+                        // with newer features like NestHost/NestMembers (Java 11+)
+                        if (classNode.version < 52) {
+                            classNode.version = 52;
+                        }
                         ClassWriter classWriter = new SafeClassWriter(metadataReader,
                                 Opcodes.ASM7 | ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
                         classNode.accept(classWriter);
@@ -344,7 +422,8 @@ public class NativeObfuscator {
 
                         cppBuilder.addHeader(cachedStrings.size(), cachedClasses.size(), cachedMethods.size(), cachedFields.size());
                         cppBuilder.addInstructions(instructions.toString());
-                        cppBuilder.registerMethods(cachedStrings, cachedClasses, nativeMethods.toString(), hiddenMethods);
+                        cppBuilder.registerMethods(cachedStrings, cachedClasses, cachedMethods, cachedFields,
+                                nativeMethods.toString(), hiddenMethods);
 
                         cMakeBuilder.addClassFile("output/" + cppBuilder.getHppFilename());
                         cMakeBuilder.addClassFile("output/" + cppBuilder.getCppFilename());
@@ -463,12 +542,423 @@ public class NativeObfuscator {
             metadataReader.close();
         }
 
-        Files.write(cppDir.resolve("string_pool.cpp"), stringPool.build().getBytes(StandardCharsets.UTF_8));
+        String stringPoolSource = stringPool.build();
+        lastStringPoolBytes = stringPool.getEncryptedBytes();
+        Files.write(cppDir.resolve("string_pool.cpp"), stringPoolSource.getBytes(StandardCharsets.UTF_8));
 
-        Files.write(cppDir.resolve("native_jvm_output.cpp"), mainSourceBuilder.build(nativeDir, currentClassId)
-                .getBytes(StandardCharsets.UTF_8));
+        String nativeJvmOutputSource = mainSourceBuilder.build(nativeDir, currentClassId);
+        lastNativeJvmSourceBytes = nativeJvmOutputSource.getBytes(StandardCharsets.UTF_8);
+        Files.write(cppDir.resolve("native_jvm_output.cpp"), lastNativeJvmSourceBytes);
 
         Files.write(cppDir.resolve("CMakeLists.txt"), cMakeBuilder.build().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Process JAR with comprehensive configuration object
+     * @param config Complete obfuscation configuration
+     * @throws IOException if processing fails
+     */
+    public void process(ObfuscatorConfig config) throws IOException {
+        processWithAntiDebug(config.getInputJarPath(), config.getOutputDir(), config.getInputLibs(),
+                config.getBlackList(), config.getWhiteList(), config.getPlainLibName(),
+                config.getCustomLibraryDirectory(), config.getPlatform(),
+                config.isUseAnnotations(), config.isGenerateDebugJar(),
+                config.getProtectionConfig(), config.getAntiDebugConfig(),
+                config.isEnableJavaObfuscation(), config.getJavaObfuscationStrength(),
+                config.getJavaBlackList(), config.getJavaWhiteList(), config.isEnableNativeObfuscation(),
+                config.isSkidStringObfuscation(), config.isSkidNumberObfuscation(),
+                config.isSkidFlowObfuscation(), config.isSkidSdkInjection(),
+                config.isSkidVmHashing(), config.getSkidFlowExceptionMode());
+    }
+
+    private void processWithAntiDebug(Path inputJarPath, Path outputDir, List<Path> inputLibs,
+                        List<String> blackList, List<String> whiteList, String plainLibName,
+                        String customLibraryDirectory,
+                        Platform platform, boolean useAnnotations, boolean generateDebugJar,
+                        ProtectionConfig protectionConfig, AntiDebugConfig antiDebugConfig,
+                        boolean enableJavaObfuscation, String javaObfuscationStrength,
+                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation,
+                        boolean skidStringObfuscation, boolean skidNumberObfuscation,
+                        boolean skidFlowObfuscation, boolean skidSdkInjection,
+                        boolean skidVmHashing, FlowExceptionMode skidFlowExceptionMode) throws IOException {
+
+        // Call the existing process method but with extended functionality
+        process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
+                platform, useAnnotations, generateDebugJar,
+                protectionConfig.isVirtualizationEnabled(), protectionConfig.isJitEnabled(),
+                protectionConfig.isControlFlowFlatteningEnabled(),
+                protectionConfig.isStringObfuscationEnabled(), protectionConfig.isConstantObfuscationEnabled(),
+                enableJavaObfuscation, javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation,
+                skidStringObfuscation, skidNumberObfuscation, skidFlowObfuscation, skidSdkInjection, skidVmHashing,
+                skidFlowExceptionMode);
+
+        // Generate anti-debug configuration header if any anti-debug features are enabled
+        if (antiDebugConfig.isAnyEnabled()) {
+            generateAntiDebugConfig(outputDir, outputDir.resolve("cpp"), antiDebugConfig, getNativeDir() + "/Loader");
+
+            // Update the generated native_jvm_output.cpp to include anti-debug initialization
+            updateNativeJvmOutputWithAntiDebug(outputDir.resolve("cpp"), antiDebugConfig);
+        }
+    }
+
+    private void ensureLoaderInvocation(ClassNode classNode, int registrationClassIndex) {
+        MethodNode clinit = classNode.methods.stream()
+                .filter(method -> "<clinit>".equals(method.name) && "()V".equals(method.desc))
+                .findFirst()
+                .orElseGet(() -> {
+                    MethodNode methodNode = new MethodNode(Opcodes.ASM7, Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+                    classNode.methods.add(methodNode);
+                    return methodNode;
+                });
+
+        if (containsLoaderCall(clinit)) {
+            return;
+        }
+
+        LdcInsnNode pushIndex = new LdcInsnNode(registrationClassIndex);
+        LdcInsnNode pushClass = new LdcInsnNode(Type.getObjectType(classNode.name));
+        MethodInsnNode invokeRegister = new MethodInsnNode(Opcodes.INVOKESTATIC, nativeDir + "/Loader",
+                "registerNativesForClass", "(ILjava/lang/Class;)V", false);
+
+        AbstractInsnNode first = clinit.instructions.getFirst();
+        if (first != null) {
+            // Insert instructions in correct order: pushIndex, then pushClass, then invokeRegister
+            clinit.instructions.insertBefore(first, pushIndex);
+            clinit.instructions.insert(pushIndex, pushClass);
+            clinit.instructions.insert(pushClass, invokeRegister);
+        } else {
+            clinit.instructions.add(pushIndex);
+            clinit.instructions.add(pushClass);
+            clinit.instructions.add(invokeRegister);
+            clinit.instructions.add(new InsnNode(Opcodes.RETURN));
+        }
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("Injected native loader call into <clinit> of {}", classNode.name);
+        }
+    }
+
+    private boolean containsLoaderCall(MethodNode clinit) {
+        for (AbstractInsnNode insn = clinit.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode methodInsn
+                    && methodInsn.getOpcode() == Opcodes.INVOKESTATIC
+                    && methodInsn.owner.equals(nativeDir + "/Loader")
+                    && methodInsn.name.equals("registerNativesForClass")
+                    && methodInsn.desc.equals("(ILjava/lang/Class;)V")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Generates anti-debug configuration header file
+     */
+    private void generateAntiDebugConfig(Path outputDir, Path cppDir, AntiDebugConfig antiDebugConfig, String loaderClassInternalName) throws IOException {
+        if (loaderClassInternalName == null) {
+            loaderClassInternalName = "";
+        }
+
+        byte[] stringPoolBytes = lastStringPoolBytes == null ? new byte[0] : lastStringPoolBytes;
+        byte[] nativeSourceBytes = lastNativeJvmSourceBytes == null ? new byte[0] : lastNativeJvmSourceBytes;
+        int stringPoolLength = Math.max(1, stringPoolBytes.length);
+        byte[] stringPoolBytesForHash = new byte[stringPoolLength];
+        System.arraycopy(stringPoolBytes, 0, stringPoolBytesForHash, 0, stringPoolBytes.length);
+        byte[] stringPoolHash = sha256(stringPoolBytesForHash);
+        byte[] nativeSourceHash = sha256(nativeSourceBytes);
+
+        byte[] loaderClassHash = new byte[0];
+        boolean hasLoaderHash = false;
+        if (!loaderClassInternalName.isEmpty()) {
+            Path primaryJar = findPrimaryJar(outputDir);
+            if (primaryJar != null) {
+                byte[] loaderBytes = readJarEntry(primaryJar, loaderClassInternalName + ".class");
+                if (loaderBytes != null) {
+                    loaderClassHash = sha256(loaderBytes);
+                    hasLoaderHash = true;
+                }
+            }
+        }
+
+        StringBuilder configBuilder = new StringBuilder();
+        configBuilder.append("#ifndef ANTI_DEBUG_CONFIG_HPP_GUARD\n");
+        configBuilder.append("#define ANTI_DEBUG_CONFIG_HPP_GUARD\n\n");
+        configBuilder.append("#include \"anti_debug.hpp\"\n");
+        configBuilder.append("#include <cstddef>\n\n");
+        configBuilder.append("// Auto-generated anti-debug configuration\n");
+        configBuilder.append("namespace native_jvm::anti_debug::config {\n\n");
+
+        configBuilder.append("    constexpr bool ENABLE_GHOTSPOT_STRUCT_NULLIFICATION = ")
+                     .append(antiDebugConfig.isGHotSpotVMStructsNullificationEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_DETECTION = ")
+                     .append(antiDebugConfig.isDebuggerDetectionEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_API_CHECKS = ")
+                     .append(antiDebugConfig.isDebuggerApiChecksEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_TRACER_CHECK = ")
+                     .append(antiDebugConfig.isDebuggerTracerCheckEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_PTRACE_CHECK = ")
+                     .append(antiDebugConfig.isDebuggerPtraceCheckEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_PROCESS_SCAN = ")
+                     .append(antiDebugConfig.isDebuggerProcessScanEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_MODULE_SCAN = ")
+                     .append(antiDebugConfig.isDebuggerModuleScanEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_ENV_SCAN = ")
+                     .append(antiDebugConfig.isDebuggerEnvironmentScanEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUGGER_TIMING_CHECK = ")
+                     .append(antiDebugConfig.isDebuggerTimingCheckEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_VM_INTEGRITY_CHECKS = ")
+                     .append(antiDebugConfig.isVmProtectionEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_JVMTI_AGENT_BLOCKING = ")
+                     .append(antiDebugConfig.isJvmtiAgentBlockingEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_ANTI_TAMPER = ")
+                     .append(antiDebugConfig.isAntiTamperEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUG_REGISTER_SCRUBBING = ")
+                     .append(antiDebugConfig.isDebugRegisterScrubbingEnabled() ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr bool ENABLE_DEBUG_LOGGING = ")
+                     .append(antiDebugConfig.isDebugLoggingEnabled() ? "true" : "false")
+                     .append(";\n\n");
+
+        configBuilder.append("    constexpr std::size_t STRING_POOL_ENCRYPTED_SIZE = ")
+                     .append(stringPoolLength)
+                     .append("ULL;\n");
+        configBuilder.append("    constexpr unsigned char STRING_POOL_EXPECTED_HASH[32] = { ")
+                     .append(toCppByteArray(stringPoolHash))
+                     .append(" };\n");
+        configBuilder.append("    constexpr unsigned char NATIVE_SOURCE_EXPECTED_HASH[32] = { ")
+                     .append(toCppByteArray(nativeSourceHash))
+                     .append(" };\n");
+        configBuilder.append("    constexpr unsigned char LOADER_CLASS_EXPECTED_HASH[32] = { ")
+                     .append(toCppByteArray(hasLoaderHash ? loaderClassHash : null))
+                     .append(" };\n");
+        configBuilder.append("    constexpr bool HAS_LOADER_HASH = ")
+                     .append(hasLoaderHash ? "true" : "false")
+                     .append(";\n");
+        configBuilder.append("    constexpr const char LOADER_CLASS_INTERNAL_NAME[] = \"")
+                     .append(loaderClassInternalName)
+                     .append("\";\n\n");
+
+        configBuilder.append("    inline anti_debug::AntiDebugRuntimeConfig create_runtime_config() {\n");
+        configBuilder.append("        anti_debug::AntiDebugRuntimeConfig config{};\n");
+        configBuilder.append("        config.enableGHotSpotVMStructNullification = ENABLE_GHOTSPOT_STRUCT_NULLIFICATION;\n");
+        configBuilder.append("        config.enableDebuggerDetection = ENABLE_DEBUGGER_DETECTION;\n");
+        configBuilder.append("        config.enableDebuggerApiChecks = ENABLE_DEBUGGER_API_CHECKS;\n");
+        configBuilder.append("        config.enableDebuggerTracerCheck = ENABLE_DEBUGGER_TRACER_CHECK;\n");
+        configBuilder.append("        config.enableDebuggerPtraceCheck = ENABLE_DEBUGGER_PTRACE_CHECK;\n");
+        configBuilder.append("        config.enableDebuggerProcessScan = ENABLE_DEBUGGER_PROCESS_SCAN;\n");
+        configBuilder.append("        config.enableDebuggerModuleScan = ENABLE_DEBUGGER_MODULE_SCAN;\n");
+        configBuilder.append("        config.enableDebuggerEnvironmentScan = ENABLE_DEBUGGER_ENV_SCAN;\n");
+        configBuilder.append("        config.enableDebuggerTimingCheck = ENABLE_DEBUGGER_TIMING_CHECK;\n");
+        configBuilder.append("        config.enableVmIntegrityChecks = ENABLE_VM_INTEGRITY_CHECKS;\n");
+        configBuilder.append("        config.enableJvmtiAgentBlocking = ENABLE_JVMTI_AGENT_BLOCKING;\n");
+        configBuilder.append("        config.enableAntiTamper = ENABLE_ANTI_TAMPER;\n");
+        configBuilder.append("        config.enableDebugRegisterScrubbing = ENABLE_DEBUG_REGISTER_SCRUBBING;\n");
+        configBuilder.append("        config.enableDebugLogging = ENABLE_DEBUG_LOGGING;\n");
+        configBuilder.append("        return config;\n    }\n\n");
+
+        configBuilder.append("} // namespace native_jvm::anti_debug::config\n\n");
+        configBuilder.append("#endif // ANTI_DEBUG_CONFIG_HPP_GUARD\n");
+
+        Files.write(cppDir.resolve("anti_debug_config.hpp"), configBuilder.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] sha256(byte[] data) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return digest.digest(data);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
+    }
+
+    private static String toCppByteArray(byte[] data) {
+        if (data == null || data.length == 0) {
+            data = new byte[32];
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < data.length; i++) {
+            builder.append(String.format("0x%02X", data[i] & 0xFF));
+            if (i + 1 < data.length) {
+                builder.append(", ");
+            }
+        }
+        return builder.toString();
+    }
+
+    private static Path findPrimaryJar(Path outputDir) throws IOException {
+        try (java.util.stream.Stream<Path> stream = Files.list(outputDir)) {
+            return stream
+                    .filter(path -> path.getFileName().toString().endsWith(".jar")
+                            && !path.getFileName().toString().equals("debug.jar"))
+                    .findFirst()
+                    .orElse(null);
+        }
+    }
+
+    private static byte[] readJarEntry(Path jarPath, String entryName) throws IOException {
+        if (jarPath == null || entryName == null || entryName.isEmpty()) {
+            return null;
+        }
+        try (JarFile jar = new JarFile(jarPath.toFile())) {
+            ZipEntry entry = jar.getEntry(entryName);
+            if (entry == null) {
+                return null;
+            }
+            try (InputStream inputStream = jar.getInputStream(entry);
+                 ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+                Util.transfer(inputStream, baos);
+                return baos.toByteArray();
+            }
+        }
+    }
+
+    /**
+     * Updates the generated native_jvm_output.cpp file to include anti-debug initialization
+     */
+    private void updateNativeJvmOutputWithAntiDebug(Path cppDir, AntiDebugConfig antiDebugConfig) throws IOException {
+        Path nativeJvmOutputFile = cppDir.resolve("native_jvm_output.cpp");
+        if (!Files.exists(nativeJvmOutputFile)) {
+            return; // File doesn't exist, nothing to update
+        }
+
+        // Read the existing file
+        String content = new String(Files.readAllBytes(nativeJvmOutputFile), StandardCharsets.UTF_8);
+
+        // Ensure anti-debug headers are included
+        if (!content.contains("#include \"anti_debug.hpp\"")) {
+            content = content.replace("#include \"string_pool.hpp\"",
+                    "#include \"string_pool.hpp\"\n#include \"anti_debug.hpp\"");
+        }
+        if (!content.contains("#include \"anti_debug_config.hpp\"")) {
+            int includeIndex = content.indexOf("#include \"anti_debug.hpp\"");
+            if (includeIndex >= 0) {
+                int lineEnd = content.indexOf('\n', includeIndex);
+                if (lineEnd >= 0) {
+                    content = content.substring(0, lineEnd + 1)
+                            + "#include \"anti_debug_config.hpp\"\n"
+                            + content.substring(lineEnd + 1);
+                }
+            }
+        }
+
+        // Generate anti-debug initialization code
+        String antiDebugInit = generateAntiDebugInitCode(antiDebugConfig);
+
+        // Insert anti-debug initialization after utils::init_utils
+        String searchPattern = "        utils::init_utils(env);\n        if (env->ExceptionCheck())\n            return;";
+        String replacement = searchPattern + "\n\n" + antiDebugInit;
+
+        content = content.replace(searchPattern, replacement);
+
+        // Write the updated content back to the file
+        Files.write(nativeJvmOutputFile, content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private String generateAntiDebugInitCode(AntiDebugConfig antiDebugConfig) {
+        StringBuilder code = new StringBuilder();
+        code.append("        // Initialize anti-debug protection\n");
+        code.append("        anti_debug::init_anti_debug(env, native_jvm::anti_debug::config::create_runtime_config());\n");
+        code.append("        if (env->ExceptionCheck())\n");
+        code.append("            return;");
+        return code.toString();
+    }
+
+    private Path createSkidConfig(List<String> javaBlackList, List<String> javaWhiteList, Path outputDir) throws IOException {
+        boolean hasBlacklist = javaBlackList != null && !javaBlackList.isEmpty();
+        boolean hasWhitelist = javaWhiteList != null && !javaWhiteList.isEmpty();
+
+        if (hasWhitelist) {
+            logger.warn("Skidfuscator migration does not support java whitelist entries; ignoring provided list.");
+        }
+
+        if (!hasBlacklist) {
+            return null;
+        }
+
+        List<String> rendered = new ArrayList<>();
+        for (String entry : javaBlackList) {
+            String pattern = convertToSkidPattern(entry);
+            if (pattern != null) {
+                rendered.add(pattern);
+            }
+        }
+
+        if (rendered.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder builder = new StringBuilder();
+        builder.append("exempt = [\n");
+        for (int i = 0; i < rendered.size(); i++) {
+            builder.append("  \"").append(escapeForHocon(rendered.get(i))).append("\"");
+            if (i + 1 < rendered.size()) {
+                builder.append(',');
+            }
+            builder.append('\n');
+        }
+        builder.append("]\n");
+
+        Path configPath = outputDir.resolve("skidfuscator.hocon");
+        Files.writeString(configPath, builder.toString(), StandardCharsets.UTF_8);
+        return configPath;
+    }
+
+    private String convertToSkidPattern(String entry) {
+        if (entry == null) {
+            return null;
+        }
+
+        String normalized = entry.trim();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        normalized = normalized.replace('.', '/');
+        if (normalized.contains("#")) {
+            String[] split = normalized.split("#", 2);
+            String classPattern = toRegexPattern(split[0]);
+            String methodPattern = toRegexPattern(split[1]);
+            return "method{" + classPattern + "#" + methodPattern + "}";
+        }
+
+        return "class{" + toRegexPattern(normalized) + "}";
+    }
+
+    private String toRegexPattern(String pattern) {
+        String trimmed = pattern.trim();
+        if (trimmed.isEmpty()) {
+            return ".*";
+        }
+
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < trimmed.length(); i++) {
+            char ch = trimmed.charAt(i);
+            if (ch == '*') {
+                builder.append(".*");
+            } else if ("\\.[]{}()+-^$|?".indexOf(ch) >= 0) {
+                builder.append('\\').append(ch);
+            } else {
+                builder.append(ch);
+            }
+        }
+
+        return "^" + builder + "$";
+    }
+
+    private String escapeForHocon(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     public Snippets getSnippets() {

@@ -14,6 +14,7 @@ namespace native_jvm::string_pool {
                         uint32_t seed, std::size_t offset, std::size_t len);
     void clear_string(std::size_t offset, std::size_t len);
     char *get_pool();
+    std::size_t get_pool_size();
 }
 
 #endif

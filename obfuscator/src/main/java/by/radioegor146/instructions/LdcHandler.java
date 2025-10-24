@@ -1,11 +1,10 @@
 package by.radioegor146.instructions;
 
+import by.radioegor146.FastRandom;
 import by.radioegor146.MethodContext;
 import by.radioegor146.MethodProcessor;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.LdcInsnNode;
-
-import java.util.concurrent.ThreadLocalRandom;
 
 public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
 
@@ -63,79 +62,91 @@ public class LdcHandler extends GenericInstructionHandler<LdcInsnNode> {
     @Override
     protected void process(MethodContext context, LdcInsnNode node) {
         Object cst = node.cst;
+        boolean constantsObfuscated = context.protectionConfig.isConstantObfuscationEnabled();
         if (cst instanceof String) {
             instructionName += "_STRING";
             props.put("cst_ptr", context.getCachedStrings().getPointer(node.cst.toString()));
         } else if (cst instanceof Integer) {
-            instructionName += "_INT";
-            int key = ThreadLocalRandom.current().nextInt();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            int mixed = mix32(key, mid, cid, seed);
-            int enc = ((Integer) cst) ^ mixed;
-            props.put("enc", getIntString(enc));
-            props.put("key", getIntString(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_INT";
+                int key = FastRandom.nextInt();
+                int seed = FastRandom.nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                int mixed = mix32(key, mid, cid, seed);
+                int enc = ((Integer) cst) ^ mixed;
+                props.put("enc", getIntString(enc));
+                props.put("key", getIntString(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_INT_RAW";
+                props.put("value", getIntString((Integer) cst));
+            }
         } else if (cst instanceof Long) {
-            instructionName += "_LONG";
-            long key = ThreadLocalRandom.current().nextLong();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            long mixed = mix64(key, mid, cid, seed);
-            long enc = ((Long) cst) ^ mixed;
-            props.put("enc", getLongValue(enc));
-            props.put("key", getLongValue(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_LONG";
+                long key = FastRandom.nextLong();
+                int seed = FastRandom.nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                long mixed = mix64(key, mid, cid, seed);
+                long enc = ((Long) cst) ^ mixed;
+                props.put("enc", getLongValue(enc));
+                props.put("key", getLongValue(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_LONG_RAW";
+                props.put("value", getLongValue((Long) cst));
+            }
         } else if (cst instanceof Float) {
-            instructionName += "_FLOAT";
-            int bits = Float.floatToRawIntBits((Float) cst);
-            int key = ThreadLocalRandom.current().nextInt();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            int mixed = mix32(key, mid, cid, seed);
-            int enc = bits ^ mixed;
-            props.put("enc", getIntString(enc));
-            props.put("key", getIntString(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_FLOAT";
+                int bits = Float.floatToRawIntBits((Float) cst);
+                int key = FastRandom.nextInt();
+                int seed = FastRandom.nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                int mixed = mix32(key, mid, cid, seed);
+                int enc = bits ^ mixed;
+                props.put("enc", getIntString(enc));
+                props.put("key", getIntString(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_FLOAT_RAW";
+                props.put("value", getFloatValue((Float) cst));
+            }
         } else if (cst instanceof Double) {
-            instructionName += "_DOUBLE";
-            long bits = Double.doubleToRawLongBits((Double) cst);
-            long key = ThreadLocalRandom.current().nextLong();
-            int seed = ThreadLocalRandom.current().nextInt();
-            int mid = context.methodIndex;
-            int cid = context.classIndex;
-            long mixed = mix64(key, mid, cid, seed);
-            long enc = bits ^ mixed;
-            props.put("enc", getLongValue(enc));
-            props.put("key", getLongValue(key));
-            props.put("mid", String.valueOf(mid));
-            props.put("cid", String.valueOf(cid));
-            props.put("seed", getIntString(seed));
+            if (constantsObfuscated) {
+                instructionName += "_DOUBLE";
+                long bits = Double.doubleToRawLongBits((Double) cst);
+                long key = FastRandom.nextLong();
+                int seed = FastRandom.nextInt();
+                int mid = context.methodIndex;
+                int cid = context.classIndex;
+                long mixed = mix64(key, mid, cid, seed);
+                long enc = bits ^ mixed;
+                props.put("enc", getLongValue(enc));
+                props.put("key", getLongValue(key));
+                props.put("mid", String.valueOf(mid));
+                props.put("cid", String.valueOf(cid));
+                props.put("seed", getIntString(seed));
+            } else {
+                instructionName += "_DOUBLE_RAW";
+                props.put("value", getDoubleValue((Double) cst));
+            }
         } else if (cst instanceof Type) {
             instructionName += "_CLASS";
 
             int classId = context.getCachedClasses().getId(node.cst.toString());
-            context.output.append(String.format("if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { cclasses_mtx[%d].lock(); if (!cclasses[%d] || env->IsSameObject(cclasses[%d], NULL)) { if (jclass clazz = %s) { cclasses[%d] = (jclass) env->NewWeakGlobalRef(clazz); env->DeleteLocalRef(clazz); } } cclasses_mtx[%d].unlock(); %s } ",
-                    classId,
-                    classId,
-                    classId,
-                    classId,
-                    classId,
-                    MethodProcessor.getClassGetter(context, node.cst.toString()),
-                    classId,
-                    classId,
-                    trimmedTryCatchBlock));
-            
-            props.put("cst_ptr", context.getCachedClasses().getPointer(node.cst.toString()));
+            String classPtr = MethodProcessor.ensureVerifiedClass(context, classId, node.cst.toString(), trimmedTryCatchBlock);
+
+            props.put("class_ptr", classPtr);
         } else {
             throw new UnsupportedOperationException();
         }
