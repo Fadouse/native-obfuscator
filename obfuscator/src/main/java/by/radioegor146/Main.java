@@ -84,6 +84,21 @@ public class Main {
         @CommandLine.Option(names = {"--enable-native-obfuscation"}, defaultValue = "true", description = "Enable native obfuscation (default: true)")
         private boolean enableNativeObfuscation;
 
+        @CommandLine.Option(names = {"--java-string-encryption"}, negatable = true, description = "Toggle Skidfuscator string encryption stage (default: enabled)")
+        private boolean javaStringEncryption = true;
+
+        @CommandLine.Option(names = {"--java-number-obfuscation"}, negatable = true, description = "Toggle Skidfuscator numeric constant obfuscation stage (default: enabled)")
+        private boolean javaNumberObfuscation = true;
+
+        @CommandLine.Option(names = {"--java-flow-obfuscation"}, negatable = true, description = "Toggle Skidfuscator control-flow transformers (default: enabled)")
+        private boolean javaFlowObfuscation = true;
+
+        @CommandLine.Option(names = {"--java-sdk-injection"}, negatable = true, description = "Toggle Skidfuscator SDK runtime injection (default: disabled)")
+        private boolean javaSdkInjection = false;
+
+        @CommandLine.Option(names = {"--java-vm-hashing"}, negatable = true, description = "Toggle Skidfuscator VM-based hashing (experimental, default: disabled)")
+        private boolean javaVmHashing = false;
+
         @CommandLine.Option(names = {"--enable-anti-debug"}, description = "Enable anti-debug protection")
         private boolean enableAntiDebug;
 
@@ -232,6 +247,11 @@ public class Main {
                     .setJavaBlackList(javaBlackList)
                     .setJavaWhiteList(javaWhiteList)
                     .setEnableNativeObfuscation(enableNativeObfuscation)
+                    .setSkidStringObfuscation(javaStringEncryption)
+                    .setSkidNumberObfuscation(javaNumberObfuscation)
+                    .setSkidFlowObfuscation(javaFlowObfuscation)
+                    .setSkidSdkInjection(javaSdkInjection)
+                    .setSkidVmHashing(javaVmHashing)
                     .build();
 
             // Validate configuration

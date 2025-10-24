@@ -28,6 +28,11 @@ public class SkidfuscatorSession {
     @Builder.Default private boolean lowCon = false;
     @Builder.Default private boolean dex = false;
     @Builder.Default private boolean debug = false;
+    @Builder.Default private boolean skidStringObfuscation = true;
+    @Builder.Default private boolean skidNumberObfuscation = true;
+    @Builder.Default private boolean skidFlowObfuscation = true;
+    @Builder.Default private boolean skidSdkInjection = false;
+    @Builder.Default private boolean skidVmHashing = false;
 
     /**
      *
@@ -127,5 +132,25 @@ public class SkidfuscatorSession {
 
     public boolean isDebug() {
         return debug;
+    }
+
+    public boolean isSkidStringObfuscationEnabled() {
+        return skidStringObfuscation;
+    }
+
+    public boolean isSkidNumberObfuscationEnabled() {
+        return skidNumberObfuscation;
+    }
+
+    public boolean isSkidFlowObfuscationEnabled() {
+        return skidFlowObfuscation;
+    }
+
+    public boolean isSkidSdkInjectionEnabled() {
+        return skidSdkInjection;
+    }
+
+    public boolean isSkidVmHashingEnabled() {
+        return skidVmHashing;
     }
 }

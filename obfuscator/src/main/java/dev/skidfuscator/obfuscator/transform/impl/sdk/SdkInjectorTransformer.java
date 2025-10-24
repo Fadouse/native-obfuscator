@@ -11,43 +11,26 @@ import org.mapleir.app.service.ApplicationClassSource;
 import org.mapleir.app.service.LibraryClassSource;
 import org.mapleir.asm.ClassNode;
 import org.topdank.byteengineer.commons.data.JarClassData;
-import org.topdank.byteio.in.SingleJarDownloader;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
-import java.util.Arrays;
-import java.util.List;
+import java.nio.file.Path;
+import java.util.Collections;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.stream.Stream;
 
 import static dev.skidfuscator.obfuscator.util.JdkDownloader.CACHE_DIR;
 
 public class SdkInjectorTransformer extends AbstractTransformer {
-    private static final List<String> SDK_CLASS_NAMES = Arrays.asList(
-            "sdk.Access",
-            "sdk.ByteBufferAccess",
-            "sdk.CharSequenceAccess",
-            "sdk.CompactLatin1CharSequenceAccess",
-            "sdk.DualHashFunction",
-            "sdk.HotSpotPrior7u6StringHash",
-            "sdk.LongHashFunction",
-            "sdk.LongTupleHashFunction",
-            "sdk.Maths",
-            "sdk.ModernCompactStringHash",
-            "sdk.ModernHotSpotStringHash",
-            "sdk.Primitives",
-            "sdk.SDK",
-            "sdk.StringHash",
-            "sdk.UnknownJvmStringHash",
-            "sdk.UnsafeAccess",
-            "sdk.Util",
-            "sdk.XXH3"
-    );
-
     public SdkInjectorTransformer(Skidfuscator skidfuscator) {
         super(skidfuscator, "SDK");
     }
@@ -101,22 +84,68 @@ public class SdkInjectorTransformer extends AbstractTransformer {
             }
         }
 
-        try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(sdkFile))) {
-            for (String className : SDK_CLASS_NAMES) {
-                String entryName = className.replace('.', '/') + ".class";
-                try (InputStream classStream = getClass().getClassLoader().getResourceAsStream(entryName)) {
-                    if (classStream == null) {
-                        throw new IOException("Could not locate SDK class " + className + " on the classpath");
+        URL sdkRoot = getClass().getClassLoader().getResource("sdk");
+        if (sdkRoot == null) {
+            throw new IOException("Could not locate sdk classes on the classpath");
+        }
+
+        try {
+            URI sdkUri = sdkRoot.toURI();
+            try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(sdkFile))) {
+                if ("jar".equalsIgnoreCase(sdkUri.getScheme())) {
+                    String uriStr = sdkUri.toString();
+                    int bangIndex = uriStr.indexOf("!/");
+                    URI jarUri = URI.create(uriStr.substring(0, bangIndex));
+                    String internalPath = uriStr.substring(bangIndex + 1);
+
+                    FileSystem fs = null;
+                    boolean closeFs = false;
+                    try {
+                        try {
+                            fs = FileSystems.newFileSystem(jarUri, Collections.emptyMap());
+                            closeFs = true;
+                        } catch (java.nio.file.FileSystemAlreadyExistsException ex) {
+                            fs = FileSystems.getFileSystem(jarUri);
+                        }
+                        writeSdkEntries(fs.getPath(internalPath), jos);
+                    } finally {
+                        if (closeFs && fs != null) {
+                            fs.close();
+                        }
                     }
-                    jos.putNextEntry(new JarEntry(entryName));
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = classStream.read(buffer)) != -1) {
-                        jos.write(buffer, 0, bytesRead);
-                    }
-                    jos.closeEntry();
+                } else {
+                    Path rootPath = Path.of(sdkUri);
+                    writeSdkEntries(rootPath, jos);
                 }
             }
+        } catch (URISyntaxException e) {
+            throw new IOException("Failed to resolve sdk resource location", e);
+        }
+    }
+
+    private void writeSdkEntries(Path root, JarOutputStream jos) throws IOException {
+        if (root == null || !Files.exists(root)) {
+            throw new IOException("SDK path does not exist: " + root);
+        }
+        try (Stream<Path> stream = Files.walk(root)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".class"))
+                    .forEach(path -> {
+                        String relative = root.relativize(path).toString().replace('\\', '/');
+                        String entryName = "sdk/" + relative;
+                        try {
+                            jos.putNextEntry(new JarEntry(entryName));
+                            Files.copy(path, jos);
+                            jos.closeEntry();
+                        } catch (IOException ex) {
+                            throw new RuntimeException(ex);
+                        }
+                    });
+        } catch (RuntimeException ex) {
+            if (ex.getCause() instanceof IOException io) {
+                throw io;
+            }
+            throw ex;
         }
     }
 }

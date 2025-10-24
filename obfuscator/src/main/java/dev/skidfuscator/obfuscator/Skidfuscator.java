@@ -728,39 +728,48 @@ public class Skidfuscator {
         final List<Transformer> transformers = new ArrayList<>();
 
         if (!SkidFlowGraphDumper.TEST_COMPUTE) {
-            if (tsConfig.hasPath("stringEncryption.type")) {
-                switch (tsConfig.getEnum(StringEncryptionType.class, "stringEncryption.type")) {
-                    case STANDARD: transformers.add(new StringTransformerV2(this)); break;
+            final boolean enableStrings = session.isSkidStringObfuscationEnabled();
+            final boolean enableNumbers = session.isSkidNumberObfuscationEnabled();
+            final boolean enableFlow = session.isSkidFlowObfuscationEnabled();
+            final boolean enableSdk = session.isSkidSdkInjectionEnabled();
+            final boolean enableVm = session.isSkidVmHashingEnabled();
+
+            if (enableStrings) {
+                if (tsConfig.hasPath("stringEncryption.type")) {
+                    switch (tsConfig.getEnum(StringEncryptionType.class, "stringEncryption.type")) {
+                        case STANDARD -> transformers.add(new StringTransformerV2(this));
+                    }
+                } else {
+                    transformers.add(new StringTransformerV2(this));
                 }
-            } else {
-                transformers.add(new StringTransformerV2(this));
+                transformers.add(new StringEqualsHashTransformer(this));
+                transformers.add(new StringEqualsIgnoreCaseHashTransformer(this));
             }
 
-            transformers.addAll(Arrays.asList(
-                    // BASE
-                    new RandomInitTransformer(this),
-                    new InterproceduralTransformer(this),
-                    // ----- COMMUNITY -----
-                    new NumberTransformer(this),
-                    new SwitchTransformer(this),
-                    new BasicConditionTransformer(this),
-                    new BasicExceptionTransformer(this),
-                    new BasicRangeTransformer(this),
-                    new PureHashTransformer(this),
-                    new SdkInjectorTransformer(this),
-                    new StringEqualsHashTransformer(this),
-                    new StringEqualsIgnoreCaseHashTransformer(this),
-                    new InstanceOfHashTransformer(this),
-                    //new LoopConditionTransformer(this),
-                /*
-                new FlatteningFlowTransformer(this),*/
-                    new AhegaoTransformer(this)
-                    //new SimpleOutlinerTransformer()
-                    //
-            ));
-        } else {
-            transformers.addAll(Arrays.asList(
-            ));
+            if (enableNumbers) {
+                transformers.add(new NumberTransformer(this));
+                transformers.add(new InstanceOfHashTransformer(this));
+            }
+
+            if (enableFlow) {
+                transformers.addAll(Arrays.asList(
+                        new RandomInitTransformer(this),
+                        new InterproceduralTransformer(this),
+                        new SwitchTransformer(this),
+                        new BasicConditionTransformer(this),
+                        new BasicExceptionTransformer(this),
+                        new BasicRangeTransformer(this),
+                        new AhegaoTransformer(this)
+                ));
+            }
+
+            if (enableVm) {
+                transformers.add(new PureHashTransformer(this));
+            }
+
+            if (enableSdk) {
+                transformers.add(new SdkInjectorTransformer(this));
+            }
         }
 
 
@@ -1235,4 +1244,3 @@ public class Skidfuscator {
         });
     }
 }
-

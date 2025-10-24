@@ -115,7 +115,8 @@ public class NativeObfuscator {
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
                 platform, useAnnotations, generateDebugJar, enableVirtualization, enableJit, flattenControlFlow,
                 obfuscateStrings, obfuscateConstants,
-                false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true);
+                false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true,
+                true, true, true, false, false);
     }
 
     public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -125,7 +126,10 @@ public class NativeObfuscator {
                         boolean enableVirtualization, boolean enableJit, boolean flattenControlFlow,
                         boolean obfuscateStrings, boolean obfuscateConstants,
                         boolean enableJavaObfuscation, String javaObfuscationStrength,
-                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation) throws IOException {
+                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation,
+                        boolean skidStringObfuscation, boolean skidNumberObfuscation,
+                        boolean skidFlowObfuscation, boolean skidSdkInjection,
+                        boolean skidVmHashing) throws IOException {
         ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
                 obfuscateStrings, obfuscateConstants);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
@@ -155,6 +159,11 @@ public class NativeObfuscator {
                     .fuckit(false)
                     .renamer(false)
                     .debug(logger.isDebugEnabled())
+                    .skidStringObfuscation(skidStringObfuscation)
+                    .skidNumberObfuscation(skidNumberObfuscation)
+                    .skidFlowObfuscation(skidFlowObfuscation)
+                    .skidSdkInjection(skidSdkInjection)
+                    .skidVmHashing(skidVmHashing)
                     .build();
 
             Skidfuscator skidfuscator = new Skidfuscator(session);
@@ -554,7 +563,10 @@ public class NativeObfuscator {
                 config.isUseAnnotations(), config.isGenerateDebugJar(),
                 config.getProtectionConfig(), config.getAntiDebugConfig(),
                 config.isEnableJavaObfuscation(), config.getJavaObfuscationStrength(),
-                config.getJavaBlackList(), config.getJavaWhiteList(), config.isEnableNativeObfuscation());
+                config.getJavaBlackList(), config.getJavaWhiteList(), config.isEnableNativeObfuscation(),
+                config.isSkidStringObfuscation(), config.isSkidNumberObfuscation(),
+                config.isSkidFlowObfuscation(), config.isSkidSdkInjection(),
+                config.isSkidVmHashing());
     }
 
     private void processWithAntiDebug(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -563,7 +575,10 @@ public class NativeObfuscator {
                         Platform platform, boolean useAnnotations, boolean generateDebugJar,
                         ProtectionConfig protectionConfig, AntiDebugConfig antiDebugConfig,
                         boolean enableJavaObfuscation, String javaObfuscationStrength,
-                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation) throws IOException {
+                        List<String> javaBlackList, List<String> javaWhiteList, boolean enableNativeObfuscation,
+                        boolean skidStringObfuscation, boolean skidNumberObfuscation,
+                        boolean skidFlowObfuscation, boolean skidSdkInjection,
+                        boolean skidVmHashing) throws IOException {
 
         // Call the existing process method but with extended functionality
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
@@ -571,7 +586,8 @@ public class NativeObfuscator {
                 protectionConfig.isVirtualizationEnabled(), protectionConfig.isJitEnabled(),
                 protectionConfig.isControlFlowFlatteningEnabled(),
                 protectionConfig.isStringObfuscationEnabled(), protectionConfig.isConstantObfuscationEnabled(),
-                enableJavaObfuscation, javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation);
+                enableJavaObfuscation, javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation,
+                skidStringObfuscation, skidNumberObfuscation, skidFlowObfuscation, skidSdkInjection, skidVmHashing);
 
         // Generate anti-debug configuration header if any anti-debug features are enabled
         if (antiDebugConfig.isAnyEnabled()) {

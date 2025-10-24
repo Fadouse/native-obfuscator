@@ -85,6 +85,11 @@ public class ObfuscatorFrame extends JFrame {
     // Java obfuscation controls
     private final JCheckBox enableJavaObfuscationBox = new JCheckBox("Enable Java-layer obfuscation");
     private final JComboBox<JavaObfuscationConfig.Strength> javaObfStrengthCombo = new JComboBox<>(JavaObfuscationConfig.Strength.values());
+    private final JCheckBox javaStringObfBox = new JCheckBox("String encryption", true);
+    private final JCheckBox javaNumberObfBox = new JCheckBox("Number encryption", true);
+    private final JCheckBox javaFlowObfBox = new JCheckBox("Control-flow transforms", true);
+    private final JCheckBox javaSdkInjectionBox = new JCheckBox("Inject SDK runtime (experimental)", false);
+    private final JCheckBox javaVmHashingBox = new JCheckBox("VM hashing (experimental)", false);
     private final JTextField javaBlacklistField = new JTextField();
     private final JTextField javaWhitelistField = new JTextField();
     private final JButton runButton = new JButton("▶ Run Obfuscation");
@@ -522,6 +527,25 @@ public class ObfuscatorFrame extends JFrame {
         form.add(enablePanel);
         form.add(Box.createRigidArea(new Dimension(0, 12)));
 
+        JPanel featurePanel = new JPanel();
+        featurePanel.setLayout(new BoxLayout(featurePanel, BoxLayout.Y_AXIS));
+        featurePanel.setBorder(new TitledBorder("🧩 Skidfuscator Stages"));
+        featurePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        featurePanel.add(checkWithHint(javaStringObfBox,
+                "Encrypt literals and apply string equality hardening"));
+        featurePanel.add(checkWithHint(javaNumberObfBox,
+                "Scramble numeric constants and related instanceof checks"));
+        featurePanel.add(checkWithHint(javaFlowObfBox,
+                "Apply switch flattening and bogus control-flow stages"));
+        featurePanel.add(checkWithHint(javaSdkInjectionBox,
+                "Bundle Skidfuscator's runtime SDK into the output jar"));
+        featurePanel.add(checkWithHint(javaVmHashingBox,
+                "Use SSVM-based hashing predicates (requires extra deps)"));
+
+        form.add(featurePanel);
+        form.add(Box.createRigidArea(new Dimension(0, 12)));
+
         // Java Filter Files
         JPanel filterPanel = new JPanel();
         filterPanel.setLayout(new BoxLayout(filterPanel, BoxLayout.Y_AXIS));
@@ -544,12 +568,22 @@ public class ObfuscatorFrame extends JFrame {
             javaObfStrengthCombo.setEnabled(enabled);
             javaBlacklistField.setEnabled(enabled);
             javaWhitelistField.setEnabled(enabled);
+            javaStringObfBox.setEnabled(enabled);
+            javaNumberObfBox.setEnabled(enabled);
+            javaFlowObfBox.setEnabled(enabled);
+            javaSdkInjectionBox.setEnabled(enabled);
+            javaVmHashingBox.setEnabled(enabled);
         });
 
         // Initially disable components
         javaObfStrengthCombo.setEnabled(false);
         javaBlacklistField.setEnabled(false);
         javaWhitelistField.setEnabled(false);
+        javaStringObfBox.setEnabled(false);
+        javaNumberObfBox.setEnabled(false);
+        javaFlowObfBox.setEnabled(false);
+        javaSdkInjectionBox.setEnabled(false);
+        javaVmHashingBox.setEnabled(false);
 
         JScrollPane sc = new JScrollPane(form);
         sc.setBorder(null);
@@ -947,6 +981,13 @@ public class ObfuscatorFrame extends JFrame {
                     publish("  🔢 Constant Encryption: " + (constantObfuscation ? "✅ Enabled" : "❌ Disabled"));
                 }
                 publish("  ☕ Java Obfuscation: " + (enableJavaObfuscation ? "✅ Enabled (" + javaObfStrength + ")" : "❌ Disabled"));
+                if (enableJavaObfuscation) {
+                    publish("    • String encryption: " + (javaStringObfBox.isSelected() ? "✅ On" : "❌ Off"));
+                    publish("    • Number encryption: " + (javaNumberObfBox.isSelected() ? "✅ On" : "❌ Off"));
+                    publish("    • Control-flow transforms: " + (javaFlowObfBox.isSelected() ? "✅ On" : "❌ Off"));
+                    publish("    • SDK injection: " + (javaSdkInjectionBox.isSelected() ? "✅ On" : "❌ Off"));
+                    publish("    • VM hashing: " + (javaVmHashingBox.isSelected() ? "✅ On" : "❌ Off"));
+                }
                 publish("  🛡️ Anti-Debug Protection: " + (enableAntiDebug ? "✅ Enabled" : "❌ Disabled"));
                 if (enableAntiDebug) {
                     publish("    🔒 gHotSpotVMStructs Nullification: " + (enableGHotSpotVMStructsNullification ? "✅ Enabled" : "❌ Disabled"));
@@ -1010,6 +1051,11 @@ public class ObfuscatorFrame extends JFrame {
                         .setJavaBlackList(javaBlackList)
                         .setJavaWhiteList(javaWhiteList)
                         .setEnableNativeObfuscation(enableNativeObfuscation)
+                        .setSkidStringObfuscation(javaStringObfBox.isSelected())
+                        .setSkidNumberObfuscation(javaNumberObfBox.isSelected())
+                        .setSkidFlowObfuscation(javaFlowObfBox.isSelected())
+                        .setSkidSdkInjection(javaSdkInjectionBox.isSelected())
+                        .setSkidVmHashing(javaVmHashingBox.isSelected())
                         .build();
 
                 // Validate configuration
@@ -1088,6 +1134,11 @@ public class ObfuscatorFrame extends JFrame {
         javaObfStrengthCombo.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaBlacklistField.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaWhitelistField.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaStringObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaNumberObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaFlowObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaSdkInjectionBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaVmHashingBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
 
         // Anti-debug controls
         enableAntiDebugBox.setEnabled(enabled);

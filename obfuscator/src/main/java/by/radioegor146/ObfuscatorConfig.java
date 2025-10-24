@@ -34,6 +34,11 @@ public class ObfuscatorConfig {
     private final List<String> javaBlackList;
     private final List<String> javaWhiteList;
     private final boolean enableNativeObfuscation;
+    private final boolean skidStringObfuscation;
+    private final boolean skidNumberObfuscation;
+    private final boolean skidFlowObfuscation;
+    private final boolean skidSdkInjection;
+    private final boolean skidVmHashing;
 
     public ObfuscatorConfig(Path inputJarPath, Path outputDir, List<Path> inputLibs,
                            List<String> blackList, List<String> whiteList,
@@ -42,7 +47,10 @@ public class ObfuscatorConfig {
                            ProtectionConfig protectionConfig, AntiDebugConfig antiDebugConfig,
                            boolean enableJavaObfuscation, String javaObfuscationStrength,
                            List<String> javaBlackList, List<String> javaWhiteList,
-                           boolean enableNativeObfuscation) {
+                           boolean enableNativeObfuscation,
+                           boolean skidStringObfuscation, boolean skidNumberObfuscation,
+                           boolean skidFlowObfuscation, boolean skidSdkInjection,
+                           boolean skidVmHashing) {
         this.inputJarPath = inputJarPath;
         this.outputDir = outputDir;
         this.inputLibs = inputLibs;
@@ -60,6 +68,11 @@ public class ObfuscatorConfig {
         this.javaBlackList = javaBlackList;
         this.javaWhiteList = javaWhiteList;
         this.enableNativeObfuscation = enableNativeObfuscation;
+        this.skidStringObfuscation = skidStringObfuscation;
+        this.skidNumberObfuscation = skidNumberObfuscation;
+        this.skidFlowObfuscation = skidFlowObfuscation;
+        this.skidSdkInjection = skidSdkInjection;
+        this.skidVmHashing = skidVmHashing;
     }
 
     // Getters for basic settings
@@ -84,6 +97,11 @@ public class ObfuscatorConfig {
     public List<String> getJavaBlackList() { return javaBlackList; }
     public List<String> getJavaWhiteList() { return javaWhiteList; }
     public boolean isEnableNativeObfuscation() { return enableNativeObfuscation; }
+    public boolean isSkidStringObfuscation() { return skidStringObfuscation; }
+    public boolean isSkidNumberObfuscation() { return skidNumberObfuscation; }
+    public boolean isSkidFlowObfuscation() { return skidFlowObfuscation; }
+    public boolean isSkidSdkInjection() { return skidSdkInjection; }
+    public boolean isSkidVmHashing() { return skidVmHashing; }
 
     // Convenience methods for accessing nested configuration properties
     public boolean isVirtualizationEnabled() { return protectionConfig.isVirtualizationEnabled(); }
@@ -122,11 +140,18 @@ public class ObfuscatorConfig {
                 "  platform=%s,\n" +
                 "  enableJavaObfuscation=%s,\n" +
                 "  enableNativeObfuscation=%s,\n" +
+                "  skidStringObfuscation=%s,\n" +
+                "  skidNumberObfuscation=%s,\n" +
+                "  skidFlowObfuscation=%s,\n" +
+                "  skidSdkInjection=%s,\n" +
+                "  skidVmHashing=%s,\n" +
                 "  protectionConfig=%s,\n" +
                 "  antiDebugConfig=%s\n" +
                 "}",
                 inputJarPath, outputDir, platform, enableJavaObfuscation,
-                enableNativeObfuscation, protectionConfig, antiDebugConfig);
+                enableNativeObfuscation, skidStringObfuscation, skidNumberObfuscation,
+                skidFlowObfuscation, skidSdkInjection, skidVmHashing,
+                protectionConfig, antiDebugConfig);
     }
 
     /**
@@ -150,6 +175,11 @@ public class ObfuscatorConfig {
         private List<String> javaBlackList;
         private List<String> javaWhiteList;
         private boolean enableNativeObfuscation = true;
+        private boolean skidStringObfuscation = true;
+        private boolean skidNumberObfuscation = true;
+        private boolean skidFlowObfuscation = true;
+        private boolean skidSdkInjection = false;
+        private boolean skidVmHashing = false;
 
         public Builder setInputJarPath(Path inputJarPath) {
             this.inputJarPath = inputJarPath;
@@ -236,6 +266,31 @@ public class ObfuscatorConfig {
             return this;
         }
 
+        public Builder setSkidStringObfuscation(boolean skidStringObfuscation) {
+            this.skidStringObfuscation = skidStringObfuscation;
+            return this;
+        }
+
+        public Builder setSkidNumberObfuscation(boolean skidNumberObfuscation) {
+            this.skidNumberObfuscation = skidNumberObfuscation;
+            return this;
+        }
+
+        public Builder setSkidFlowObfuscation(boolean skidFlowObfuscation) {
+            this.skidFlowObfuscation = skidFlowObfuscation;
+            return this;
+        }
+
+        public Builder setSkidSdkInjection(boolean skidSdkInjection) {
+            this.skidSdkInjection = skidSdkInjection;
+            return this;
+        }
+
+        public Builder setSkidVmHashing(boolean skidVmHashing) {
+            this.skidVmHashing = skidVmHashing;
+            return this;
+        }
+
         public ObfuscatorConfig build() {
             if (inputJarPath == null || outputDir == null) {
                 throw new IllegalArgumentException("Input JAR path and output directory are required");
@@ -243,7 +298,9 @@ public class ObfuscatorConfig {
             return new ObfuscatorConfig(inputJarPath, outputDir, inputLibs, blackList, whiteList,
                     plainLibName, customLibraryDirectory, platform, useAnnotations, generateDebugJar,
                     protectionConfig, antiDebugConfig, enableJavaObfuscation, javaObfuscationStrength,
-                    javaBlackList, javaWhiteList, enableNativeObfuscation);
+                    javaBlackList, javaWhiteList, enableNativeObfuscation,
+                    skidStringObfuscation, skidNumberObfuscation,
+                    skidFlowObfuscation, skidSdkInjection, skidVmHashing);
         }
     }
 }
