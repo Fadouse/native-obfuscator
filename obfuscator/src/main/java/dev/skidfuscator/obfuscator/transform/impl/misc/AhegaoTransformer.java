@@ -50,7 +50,7 @@ public class AhegaoTransformer extends AbstractTransformer {
 
         List<String> fieldNames = classNode.getFields().stream()
                 .map(FieldNode::getName)
-                .collect(Collectors.toList());
+                .toList();
 
         String ahegaoName = DEFAULT_AHEGAO_FIELD_NAME;
         while (fieldNames.contains(ahegaoName))
@@ -109,7 +109,7 @@ public class AhegaoTransformer extends AbstractTransformer {
         }
 
         // Todo     Find the source of this issue. No idea why it's ignoring returns
-        if (!cfg.allExprStream().findAny().isPresent()) {
+        if (cfg.allExprStream().findAny().isEmpty()) {
             cfg.getEntries().iterator().next().add(new ReturnStmt());
         }
 
