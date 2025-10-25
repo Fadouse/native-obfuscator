@@ -23,21 +23,38 @@ enum HotSpotPrior7u6StringHash implements StringHash {
 
     private static final long valueOffset;
     private static final long offsetOffset;
+    private static final boolean SUPPORTED;
 
     static {
+        long tmpValueOffset = -1L;
+        long tmpOffsetOffset = -1L;
+        boolean tmpSupported = false;
         try {
             Field valueField = String.class.getDeclaredField("value");
-            valueOffset = UnsafeAccess.UNSAFE.objectFieldOffset(valueField);
+            tmpValueOffset = UnsafeAccess.UNSAFE.objectFieldOffset(valueField);
 
             Field offsetField = String.class.getDeclaredField("offset");
-            offsetOffset = UnsafeAccess.UNSAFE.objectFieldOffset(offsetField);
+            tmpOffsetOffset = UnsafeAccess.UNSAFE.objectFieldOffset(offsetField);
+            tmpSupported = true;
         } catch (NoSuchFieldException e) {
-            throw new AssertionError(e);
+            // Strings on modern JVMs (>= 7u6) no longer expose the `offset` field.
+            // Keep the class loadable so other SDK components can still initialize,
+            // but mark it unsupported so callers can bail out gracefully if needed.
+        }
+        valueOffset = tmpValueOffset;
+        offsetOffset = tmpOffsetOffset;
+        SUPPORTED = tmpSupported;
+    }
+
+    private static void ensureSupported() {
+        if (!SUPPORTED) {
+            throw new IllegalStateException("HotSpotPrior7u6StringHash is unavailable on this JVM");
         }
     }
 
     @Override
     public long longHash(String s, LongHashFunction hashFunction, int off, int len) {
+        ensureSupported();
         char[] value = (char[]) UnsafeAccess.UNSAFE.getObject(s, valueOffset);
         int offset = UnsafeAccess.UNSAFE.getInt(s, offsetOffset);
         return hashFunction.hashChars(value, offset + off, len);
@@ -46,6 +63,7 @@ enum HotSpotPrior7u6StringHash implements StringHash {
     @Override
     public void hash(final String s, final LongTupleHashFunction hashFunction,
                     final int off, final int len, final long[] result) {
+        ensureSupported();
         final char[] value = (char[]) UnsafeAccess.UNSAFE.getObject(s, valueOffset);
         final int offset = UnsafeAccess.UNSAFE.getInt(s, offsetOffset);
         hashFunction.hashChars(value, offset + off, len, result);
