@@ -6,7 +6,13 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class MethodContext {
 
@@ -70,6 +76,7 @@ public class MethodContext {
     // Map of method signatures (name + descriptor) to their C++ native method names
     // Used for direct C++ call optimization within the same class
     public Map<String, String> transpiledMethodNames;
+
 
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
                          int classIndex, ProtectionConfig protectionConfig) {
