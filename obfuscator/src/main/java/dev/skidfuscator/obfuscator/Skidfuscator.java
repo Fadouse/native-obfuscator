@@ -57,6 +57,7 @@ import dev.skidfuscator.obfuscator.transform.impl.hash.StringEqualsHashTransform
 import dev.skidfuscator.obfuscator.transform.impl.hash.StringEqualsIgnoreCaseHashTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.loop.LoopConditionTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.misc.AhegaoTransformer;
+import dev.skidfuscator.obfuscator.transform.impl.number.FieldConstantTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.number.NumberTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.pure.PureHashTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.sdk.SdkInjectorTransformer;
@@ -747,6 +748,7 @@ public class Skidfuscator {
             }
 
             if (enableNumbers) {
+                transformers.add(new FieldConstantTransformer(this));
                 transformers.add(new NumberTransformer(this));
                 transformers.add(new InstanceOfHashTransformer(this));
             }
