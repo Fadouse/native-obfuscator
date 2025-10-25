@@ -81,6 +81,8 @@ reference {
   maxPerMethod: 24
   runtimeCopies: 3
   runtimeOwner: ""
+  eraseArgumentTypes: false
+  eraseReturnTypes: false
 }
 
 fileCrasher: {

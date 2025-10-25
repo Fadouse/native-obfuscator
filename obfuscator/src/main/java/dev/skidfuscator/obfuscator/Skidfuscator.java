@@ -68,6 +68,7 @@ import dev.skidfuscator.obfuscator.util.ConsoleColors;
 import dev.skidfuscator.obfuscator.util.MapleJarUtil;
 import dev.skidfuscator.obfuscator.util.MiscUtil;
 import dev.skidfuscator.obfuscator.util.ProgressUtil;
+import dev.skidfuscator.obfuscator.util.RandomUtil;
 import dev.skidfuscator.obfuscator.util.misc.Counter;
 import dev.skidfuscator.obfuscator.util.misc.SkidTimedLogger;
 import dev.skidfuscator.logger.TimedLogger;
@@ -98,6 +99,7 @@ import java.net.URI;
 import java.net.URL;
 import java.nio.file.*;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.nio.file.Files.createTempDirectory;
@@ -137,6 +139,8 @@ public class Skidfuscator {
     private final DependencyDownloader dependencyDownloader = new DependencyDownloader();
 
     private final Counter counter = new Counter();
+    private ReferenceInvokeDynamicTransformer referenceInvokeDynamicTransformer;
+    private String flowHandlerName;
 
     @Setter
     private transient SkidClassNode factoryNode;
@@ -249,6 +253,7 @@ public class Skidfuscator {
         _importClasspath();
         final Set<LibraryClassSource> sources = _importJvm();
         this.getClassSource().addLibraries(sources.toArray(new LibraryClassSource[0]));
+        initializeReferenceRuntime();
 
         if (!session.isFuckIt()) {
             _verify();
@@ -731,16 +736,29 @@ public class Skidfuscator {
         final List<Transformer> transformers = new ArrayList<>();
 
         if (!SkidFlowGraphDumper.TEST_COMPUTE) {
+            initializeReferenceRuntime();
             final boolean enableStrings = session.isSkidStringObfuscationEnabled();
             final boolean enableNumbers = session.isSkidNumberObfuscationEnabled();
             boolean enableFlow = session.isSkidFlowObfuscationEnabled();
             final boolean enableSdk = session.isSkidSdkInjectionEnabled();
             final boolean enableVm = session.isSkidVmHashingEnabled();
-            final boolean enableReference = session.isSkidInvokeDynamicObfuscationEnabled();
+            final boolean enableReference = referenceInvokeDynamicTransformer != null;
 
-            if (enableReference && enableFlow) {
-                LOGGER.warn("InvokeDynamic reference obfuscation is incompatible with flow transformers. Disabling flow-related passes.");
-                enableFlow = false;
+            List<Transformer> flowTransforms = Collections.emptyList();
+            if (enableFlow) {
+                flowTransforms = Arrays.asList(
+                        new RandomInitTransformer(this),
+                        new InterproceduralTransformer(this),
+                        new SwitchTransformer(this),
+                        new BasicConditionTransformer(this),
+                        new BasicExceptionTransformer(this),
+                        new BasicRangeTransformer(this),
+                        new AhegaoTransformer(this)
+                );
+
+                if (enableReference) {
+                    registerFlowRuntimeExemptions(flowTransforms);
+                }
             }
 
             if (enableStrings) {
@@ -761,18 +779,6 @@ public class Skidfuscator {
                 transformers.add(new InstanceOfHashTransformer(this));
             }
 
-            if (enableFlow) {
-                transformers.addAll(Arrays.asList(
-                        new RandomInitTransformer(this),
-                        new InterproceduralTransformer(this),
-                        new SwitchTransformer(this),
-                        new BasicConditionTransformer(this),
-                        new BasicExceptionTransformer(this),
-                        new BasicRangeTransformer(this),
-                        new AhegaoTransformer(this)
-                ));
-            }
-
             if (enableVm) {
                 transformers.add(new PureHashTransformer(this));
             }
@@ -782,7 +788,11 @@ public class Skidfuscator {
             }
 
             if (enableReference) {
-                transformers.add(new ReferenceInvokeDynamicTransformer(this));
+                transformers.add(referenceInvokeDynamicTransformer);
+            }
+
+            if (enableFlow) {
+                transformers.addAll(flowTransforms);
             }
         }
 
@@ -803,6 +813,65 @@ public class Skidfuscator {
         }
 
         return transformers;
+    }
+
+    private void initializeReferenceRuntime() {
+        if (!session.isSkidInvokeDynamicObfuscationEnabled()) {
+            return;
+        }
+
+        if (referenceInvokeDynamicTransformer != null) {
+            return;
+        }
+
+        ReferenceInvokeDynamicTransformer transformer = new ReferenceInvokeDynamicTransformer(this);
+        if (!transformer.isEnabled()) {
+            return;
+        }
+
+        if (classSource != null) {
+            classSource.getClassTree();
+        }
+
+        transformer.ensureRuntimeHelpers();
+        this.referenceInvokeDynamicTransformer = transformer;
+    }
+
+    public synchronized String ensureFlowFactoryName() {
+        if (flowHandlerName == null) {
+            flowHandlerName = RandomUtil.randomAlphabeticalString(16)
+                    + "/" + RandomUtil.randomAlphabeticalString(16);
+        }
+        return flowHandlerName;
+    }
+
+    public synchronized String getFlowHandlerDirectory() {
+        final String name = ensureFlowFactoryName();
+        final int idx = name.lastIndexOf('/');
+        if (idx <= 0) {
+            return "";
+        }
+        return name.substring(0, idx);
+    }
+
+    private void registerFlowRuntimeExemptions(List<Transformer> flowTransformers) {
+        if (referenceInvokeDynamicTransformer == null || flowTransformers.isEmpty()) {
+            return;
+        }
+
+        final Set<String> runtimeOwners = referenceInvokeDynamicTransformer.getRuntimeOwnerNames();
+        if (runtimeOwners.isEmpty()) {
+            return;
+        }
+
+        for (Transformer transformer : flowTransformers) {
+            final Class<? extends Transformer> clazz = transformer.getClass();
+
+            for (String owner : runtimeOwners) {
+                final String pattern = String.format("class { %s }", Pattern.quote(owner));
+                exemptAnalysis.add(clazz, pattern);
+            }
+        }
     }
 
     private void _verify() {

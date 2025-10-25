@@ -152,6 +152,8 @@ When `--enable-java-obfuscation` is active you can fine tune Skidfuscator's stag
 
 `reference.runtimeCopies` in `defaultConfig.hocon` controls how many independent bootstrap helpers are emitted. Each target class is deterministically assigned to one of these helpers, which themselves go through the usual Skidfuscator pipeline so they inherit your configured renamers/control-flow tricks.
 
+For extra stealth you can flip on `reference.eraseArgumentTypes` / `reference.eraseReturnTypes`. When enabled, Skidfuscator rewrites the `invokedynamic` descriptors to use `java/lang/Object` for reference arguments (including receivers) and/or return values so bytecode scanners no longer see tell-tale owners such as `java/io/PrintStream`. Leave them disabled unless you are certain the affected stack slots are re-cast before being consumed—over-aggressive erasure can otherwise trigger `VerifyError` in code that stores directly into a `String[]` or calls a strongly typed API without an intervening cast.
+
 
 `--plain-lib-name` - if you ship your .jar separately from the result native libraries, or you use it for Android, you can specify the name of the native library that it will try to search while using.
 

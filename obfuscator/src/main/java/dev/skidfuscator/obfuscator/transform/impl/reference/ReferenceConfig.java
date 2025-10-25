@@ -30,4 +30,12 @@ public class ReferenceConfig extends DefaultTransformerConfig {
         }
         return probability;
     }
+
+    public boolean isEraseArgumentTypes() {
+        return this.getBoolean("eraseArgumentTypes", false);
+    }
+
+    public boolean isEraseReturnTypes() {
+        return this.getBoolean("eraseReturnTypes", false);
+    }
 }

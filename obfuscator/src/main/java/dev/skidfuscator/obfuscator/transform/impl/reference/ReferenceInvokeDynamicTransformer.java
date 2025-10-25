@@ -4,7 +4,6 @@ import dev.skidfuscator.obfuscator.Skidfuscator;
 import dev.skidfuscator.obfuscator.event.EventPriority;
 import dev.skidfuscator.obfuscator.event.annotation.Listen;
 import dev.skidfuscator.obfuscator.event.impl.transform.method.DumpMethodTransformEvent;
-import dev.skidfuscator.obfuscator.event.impl.transform.skid.InitSkidTransformEvent;
 import dev.skidfuscator.obfuscator.skidasm.SkidClassNode;
 import dev.skidfuscator.obfuscator.skidasm.SkidMethodNode;
 import dev.skidfuscator.obfuscator.transform.AbstractTransformer;
@@ -29,6 +28,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
+    private static final Type OBJECT_TYPE = Type.getType(Object.class);
     private static final String BOOTSTRAP_NAME = "bootstrap";
     private static final String BOOTSTRAP_DESC =
             "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
@@ -61,8 +62,10 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
         return (ReferenceConfig) super.getConfig();
     }
 
-    @Listen
-    void handleInit(final InitSkidTransformEvent event) {
+    public synchronized void ensureRuntimeHelpers() {
+        if (!runtimeShards.isEmpty()) {
+            return;
+        }
         runtimeShards.clear();
         classAssignments.clear();
         runtimeOwnerNames.clear();
@@ -153,7 +156,7 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
                 skidfuscator
         );
         final String templateName = runtimeNode.getName();
-        final String ownerName = normalizeOwner(getConfig().getRuntimeOwner(), index);
+        final String ownerName = selectOwnerName(index);
         runtimeNode.node.name = ownerName;
 
         for (MethodNode method : runtimeNode.node.methods) {
@@ -213,6 +216,47 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
         return result;
     }
 
+    private String selectOwnerName(int shardIndex) {
+        final String candidate = getConfig().getRuntimeOwner();
+        if (candidate != null && !candidate.trim().isEmpty()) {
+            return normalizeOwner(candidate, shardIndex);
+        }
+        return deriveOwnerFromFlowHandler();
+    }
+
+    private String deriveOwnerFromFlowHandler() {
+        final String directory = skidfuscator.getFlowHandlerDirectory();
+        final String randomClass = RandomUtil.randomAlphabeticalString(16);
+        if (directory == null || directory.isEmpty()) {
+            return randomClass;
+        }
+        return directory + "/" + randomClass;
+    }
+
+    private Type maskArgumentType(Type type) {
+        if (!getConfig().isEraseArgumentTypes()) {
+            return type;
+        }
+        return maskReferenceType(type);
+    }
+
+    private Type maskReturnType(Type type) {
+        if (!getConfig().isEraseReturnTypes()) {
+            return type;
+        }
+        return maskReferenceType(type);
+    }
+
+    private Type maskReferenceType(Type type) {
+        if (type == null) {
+            return null;
+        }
+        if (type.getSort() == Type.OBJECT || type.getSort() == Type.ARRAY) {
+            return OBJECT_TYPE;
+        }
+        return type;
+    }
+
     private boolean shouldTransform(double probability) {
         if (probability >= 1.0d) {
             return true;
@@ -243,14 +287,19 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
 
         Type[] indyArgs;
         if (opcode == Opcodes.INVOKESTATIC) {
-            indyArgs = originalArgs;
+            indyArgs = new Type[originalArgs.length];
+            for (int i = 0; i < originalArgs.length; i++) {
+                indyArgs[i] = maskArgumentType(originalArgs[i]);
+            }
         } else {
             indyArgs = new Type[originalArgs.length + 1];
-            indyArgs[0] = ownerType;
-            System.arraycopy(originalArgs, 0, indyArgs, 1, originalArgs.length);
+            indyArgs[0] = maskArgumentType(ownerType);
+            for (int i = 0; i < originalArgs.length; i++) {
+                indyArgs[i + 1] = maskArgumentType(originalArgs[i]);
+            }
         }
 
-        final String indyDesc = Type.getMethodDescriptor(returnType, indyArgs);
+        final String indyDesc = Type.getMethodDescriptor(maskReturnType(returnType), indyArgs);
 
         final EncryptedString owner = encrypt(methodInsn.owner);
         final EncryptedString name = encrypt(methodInsn.name);
@@ -286,13 +335,17 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
 
         final String indyDesc;
         if (opcode == Opcodes.GETSTATIC) {
-            indyDesc = Type.getMethodDescriptor(fieldType);
+            indyDesc = Type.getMethodDescriptor(maskReturnType(fieldType));
         } else if (opcode == Opcodes.GETFIELD) {
-            indyDesc = Type.getMethodDescriptor(fieldType, ownerType);
+            indyDesc = Type.getMethodDescriptor(maskReturnType(fieldType), maskArgumentType(ownerType));
         } else if (opcode == Opcodes.PUTSTATIC) {
-            indyDesc = Type.getMethodDescriptor(Type.VOID_TYPE, fieldType);
+            indyDesc = Type.getMethodDescriptor(Type.VOID_TYPE, maskArgumentType(fieldType));
         } else {
-            indyDesc = Type.getMethodDescriptor(Type.VOID_TYPE, ownerType, fieldType);
+            indyDesc = Type.getMethodDescriptor(
+                    Type.VOID_TYPE,
+                    maskArgumentType(ownerType),
+                    maskArgumentType(fieldType)
+            );
         }
 
         final EncryptedString owner = encrypt(fieldInsn.owner);
@@ -338,6 +391,10 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
             int idx = Math.floorMod(name.hashCode(), runtimeShards.size());
             return runtimeShards.get(idx);
         });
+    }
+
+    public Set<String> getRuntimeOwnerNames() {
+        return Collections.unmodifiableSet(runtimeOwnerNames);
     }
 
     @RequiredArgsConstructor
