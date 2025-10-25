@@ -34,10 +34,12 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 import java.util.stream.Collectors;
@@ -368,8 +370,9 @@ public class NativeObfuscator {
                         StringBuilder instructions = new StringBuilder();
                         boolean loaderInjected = false;
 
-                        // Build a map of all transpiled methods in this class for direct call optimization
+                        // Build structures tracking transpiled methods in this class for direct call optimization
                         Map<String, String> transpiledMethodNames = new HashMap<>();
+                        Set<String> transpiledMethodsRequiringHiddenArg = new HashSet<>();
 
                         for (int i = 0; i < classNode.methods.size(); i++) {
                             MethodNode method = classNode.methods.get(i);
@@ -384,6 +387,7 @@ public class NativeObfuscator {
 
                             MethodContext context = new MethodContext(this, method, i, classNode, currentClassId, protectionConfig);
                             context.transpiledMethodNames = transpiledMethodNames;
+                            context.transpiledMethodsRequiringHiddenArg = transpiledMethodsRequiringHiddenArg;
                             methodProcessor.processMethod(context);
                             instructions.append(context.output.toString().replace("\n", "\n    "));
 

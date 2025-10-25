@@ -173,6 +173,11 @@ public class MethodProcessor {
         // Register this method in the transpiled methods map for direct call optimization
         String methodKey = method.name + method.desc;
         context.transpiledMethodNames.put(methodKey, methodName);
+        if (context.proxyMethod != null) {
+            context.transpiledMethodsRequiringHiddenArg.add(methodKey);
+        } else {
+            context.transpiledMethodsRequiringHiddenArg.remove(methodKey);
+        }
 
         boolean isStatic = Util.getFlag(method.access, Opcodes.ACC_STATIC);
         context.ret = Type.getReturnType(method.desc);

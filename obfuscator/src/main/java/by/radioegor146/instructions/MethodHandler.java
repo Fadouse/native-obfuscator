@@ -195,6 +195,8 @@ public class MethodHandler extends GenericInstructionHandler<MethodInsnNode> {
                 // Skip class verification since we're calling within the same already-initialized class
                 props.put("direct_method", targetMethodName);
                 props.put("args", argsBuilder.toString());
+                boolean needsHiddenArg = context.transpiledMethodsRequiringHiddenArg.contains(methodKey);
+                props.put("direct_hidden_arg", needsHiddenArg ? "nullptr, " : "");
                 instructionName = "DIRECT_INVOKESTATIC_" + returnType.getSort();
                 isDirectCall = true;
                 // Don't return yet - we still need to setup some props below

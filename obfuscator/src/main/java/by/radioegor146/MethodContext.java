@@ -76,6 +76,7 @@ public class MethodContext {
     // Map of method signatures (name + descriptor) to their C++ native method names
     // Used for direct C++ call optimization within the same class
     public Map<String, String> transpiledMethodNames;
+    public Set<String> transpiledMethodsRequiringHiddenArg;
 
 
     public MethodContext(NativeObfuscator obfuscator, MethodNode method, int methodIndex, ClassNode clazz,
@@ -101,6 +102,7 @@ public class MethodContext {
         this.verifiedClassPreamble = new StringBuilder();
         this.verifiedClassPreambleInsertionPoint = -1;
         this.transpiledMethodNames = new HashMap<>();
+        this.transpiledMethodsRequiringHiddenArg = new HashSet<>();
     }
 
     public NodeCache<String> getCachedStrings() {
