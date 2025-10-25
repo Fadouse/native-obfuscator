@@ -94,6 +94,10 @@ public class Main {
         @CommandLine.Option(names = {"--java-flow-obfuscation"}, negatable = true, description = "Toggle Skidfuscator control-flow transformers (default: enabled)")
         private boolean javaFlowObfuscation = true;
 
+        @CommandLine.Option(names = {"--java-invoke-dynamic"}, negatable = true,
+                description = "Toggle invoke-dynamic reference obfuscation stage (default: disabled)")
+        private boolean javaInvokeDynamicObfuscation = false;
+
         @CommandLine.Option(names = {"--java-flow-exception-mode"}, defaultValue = "STANDARD",
                 description = "Control bogus flow exception strategy: ${COMPLETION-CANDIDATES}")
         private FlowExceptionMode javaFlowExceptionMode = FlowExceptionMode.STANDARD;
@@ -255,6 +259,7 @@ public class Main {
                     .setSkidStringObfuscation(javaStringEncryption)
                     .setSkidNumberObfuscation(javaNumberObfuscation)
                     .setSkidFlowObfuscation(javaFlowObfuscation)
+                    .setSkidInvokeDynamicObfuscation(javaInvokeDynamicObfuscation)
                     .setSkidFlowExceptionMode(javaFlowExceptionMode)
                     .setSkidSdkInjection(javaSdkInjection)
                     .setSkidVmHashing(javaVmHashing)

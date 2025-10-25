@@ -77,6 +77,10 @@ driver: {
 
 reference {
   enabled: false
+  probability: 1.0
+  maxPerMethod: 24
+  runtimeCopies: 3
+  runtimeOwner: ""
 }
 
 fileCrasher: {

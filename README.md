@@ -146,6 +146,12 @@ mypackage/myotherpackage/Class*
 
 `**` matches all entries in class/package name
 
+### Java-layer toggle flags
+
+When `--enable-java-obfuscation` is active you can fine tune Skidfuscator's stages with dedicated switches. Alongside the string/number/flow options, the new `--java-invoke-dynamic` flag replaces field and method references with encrypted `invokedynamic` stubs (inspired by Zelix KlassMaster's reference obfuscation) so that sensitive call-sites are resolved lazily through MethodHandles. The flag defaults to `false` to preserve compatibility with legacy JVMs; enable it when you want maximum confusion at the Java layer.
+
+`reference.runtimeCopies` in `defaultConfig.hocon` controls how many independent bootstrap helpers are emitted. Each target class is deterministically assigned to one of these helpers, which themselves go through the usual Skidfuscator pipeline so they inherit your configured renamers/control-flow tricks.
+
 
 `--plain-lib-name` - if you ship your .jar separately from the result native libraries, or you use it for Android, you can specify the name of the native library that it will try to search while using.
 

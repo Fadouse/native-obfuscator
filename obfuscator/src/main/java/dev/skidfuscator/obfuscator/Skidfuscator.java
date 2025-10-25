@@ -60,6 +60,7 @@ import dev.skidfuscator.obfuscator.transform.impl.misc.AhegaoTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.number.FieldConstantTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.number.NumberTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.pure.PureHashTransformer;
+import dev.skidfuscator.obfuscator.transform.impl.reference.ReferenceInvokeDynamicTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.sdk.SdkInjectorTransformer;
 import dev.skidfuscator.obfuscator.transform.impl.string.StringEncryptionType;
 import dev.skidfuscator.obfuscator.transform.impl.string.StringTransformerV2;
@@ -361,6 +362,7 @@ public class Skidfuscator {
                 try {
                     cfg.recomputeEdges();
                     mn.dump();
+                    EventBus.call(new DumpMethodTransformEvent(this, mn));
                 } catch (Exception ex){
                     if (ex instanceof IllegalStateException) {
                         throw ex;
@@ -731,9 +733,15 @@ public class Skidfuscator {
         if (!SkidFlowGraphDumper.TEST_COMPUTE) {
             final boolean enableStrings = session.isSkidStringObfuscationEnabled();
             final boolean enableNumbers = session.isSkidNumberObfuscationEnabled();
-            final boolean enableFlow = session.isSkidFlowObfuscationEnabled();
+            boolean enableFlow = session.isSkidFlowObfuscationEnabled();
             final boolean enableSdk = session.isSkidSdkInjectionEnabled();
             final boolean enableVm = session.isSkidVmHashingEnabled();
+            final boolean enableReference = session.isSkidInvokeDynamicObfuscationEnabled();
+
+            if (enableReference && enableFlow) {
+                LOGGER.warn("InvokeDynamic reference obfuscation is incompatible with flow transformers. Disabling flow-related passes.");
+                enableFlow = false;
+            }
 
             if (enableStrings) {
                 if (tsConfig.hasPath("stringEncryption.type")) {
@@ -771,6 +779,10 @@ public class Skidfuscator {
 
             if (enableSdk) {
                 transformers.add(new SdkInjectorTransformer(this));
+            }
+
+            if (enableReference) {
+                transformers.add(new ReferenceInvokeDynamicTransformer(this));
             }
         }
 

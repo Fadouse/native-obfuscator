@@ -89,6 +89,7 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox javaStringObfBox = new JCheckBox("String encryption", true);
     private final JCheckBox javaNumberObfBox = new JCheckBox("Number encryption", true);
     private final JCheckBox javaFlowObfBox = new JCheckBox("Control-flow transforms", true);
+    private final JCheckBox javaInvokeDynamicBox = new JCheckBox("InvokeDynamic references", false);
     private final JComboBox<FlowExceptionMode> javaFlowExceptionModeCombo = new JComboBox<>(FlowExceptionMode.values());
     private final JCheckBox javaSdkInjectionBox = new JCheckBox("Inject SDK runtime (experimental)", false);
     private final JCheckBox javaVmHashingBox = new JCheckBox("VM hashing (experimental)", false);
@@ -540,6 +541,8 @@ public class ObfuscatorFrame extends JFrame {
                 "Scramble numeric constants and related instanceof checks"));
         featurePanel.add(checkWithHint(javaFlowObfBox,
                 "Apply switch flattening and bogus control-flow stages"));
+        featurePanel.add(checkWithHint(javaInvokeDynamicBox,
+                "Hide method/field references behind encrypted invoke-dynamic stubs"));
         featurePanel.add(Box.createRigidArea(new Dimension(0, 4)));
 
         JPanel flowModePanel = new JPanel();
@@ -595,6 +598,7 @@ public class ObfuscatorFrame extends JFrame {
             javaStringObfBox.setEnabled(enabled);
             javaNumberObfBox.setEnabled(enabled);
             javaFlowObfBox.setEnabled(enabled);
+            javaInvokeDynamicBox.setEnabled(enabled);
             javaFlowExceptionModeCombo.setEnabled(enabled && javaFlowObfBox.isSelected());
             javaSdkInjectionBox.setEnabled(enabled);
             javaVmHashingBox.setEnabled(enabled);
@@ -610,6 +614,7 @@ public class ObfuscatorFrame extends JFrame {
         javaStringObfBox.setEnabled(false);
         javaNumberObfBox.setEnabled(false);
         javaFlowObfBox.setEnabled(false);
+        javaInvokeDynamicBox.setEnabled(false);
         javaFlowExceptionModeCombo.setEnabled(false);
         javaSdkInjectionBox.setEnabled(false);
         javaVmHashingBox.setEnabled(false);
@@ -1017,6 +1022,7 @@ public class ObfuscatorFrame extends JFrame {
                     if (javaFlowObfBox.isSelected()) {
                         publish("      ↳ Exception mode: " + javaFlowExceptionModeCombo.getSelectedItem());
                     }
+                    publish("    • InvokeDynamic references: " + (javaInvokeDynamicBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • SDK injection: " + (javaSdkInjectionBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • VM hashing: " + (javaVmHashingBox.isSelected() ? "✅ On" : "❌ Off"));
                 }
@@ -1086,6 +1092,7 @@ public class ObfuscatorFrame extends JFrame {
                     .setSkidStringObfuscation(javaStringObfBox.isSelected())
                     .setSkidNumberObfuscation(javaNumberObfBox.isSelected())
                     .setSkidFlowObfuscation(javaFlowObfBox.isSelected())
+                    .setSkidInvokeDynamicObfuscation(javaInvokeDynamicBox.isSelected())
                     .setSkidFlowExceptionMode((FlowExceptionMode) javaFlowExceptionModeCombo.getSelectedItem())
                     .setSkidSdkInjection(javaSdkInjectionBox.isSelected())
                     .setSkidVmHashing(javaVmHashingBox.isSelected())
@@ -1170,6 +1177,7 @@ public class ObfuscatorFrame extends JFrame {
         javaStringObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaNumberObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaFlowObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        javaInvokeDynamicBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaFlowExceptionModeCombo.setEnabled(enabled && enableJavaObfuscationBox.isSelected() && javaFlowObfBox.isSelected());
         javaSdkInjectionBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaVmHashingBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());

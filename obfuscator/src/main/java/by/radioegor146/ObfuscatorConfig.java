@@ -41,6 +41,7 @@ public class ObfuscatorConfig {
     private final boolean skidFlowObfuscation;
     private final boolean skidSdkInjection;
     private final boolean skidVmHashing;
+    private final boolean skidInvokeDynamicObfuscation;
     private final FlowExceptionMode skidFlowExceptionMode;
 
     public ObfuscatorConfig(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -53,7 +54,8 @@ public class ObfuscatorConfig {
                            boolean enableNativeObfuscation,
                            boolean skidStringObfuscation, boolean skidNumberObfuscation,
                            boolean skidFlowObfuscation, boolean skidSdkInjection,
-                           boolean skidVmHashing, FlowExceptionMode skidFlowExceptionMode) {
+                           boolean skidVmHashing, boolean skidInvokeDynamicObfuscation,
+                           FlowExceptionMode skidFlowExceptionMode) {
         this.inputJarPath = inputJarPath;
         this.outputDir = outputDir;
         this.inputLibs = inputLibs;
@@ -76,6 +78,7 @@ public class ObfuscatorConfig {
         this.skidFlowObfuscation = skidFlowObfuscation;
         this.skidSdkInjection = skidSdkInjection;
         this.skidVmHashing = skidVmHashing;
+        this.skidInvokeDynamicObfuscation = skidInvokeDynamicObfuscation;
         this.skidFlowExceptionMode = skidFlowExceptionMode;
     }
 
@@ -106,6 +109,7 @@ public class ObfuscatorConfig {
     public boolean isSkidFlowObfuscation() { return skidFlowObfuscation; }
     public boolean isSkidSdkInjection() { return skidSdkInjection; }
     public boolean isSkidVmHashing() { return skidVmHashing; }
+    public boolean isSkidInvokeDynamicObfuscation() { return skidInvokeDynamicObfuscation; }
     public FlowExceptionMode getSkidFlowExceptionMode() { return skidFlowExceptionMode; }
 
     // Convenience methods for accessing nested configuration properties
@@ -150,6 +154,7 @@ public class ObfuscatorConfig {
                 "  skidFlowObfuscation=%s,\n" +
                 "  skidSdkInjection=%s,\n" +
                 "  skidVmHashing=%s,\n" +
+                "  skidInvokeDynamicObfuscation=%s,\n" +
                 "  skidFlowExceptionMode=%s,\n" +
                 "  protectionConfig=%s,\n" +
                 "  antiDebugConfig=%s\n" +
@@ -157,6 +162,7 @@ public class ObfuscatorConfig {
                 inputJarPath, outputDir, platform, enableJavaObfuscation,
                 enableNativeObfuscation, skidStringObfuscation, skidNumberObfuscation,
                 skidFlowObfuscation, skidSdkInjection, skidVmHashing,
+                skidInvokeDynamicObfuscation,
                 skidFlowExceptionMode,
                 protectionConfig, antiDebugConfig);
     }
@@ -187,6 +193,7 @@ public class ObfuscatorConfig {
         private boolean skidFlowObfuscation = true;
         private boolean skidSdkInjection = false;
         private boolean skidVmHashing = false;
+        private boolean skidInvokeDynamicObfuscation = false;
         private FlowExceptionMode skidFlowExceptionMode = FlowExceptionMode.STANDARD;
 
         public Builder setInputJarPath(Path inputJarPath) {
@@ -299,6 +306,11 @@ public class ObfuscatorConfig {
             return this;
         }
 
+        public Builder setSkidInvokeDynamicObfuscation(boolean skidInvokeDynamicObfuscation) {
+            this.skidInvokeDynamicObfuscation = skidInvokeDynamicObfuscation;
+            return this;
+        }
+
         public Builder setSkidFlowExceptionMode(FlowExceptionMode skidFlowExceptionMode) {
             this.skidFlowExceptionMode = skidFlowExceptionMode;
             return this;
@@ -313,7 +325,8 @@ public class ObfuscatorConfig {
                     protectionConfig, antiDebugConfig, enableJavaObfuscation, javaObfuscationStrength,
                     javaBlackList, javaWhiteList, enableNativeObfuscation,
                     skidStringObfuscation, skidNumberObfuscation,
-                    skidFlowObfuscation, skidSdkInjection, skidVmHashing, skidFlowExceptionMode);
+                    skidFlowObfuscation, skidSdkInjection, skidVmHashing,
+                    skidInvokeDynamicObfuscation, skidFlowExceptionMode);
         }
     }
 }

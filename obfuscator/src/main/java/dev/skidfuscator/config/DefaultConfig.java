@@ -37,6 +37,10 @@ public class DefaultConfig {
         return get(path, dflt, config::getInt);
     }
 
+    public double getDouble(String path, final double dflt) {
+        return get(path, dflt, config::getDouble);
+    }
+
     public List<String> getStringList(String path, final List<String> dflt) {
         return get(path, dflt, config::getStringList);
     }
