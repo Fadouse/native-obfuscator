@@ -1,16 +1,20 @@
 package by.radioegor146.ui;
 
-import by.radioegor146.NativeObfuscator;
-import by.radioegor146.Platform;
 import by.radioegor146.AntiDebugConfig;
-import by.radioegor146.ProtectionConfig;
+import by.radioegor146.JavaFlowSettings;
+import by.radioegor146.NativeObfuscator;
 import by.radioegor146.ObfuscatorConfig;
+import by.radioegor146.Platform;
+import by.radioegor146.ProtectionConfig;
 import by.radioegor146.javaobf.JavaObfuscationConfig;
 import dev.skidfuscator.obfuscator.FlowExceptionMode;
+import dev.skidfuscator.obfuscator.transform.impl.flow.FlowObfuscationMode;
+import dev.skidfuscator.obfuscator.transform.impl.flow.FlowObfuscationProfile;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
+import javax.swing.event.ChangeListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.HierarchyEvent;
@@ -23,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.prefs.Preferences;
@@ -91,6 +96,12 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox javaFlowObfBox = new JCheckBox("Control-flow transforms", true);
     private final JCheckBox javaInvokeDynamicBox = new JCheckBox("InvokeDynamic references", false);
     private final JComboBox<FlowExceptionMode> javaFlowExceptionModeCombo = new JComboBox<>(FlowExceptionMode.values());
+    private final JComboBox<FlowObfuscationMode> javaFlowModeCombo = new JComboBox<>(FlowObfuscationMode.values());
+    private final JSpinner flowGuardDepthSpinner = new JSpinner(new SpinnerNumberModel(2, 0, 6, 1));
+    private final JSpinner flowGuardMinSpinner = new JSpinner(new SpinnerNumberModel(1, 1, 5, 1));
+    private final JSpinner flowGuardMaxSpinner = new JSpinner(new SpinnerNumberModel(2, 1, 8, 1));
+    private final JCheckBox flowOpXorCheck = new JCheckBox("XOR", true);
+    private final JCheckBox flowOpAddCheck = new JCheckBox("ADD", true);
     private final JCheckBox javaSdkInjectionBox = new JCheckBox("Inject SDK runtime (experimental)", false);
     private final JCheckBox javaVmHashingBox = new JCheckBox("VM hashing (experimental)", false);
     private final JTextField javaBlacklistField = new JTextField();
@@ -495,7 +506,7 @@ public class ObfuscatorFrame extends JFrame {
         strengthPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         strengthPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
 
-        JLabel strengthLabel = new JLabel("🎯 Obfuscation Strength");
+        JLabel strengthLabel = new JLabel("Obfuscation Strength");
         strengthLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
         strengthLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
         strengthLabel.setVerticalAlignment(SwingConstants.CENTER);
@@ -532,25 +543,25 @@ public class ObfuscatorFrame extends JFrame {
 
         JPanel featurePanel = new JPanel();
         featurePanel.setLayout(new BoxLayout(featurePanel, BoxLayout.Y_AXIS));
-        featurePanel.setBorder(new TitledBorder("🧩 Skidfuscator Stages"));
+        featurePanel.setBorder(new TitledBorder("Skidfuscator Stages"));
         featurePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         featurePanel.add(checkWithHint(javaStringObfBox,
                 "Encrypt literals and apply string equality hardening"));
         featurePanel.add(checkWithHint(javaNumberObfBox,
                 "Scramble numeric constants and related instanceof checks"));
-        featurePanel.add(checkWithHint(javaFlowObfBox,
-                "Apply switch flattening and bogus control-flow stages"));
         featurePanel.add(checkWithHint(javaInvokeDynamicBox,
                 "Hide method/field references behind encrypted invoke-dynamic stubs"));
-        featurePanel.add(Box.createRigidArea(new Dimension(0, 4)));
+
+        featurePanel.add(checkWithHint(javaFlowObfBox,
+                "Apply switch flattening and bogus control-flow stages"));
 
         JPanel flowModePanel = new JPanel();
         flowModePanel.setLayout(new BoxLayout(flowModePanel, BoxLayout.X_AXIS));
         flowModePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         flowModePanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
 
-        JLabel flowModeLabel = new JLabel("⚙️ Flow exception mode");
+        JLabel flowModeLabel = new JLabel("Flow exception mode");
         flowModeLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
         flowModeLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
         flowModePanel.add(flowModeLabel);
@@ -564,6 +575,7 @@ public class ObfuscatorFrame extends JFrame {
         flowModePanel.add(Box.createHorizontalGlue());
 
         featurePanel.add(flowModePanel);
+        featurePanel.add(buildFlowProfilePanel());
         featurePanel.add(Box.createRigidArea(new Dimension(0, 4)));
         featurePanel.add(checkWithHint(javaSdkInjectionBox,
                 "Bundle Skidfuscator's runtime SDK into the output jar"));
@@ -599,13 +611,12 @@ public class ObfuscatorFrame extends JFrame {
             javaNumberObfBox.setEnabled(enabled);
             javaFlowObfBox.setEnabled(enabled);
             javaInvokeDynamicBox.setEnabled(enabled);
-            javaFlowExceptionModeCombo.setEnabled(enabled && javaFlowObfBox.isSelected());
             javaSdkInjectionBox.setEnabled(enabled);
             javaVmHashingBox.setEnabled(enabled);
+            updateFlowControls();
         });
 
-        javaFlowObfBox.addActionListener(e ->
-                javaFlowExceptionModeCombo.setEnabled(enableJavaObfuscationBox.isSelected() && javaFlowObfBox.isSelected()));
+        javaFlowObfBox.addActionListener(e -> updateFlowControls());
 
         // Initially disable components
         javaObfStrengthCombo.setEnabled(false);
@@ -616,8 +627,15 @@ public class ObfuscatorFrame extends JFrame {
         javaFlowObfBox.setEnabled(false);
         javaInvokeDynamicBox.setEnabled(false);
         javaFlowExceptionModeCombo.setEnabled(false);
+        javaFlowModeCombo.setEnabled(false);
+        flowGuardDepthSpinner.setEnabled(false);
+        flowGuardMinSpinner.setEnabled(false);
+        flowGuardMaxSpinner.setEnabled(false);
+        flowOpXorCheck.setEnabled(false);
+        flowOpAddCheck.setEnabled(false);
         javaSdkInjectionBox.setEnabled(false);
         javaVmHashingBox.setEnabled(false);
+        updateFlowControls();
 
         JScrollPane sc = new JScrollPane(form);
         sc.setBorder(null);
@@ -725,6 +743,107 @@ public class ObfuscatorFrame extends JFrame {
         return row;
     }
 
+    private JPanel createFlowRow(String labelText, JComponent field, String hintText) {
+        JPanel row = new JPanel();
+        row.setLayout(new BoxLayout(row, BoxLayout.X_AXIS));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+
+        JLabel label = new JLabel(labelText);
+        label.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        label.setAlignmentY(Component.CENTER_ALIGNMENT);
+        row.add(label);
+
+        field.setMaximumSize(new Dimension(220, FIELD_H));
+        field.setAlignmentY(Component.CENTER_ALIGNMENT);
+        row.add(field);
+
+        row.add(Box.createRigidArea(new Dimension(8, 0)));
+        row.add(makeHint(hintText));
+        row.add(Box.createHorizontalGlue());
+
+        return row;
+    }
+
+    private JPanel buildFlowProfilePanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new TitledBorder("Flow guard profile"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        if (javaFlowModeCombo.getSelectedItem() == null) {
+            javaFlowModeCombo.setSelectedItem(FlowObfuscationMode.BALANCED);
+        }
+
+        panel.add(createFlowRow("Guard mode", javaFlowModeCombo,
+                "Performance=1 guard, Aggressive=deeper chains"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFlowRow("Guard depth", flowGuardDepthSpinner,
+                "How many chained guard blocks precede jumps"));
+
+        JPanel opCountRow = new JPanel();
+        opCountRow.setLayout(new BoxLayout(opCountRow, BoxLayout.X_AXIS));
+        opCountRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        opCountRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+
+        JLabel opCountLabel = new JLabel("Mutation rounds");
+        opCountLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        opCountLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        opCountRow.add(opCountLabel);
+
+        JPanel spinnerGroup = new JPanel();
+        spinnerGroup.setLayout(new BoxLayout(spinnerGroup, BoxLayout.X_AXIS));
+        spinnerGroup.setAlignmentY(Component.CENTER_ALIGNMENT);
+        spinnerGroup.add(new JLabel("Min"));
+        spinnerGroup.add(Box.createRigidArea(new Dimension(4, 0)));
+        flowGuardMinSpinner.setMaximumSize(new Dimension(60, FIELD_H));
+        spinnerGroup.add(flowGuardMinSpinner);
+        spinnerGroup.add(Box.createRigidArea(new Dimension(12, 0)));
+        spinnerGroup.add(new JLabel("Max"));
+        spinnerGroup.add(Box.createRigidArea(new Dimension(4, 0)));
+        flowGuardMaxSpinner.setMaximumSize(new Dimension(60, FIELD_H));
+        spinnerGroup.add(flowGuardMaxSpinner);
+        opCountRow.add(spinnerGroup);
+
+        opCountRow.add(Box.createRigidArea(new Dimension(8, 0)));
+        opCountRow.add(makeHint("Bounds for XOR/ADD mix"));
+        opCountRow.add(Box.createHorizontalGlue());
+
+        panel.add(opCountRow);
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+
+        JPanel opsRow = new JPanel();
+        opsRow.setLayout(new BoxLayout(opsRow, BoxLayout.X_AXIS));
+        opsRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        opsRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_H));
+        JLabel opsLabel = new JLabel("Allowed ops");
+        opsLabel.setPreferredSize(new Dimension(LABEL_W, FIELD_H));
+        opsLabel.setAlignmentY(Component.CENTER_ALIGNMENT);
+        opsRow.add(opsLabel);
+
+        JPanel checkGroup = new JPanel();
+        checkGroup.setLayout(new BoxLayout(checkGroup, BoxLayout.X_AXIS));
+        checkGroup.setAlignmentY(Component.CENTER_ALIGNMENT);
+        checkGroup.add(flowOpXorCheck);
+        checkGroup.add(Box.createRigidArea(new Dimension(8, 0)));
+        checkGroup.add(flowOpAddCheck);
+        opsRow.add(checkGroup);
+
+        opsRow.add(Box.createRigidArea(new Dimension(8, 0)));
+        opsRow.add(makeHint("Choose arithmetic mutations for guards"));
+        opsRow.add(Box.createHorizontalGlue());
+
+        panel.add(opsRow);
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(makeHint("Only applies when control-flow transforms are enabled."));
+
+        ChangeListener boundsListener = e -> clampFlowOpBounds();
+        flowGuardMinSpinner.addChangeListener(boundsListener);
+        flowGuardMaxSpinner.addChangeListener(boundsListener);
+
+        return panel;
+    }
+
     /**
      * Compact, baseline-friendly hint label.
      */
@@ -737,6 +856,49 @@ public class ObfuscatorFrame extends JFrame {
 
         initPerHintAutoSize(hint);
         return hint;
+    }
+
+    private void clampFlowOpBounds() {
+        int min = (Integer) flowGuardMinSpinner.getValue();
+        int max = (Integer) flowGuardMaxSpinner.getValue();
+        if (max < min) {
+            flowGuardMaxSpinner.setValue(min);
+        }
+    }
+
+    private String describeFlowOps() {
+        List<String> ops = new ArrayList<>();
+        if (flowOpXorCheck.isSelected()) ops.add("XOR");
+        if (flowOpAddCheck.isSelected()) ops.add("ADD");
+        if (ops.isEmpty()) {
+            ops.add("XOR");
+        }
+        return String.join("/", ops);
+    }
+
+    private JavaFlowSettings collectJavaFlowSettings() {
+        if (!enableJavaObfuscationBox.isSelected() || !javaFlowObfBox.isSelected()) {
+            return JavaFlowSettings.createDefault();
+        }
+
+        EnumSet<FlowObfuscationProfile.MutationType> operations = EnumSet.noneOf(FlowObfuscationProfile.MutationType.class);
+        if (flowOpXorCheck.isSelected()) {
+            operations.add(FlowObfuscationProfile.MutationType.XOR);
+        }
+        if (flowOpAddCheck.isSelected()) {
+            operations.add(FlowObfuscationProfile.MutationType.ADD);
+        }
+        if (operations.isEmpty()) {
+            operations.add(FlowObfuscationProfile.MutationType.XOR);
+        }
+
+        return JavaFlowSettings.builder()
+                .setMode((FlowObfuscationMode) javaFlowModeCombo.getSelectedItem())
+                .setGuardDepth((Integer) flowGuardDepthSpinner.getValue())
+                .setGuardOpsMin((Integer) flowGuardMinSpinner.getValue())
+                .setGuardOpsMax((Integer) flowGuardMaxSpinner.getValue())
+                .setOperations(operations)
+                .build();
     }
 
 
@@ -1021,6 +1183,12 @@ public class ObfuscatorFrame extends JFrame {
                     publish("    • Control-flow transforms: " + (javaFlowObfBox.isSelected() ? "✅ On" : "❌ Off"));
                     if (javaFlowObfBox.isSelected()) {
                         publish("      ↳ Exception mode: " + javaFlowExceptionModeCombo.getSelectedItem());
+                        publish(String.format("      ↳ Guard mode: %s, depth=%s",
+                                javaFlowModeCombo.getSelectedItem(), flowGuardDepthSpinner.getValue()));
+                        publish(String.format("      ↳ Mutations: %s–%s × %s",
+                                flowGuardMinSpinner.getValue(),
+                                flowGuardMaxSpinner.getValue(),
+                                describeFlowOps()));
                     }
                     publish("    • InvokeDynamic references: " + (javaInvokeDynamicBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • SDK injection: " + (javaSdkInjectionBox.isSelected() ? "✅ On" : "❌ Off"));
@@ -1096,6 +1264,7 @@ public class ObfuscatorFrame extends JFrame {
                     .setSkidFlowExceptionMode((FlowExceptionMode) javaFlowExceptionModeCombo.getSelectedItem())
                     .setSkidSdkInjection(javaSdkInjectionBox.isSelected())
                     .setSkidVmHashing(javaVmHashingBox.isSelected())
+                    .setJavaFlowSettings(collectJavaFlowSettings())
                         .build();
 
                 // Validate configuration
@@ -1178,15 +1347,29 @@ public class ObfuscatorFrame extends JFrame {
         javaNumberObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaFlowObfBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaInvokeDynamicBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
-        javaFlowExceptionModeCombo.setEnabled(enabled && enableJavaObfuscationBox.isSelected() && javaFlowObfBox.isSelected());
         javaSdkInjectionBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaVmHashingBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        updateFlowControls();
 
         // Anti-debug controls
         enableAntiDebugBox.setEnabled(enabled);
         updateAntiDebugControls(enabled);
 
         runButton.setEnabled(enabled);
+    }
+
+    private void updateFlowControls() {
+        boolean flowControlsEnabled = enableJavaObfuscationBox.isEnabled()
+                && enableJavaObfuscationBox.isSelected()
+                && javaFlowObfBox.isSelected();
+
+        javaFlowExceptionModeCombo.setEnabled(flowControlsEnabled);
+        javaFlowModeCombo.setEnabled(flowControlsEnabled);
+        flowGuardDepthSpinner.setEnabled(flowControlsEnabled);
+        flowGuardMinSpinner.setEnabled(flowControlsEnabled);
+        flowGuardMaxSpinner.setEnabled(flowControlsEnabled);
+        flowOpXorCheck.setEnabled(flowControlsEnabled);
+        flowOpAddCheck.setEnabled(flowControlsEnabled);
     }
     private void updateAntiDebugControls(boolean formEnabled) {
         boolean antiDebugSelected = enableAntiDebugBox.isSelected();

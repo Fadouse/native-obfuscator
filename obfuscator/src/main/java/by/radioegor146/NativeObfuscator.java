@@ -8,6 +8,7 @@ import by.radioegor146.source.StringPool;
 import dev.skidfuscator.obfuscator.FlowExceptionMode;
 import dev.skidfuscator.obfuscator.Skidfuscator;
 import dev.skidfuscator.obfuscator.SkidfuscatorSession;
+import dev.skidfuscator.obfuscator.transform.impl.flow.FlowObfuscationProfile;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -119,7 +120,8 @@ public class NativeObfuscator {
                 platform, useAnnotations, generateDebugJar, enableVirtualization, enableJit, flattenControlFlow,
                 obfuscateStrings, obfuscateConstants,
                 false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true,
-                true, true, true, false, false, false, FlowExceptionMode.STANDARD);
+                true, true, true, false, false, false, FlowExceptionMode.STANDARD,
+                JavaFlowSettings.createDefault());
     }
 
     public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -133,7 +135,8 @@ public class NativeObfuscator {
                         boolean skidStringObfuscation, boolean skidNumberObfuscation,
                         boolean skidFlowObfuscation, boolean skidSdkInjection,
                         boolean skidVmHashing, boolean skidInvokeDynamicObfuscation,
-                        FlowExceptionMode skidFlowExceptionMode) throws IOException {
+                        FlowExceptionMode skidFlowExceptionMode,
+                        JavaFlowSettings javaFlowSettings) throws IOException {
         ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
                 obfuscateStrings, obfuscateConstants);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
@@ -150,7 +153,7 @@ public class NativeObfuscator {
             Files.createDirectories(javaObfOutputDir);
 
             Path skidOutputJar = javaObfOutputDir.resolve(inputJarPath.getFileName().toString());
-            Path skidConfig = createSkidConfig(javaBlackList, javaWhiteList, javaObfOutputDir);
+            Path skidConfig = createSkidConfig(javaBlackList, javaWhiteList, javaObfOutputDir, javaFlowSettings);
             File[] skidLibs = inputLibs.stream().map(Path::toFile).toArray(File[]::new);
 
             SkidfuscatorSession session = SkidfuscatorSession.builder()
@@ -574,7 +577,8 @@ public class NativeObfuscator {
                 config.getJavaBlackList(), config.getJavaWhiteList(), config.isEnableNativeObfuscation(),
                 config.isSkidStringObfuscation(), config.isSkidNumberObfuscation(),
                 config.isSkidFlowObfuscation(), config.isSkidSdkInjection(),
-                config.isSkidVmHashing(), config.isSkidInvokeDynamicObfuscation(), config.getSkidFlowExceptionMode());
+                config.isSkidVmHashing(), config.isSkidInvokeDynamicObfuscation(),
+                config.getSkidFlowExceptionMode(), config.getJavaFlowSettings());
     }
 
     private void processWithAntiDebug(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -587,7 +591,8 @@ public class NativeObfuscator {
                         boolean skidStringObfuscation, boolean skidNumberObfuscation,
                         boolean skidFlowObfuscation, boolean skidSdkInjection,
                         boolean skidVmHashing, boolean skidInvokeDynamicObfuscation,
-                        FlowExceptionMode skidFlowExceptionMode) throws IOException {
+                        FlowExceptionMode skidFlowExceptionMode,
+                        JavaFlowSettings javaFlowSettings) throws IOException {
 
         // Call the existing process method but with extended functionality
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
@@ -597,7 +602,7 @@ public class NativeObfuscator {
                 protectionConfig.isStringObfuscationEnabled(), protectionConfig.isConstantObfuscationEnabled(),
                 enableJavaObfuscation, javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation,
                 skidStringObfuscation, skidNumberObfuscation, skidFlowObfuscation, skidSdkInjection, skidVmHashing,
-                skidInvokeDynamicObfuscation, skidFlowExceptionMode);
+                skidInvokeDynamicObfuscation, skidFlowExceptionMode, javaFlowSettings);
 
         // Generate anti-debug configuration header if any anti-debug features are enabled
         if (antiDebugConfig.isAnyEnabled()) {
@@ -882,40 +887,67 @@ public class NativeObfuscator {
         return code.toString();
     }
 
-    private Path createSkidConfig(List<String> javaBlackList, List<String> javaWhiteList, Path outputDir) throws IOException {
+    private Path createSkidConfig(List<String> javaBlackList,
+                                  List<String> javaWhiteList,
+                                  Path outputDir,
+                                  JavaFlowSettings flowSettings) throws IOException {
         boolean hasBlacklist = javaBlackList != null && !javaBlackList.isEmpty();
         boolean hasWhitelist = javaWhiteList != null && !javaWhiteList.isEmpty();
+        boolean hasCustomFlow = flowSettings != null && !flowSettings.isDefault();
 
         if (hasWhitelist) {
             logger.warn("Skidfuscator migration does not support java whitelist entries; ignoring provided list.");
         }
 
-        if (!hasBlacklist) {
-            return null;
-        }
-
-        List<String> rendered = new ArrayList<>();
-        for (String entry : javaBlackList) {
-            String pattern = convertToSkidPattern(entry);
-            if (pattern != null) {
-                rendered.add(pattern);
-            }
-        }
-
-        if (rendered.isEmpty()) {
+        if (!hasBlacklist && !hasCustomFlow) {
             return null;
         }
 
         StringBuilder builder = new StringBuilder();
-        builder.append("exempt = [\n");
-        for (int i = 0; i < rendered.size(); i++) {
-            builder.append("  \"").append(escapeForHocon(rendered.get(i))).append("\"");
-            if (i + 1 < rendered.size()) {
-                builder.append(',');
+
+        if (hasBlacklist) {
+            List<String> rendered = new ArrayList<>();
+            for (String entry : javaBlackList) {
+                String pattern = convertToSkidPattern(entry);
+                if (pattern != null) {
+                    rendered.add(pattern);
+                }
             }
-            builder.append('\n');
+
+            if (!rendered.isEmpty()) {
+                builder.append("exempt = [\n");
+                for (int i = 0; i < rendered.size(); i++) {
+                    builder.append("  \"").append(escapeForHocon(rendered.get(i))).append("\"");
+                    if (i + 1 < rendered.size()) {
+                        builder.append(',');
+                    }
+                    builder.append('\n');
+                }
+                builder.append("]\n\n");
+            }
         }
-        builder.append("]\n");
+
+        if (flowSettings != null && (hasCustomFlow || builder.length() == 0)) {
+            builder.append("flow {\n");
+            builder.append("  mode = \"").append(flowSettings.formatMode()).append("\"\n");
+            builder.append("  guardDepth = ").append(flowSettings.getGuardDepth()).append('\n');
+            builder.append("  guardOps {\n");
+            builder.append("    min = ").append(flowSettings.getGuardOpsMin()).append('\n');
+            builder.append("    max = ").append(flowSettings.getGuardOpsMax()).append('\n');
+            builder.append("    types = [");
+            int index = 0;
+            for (FlowObfuscationProfile.MutationType type : flowSettings.getOperations()) {
+                if (index++ > 0) {
+                    builder.append(", ");
+                }
+                builder.append('\"').append(type.name()).append('\"');
+            }
+            builder.append("]\n  }\n}\n");
+        }
+
+        if (builder.length() == 0) {
+            return null;
+        }
 
         Path configPath = outputDir.resolve("skidfuscator.hocon");
         Files.writeString(configPath, builder.toString(), StandardCharsets.UTF_8);

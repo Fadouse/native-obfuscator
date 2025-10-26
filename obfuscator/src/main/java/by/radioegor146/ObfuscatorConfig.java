@@ -43,6 +43,7 @@ public class ObfuscatorConfig {
     private final boolean skidVmHashing;
     private final boolean skidInvokeDynamicObfuscation;
     private final FlowExceptionMode skidFlowExceptionMode;
+    private final JavaFlowSettings javaFlowSettings;
 
     public ObfuscatorConfig(Path inputJarPath, Path outputDir, List<Path> inputLibs,
                            List<String> blackList, List<String> whiteList,
@@ -55,7 +56,8 @@ public class ObfuscatorConfig {
                            boolean skidStringObfuscation, boolean skidNumberObfuscation,
                            boolean skidFlowObfuscation, boolean skidSdkInjection,
                            boolean skidVmHashing, boolean skidInvokeDynamicObfuscation,
-                           FlowExceptionMode skidFlowExceptionMode) {
+                           FlowExceptionMode skidFlowExceptionMode,
+                           JavaFlowSettings javaFlowSettings) {
         this.inputJarPath = inputJarPath;
         this.outputDir = outputDir;
         this.inputLibs = inputLibs;
@@ -80,6 +82,7 @@ public class ObfuscatorConfig {
         this.skidVmHashing = skidVmHashing;
         this.skidInvokeDynamicObfuscation = skidInvokeDynamicObfuscation;
         this.skidFlowExceptionMode = skidFlowExceptionMode;
+        this.javaFlowSettings = javaFlowSettings == null ? JavaFlowSettings.createDefault() : javaFlowSettings;
     }
 
     // Getters for basic settings
@@ -111,6 +114,7 @@ public class ObfuscatorConfig {
     public boolean isSkidVmHashing() { return skidVmHashing; }
     public boolean isSkidInvokeDynamicObfuscation() { return skidInvokeDynamicObfuscation; }
     public FlowExceptionMode getSkidFlowExceptionMode() { return skidFlowExceptionMode; }
+    public JavaFlowSettings getJavaFlowSettings() { return javaFlowSettings; }
 
     // Convenience methods for accessing nested configuration properties
     public boolean isVirtualizationEnabled() { return protectionConfig.isVirtualizationEnabled(); }
@@ -156,6 +160,7 @@ public class ObfuscatorConfig {
                 "  skidVmHashing=%s,\n" +
                 "  skidInvokeDynamicObfuscation=%s,\n" +
                 "  skidFlowExceptionMode=%s,\n" +
+                "  javaFlowSettings=%s,\n" +
                 "  protectionConfig=%s,\n" +
                 "  antiDebugConfig=%s\n" +
                 "}",
@@ -164,6 +169,7 @@ public class ObfuscatorConfig {
                 skidFlowObfuscation, skidSdkInjection, skidVmHashing,
                 skidInvokeDynamicObfuscation,
                 skidFlowExceptionMode,
+                javaFlowSettings,
                 protectionConfig, antiDebugConfig);
     }
 
@@ -195,6 +201,7 @@ public class ObfuscatorConfig {
         private boolean skidVmHashing = false;
         private boolean skidInvokeDynamicObfuscation = false;
         private FlowExceptionMode skidFlowExceptionMode = FlowExceptionMode.STANDARD;
+        private JavaFlowSettings javaFlowSettings = JavaFlowSettings.createDefault();
 
         public Builder setInputJarPath(Path inputJarPath) {
             this.inputJarPath = inputJarPath;
@@ -316,6 +323,13 @@ public class ObfuscatorConfig {
             return this;
         }
 
+        public Builder setJavaFlowSettings(JavaFlowSettings javaFlowSettings) {
+            if (javaFlowSettings != null) {
+                this.javaFlowSettings = javaFlowSettings;
+            }
+            return this;
+        }
+
         public ObfuscatorConfig build() {
             if (inputJarPath == null || outputDir == null) {
                 throw new IllegalArgumentException("Input JAR path and output directory are required");
@@ -326,7 +340,7 @@ public class ObfuscatorConfig {
                     javaBlackList, javaWhiteList, enableNativeObfuscation,
                     skidStringObfuscation, skidNumberObfuscation,
                     skidFlowObfuscation, skidSdkInjection, skidVmHashing,
-                    skidInvokeDynamicObfuscation, skidFlowExceptionMode);
+                    skidInvokeDynamicObfuscation, skidFlowExceptionMode, javaFlowSettings);
         }
     }
 }
