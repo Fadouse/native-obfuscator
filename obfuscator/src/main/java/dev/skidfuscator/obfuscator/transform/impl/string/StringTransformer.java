@@ -153,13 +153,13 @@ public class StringTransformer extends AbstractTransformer {
                             .getEntry()
                             .add(new ReturnStmt(Type.getType(byte[].class), encryptedExpr));
 
-                    final Expr loadExpr = methodNode.getFlowPredicate().getGetter().get(unit.getBlock());
+                    final Expr predicateExpr = resolvePredicateExpr(methodNode, (SkidBlock) unit.getBlock());
                     final Expr modified = new StaticInvocationExpr(new Expr[]{new StaticInvocationExpr(
                             new Expr[0],
                             parentNode.getName(),
                             injector.getName(),
                             injector.getDesc()
-                    ), loadExpr},
+                    ), predicateExpr},
                             methodNode.getOwner(), BasicEncryptionGenerator.METHOD_NAME,
                             "([BI)Ljava/lang/String;");
 
@@ -170,5 +170,20 @@ public class StringTransformer extends AbstractTransformer {
                     }
                 });
         this.success();
+    }
+
+    private Expr resolvePredicateExpr(final SkidMethodNode methodNode, final SkidBlock block) {
+        if (!skidfuscator.getSession().isSkidFlowObfuscationEnabled()
+                || methodNode.getFlowPredicate() == null
+                || methodNode.getFlowPredicate().getGetter() == null) {
+            return new ConstantExpr(methodNode.getBlockPredicate(block), Type.INT_TYPE);
+        }
+
+        final Expr expr = methodNode.getFlowPredicate().getGetter().get(block);
+        if (expr == null) {
+            return new ConstantExpr(methodNode.getBlockPredicate(block), Type.INT_TYPE);
+        }
+
+        return expr;
     }
 }

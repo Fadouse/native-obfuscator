@@ -142,7 +142,7 @@ public class VirtualizedStringEncryptionGenerator extends AbstractEncryptionGene
                 "([B[BI)Ljava/lang/String;",
                 generateByteArrayGenerator(node.getParent(), data),
                 generateByteArrayGenerator(node.getParent(), vmCode),
-                node.getFlowPredicate().getGetter().get(block)
+                getPredicateExpr(node, block)
         );
     }
 

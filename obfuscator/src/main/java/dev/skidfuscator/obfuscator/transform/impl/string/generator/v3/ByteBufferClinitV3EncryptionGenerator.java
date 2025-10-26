@@ -102,7 +102,7 @@ public class ByteBufferClinitV3EncryptionGenerator extends AbstractEncryptionGen
                 "decryptor",
                 "([BI)Ljava/lang/String;",
                 generateByteArrayGenerator(node.getParent(), encryptedByteBuffer),
-                node.getFlowPredicate().getGetter().get(block)
+                getPredicateExpr(node, block)
         );
     }
 

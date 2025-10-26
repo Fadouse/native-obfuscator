@@ -1,9 +1,12 @@
 package dev.skidfuscator.obfuscator.transform.impl.string.generator.v3;
 
+import dev.skidfuscator.obfuscator.predicate.factory.PredicateFlowGetter;
+import dev.skidfuscator.obfuscator.predicate.opaque.BlockOpaquePredicate;
 import dev.skidfuscator.obfuscator.skidasm.SkidClassNode;
 import dev.skidfuscator.obfuscator.skidasm.SkidFieldNode;
 import dev.skidfuscator.obfuscator.skidasm.SkidMethodNode;
 import dev.skidfuscator.obfuscator.skidasm.builder.SkidMethodNodeBuilder;
+import dev.skidfuscator.obfuscator.skidasm.cfg.SkidBlock;
 import dev.skidfuscator.obfuscator.transform.impl.string.generator.EncryptionGeneratorV3;
 import dev.skidfuscator.obfuscator.util.RandomUtil;
 import dev.skidfuscator.obfuscator.util.misc.Pair;
@@ -349,6 +352,27 @@ public abstract class AbstractEncryptionGeneratorV3 implements EncryptionGenerat
 
     protected static Expr generateIntArrayGenerator(final SkidClassNode node, final int[] array) {
         return generatePrimitiveArrayGenerator(node, array, Type.INT_TYPE);
+    }
+
+    protected Expr getPredicateExpr(final SkidMethodNode node, final SkidBlock block) {
+        final BlockOpaquePredicate predicate = node.getFlowPredicate();
+        final boolean flowEnabled = node.getSkidfuscator().getSession().isSkidFlowObfuscationEnabled();
+
+        if (!flowEnabled || predicate == null) {
+            return new ConstantExpr(node.getBlockPredicate(block), Type.INT_TYPE);
+        }
+
+        final PredicateFlowGetter getter = predicate.getGetter();
+        if (getter == null) {
+            return new ConstantExpr(node.getBlockPredicate(block), Type.INT_TYPE);
+        }
+
+        final Expr expr = getter.get(block);
+        if (expr == null) {
+            return new ConstantExpr(node.getBlockPredicate(block), Type.INT_TYPE);
+        }
+
+        return expr;
     }
 
     private static Expr generatePrimitiveArrayGenerator(final SkidClassNode node, final Object array, final Type elementType) {

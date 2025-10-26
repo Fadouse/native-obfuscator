@@ -43,7 +43,7 @@ public class BytesV3EncryptionGenerator extends AbstractEncryptionGeneratorV3 {
                 "([B[BI)Ljava/lang/String;",
                 generateByteArrayGenerator(node.getParent(), payload),
                 internalKeys.copy(),
-                node.getFlowPredicate().getGetter().get(block)
+                getPredicateExpr(node, block)
         );
     }
 

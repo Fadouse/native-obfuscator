@@ -45,7 +45,7 @@ public class BytesClinitV3EncryptionGenerator extends AbstractEncryptionGenerato
                 "decryptor",
                 "([BI)Ljava/lang/String;",
                 generateByteArrayGenerator(node.getParent(), payload),
-                node.getFlowPredicate().getGetter().get(block)
+                getPredicateExpr(node, block)
         );
     }
 
