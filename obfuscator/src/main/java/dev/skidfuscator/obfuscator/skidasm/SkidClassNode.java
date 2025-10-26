@@ -12,16 +12,21 @@ import dev.skidfuscator.obfuscator.util.RandomUtil;
 import lombok.Getter;
 import org.mapleir.asm.ClassNode;
 import org.mapleir.ir.code.stmt.ReturnStmt;
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InnerClassNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.AbstractInsnNode;
+import org.topdank.byteengineer.commons.data.JarClassData;
 
 import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
  // TODO: Deprecate the getter and document the stuff
 public class SkidClassNode extends ClassNode {
@@ -37,6 +42,7 @@ public class SkidClassNode extends ClassNode {
     private final AttributeMap attributes;
 
     private transient Integer randomInt;
+    private static final Map<String, Boolean> INTERFACE_OWNER_CACHE = new ConcurrentHashMap<>();
 
     /**
      * @param node MapleIR class node object
@@ -264,15 +270,90 @@ public class SkidClassNode extends ClassNode {
     }
 
     private boolean isInterfaceOwner(final String owner) {
-        if (owner == null) {
+        if (owner == null || skidfuscator == null) {
             return false;
         }
 
+        final Boolean cached = INTERFACE_OWNER_CACHE.get(owner);
+        if (cached != null) {
+            return cached;
+        }
+
+        final Boolean resolved = resolveInterfaceFlag(owner);
+        if (resolved != null) {
+            INTERFACE_OWNER_CACHE.put(owner, resolved);
+            return resolved;
+        }
+
+        final Boolean innerResolved = resolveInterfaceFromInnerClasses(owner);
+        if (innerResolved != null) {
+            INTERFACE_OWNER_CACHE.put(owner, innerResolved);
+            return innerResolved;
+        }
+
+        return false;
+    }
+
+    private Boolean resolveInterfaceFlag(final String owner) {
         final org.mapleir.asm.ClassNode target = skidfuscator.getClassSource().findClassNode(owner);
         if (target != null) {
             return (target.node.access & Opcodes.ACC_INTERFACE) != 0;
         }
+        return resolveInterfaceFromJar(owner);
+    }
 
-        return false;
+    private Boolean resolveInterfaceFromJar(final String owner) {
+        final JarClassData jarClass = findJarClass(owner);
+        if (jarClass == null) {
+            return null;
+        }
+
+        final org.mapleir.asm.ClassNode jarNode = jarClass.getClassNode();
+        if (jarNode != null && jarNode.node != null) {
+            return (jarNode.node.access & Opcodes.ACC_INTERFACE) != 0;
+        }
+
+        final byte[] data = jarClass.getData();
+        if (data == null) {
+            return null;
+        }
+
+        try {
+            final ClassReader reader = new ClassReader(data);
+            return (reader.getAccess() & Opcodes.ACC_INTERFACE) != 0;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private JarClassData findJarClass(final String owner) {
+        if (skidfuscator.getJarContents() == null || skidfuscator.getJarContents().getClassContents() == null) {
+            return null;
+        }
+
+        final Map<String, JarClassData> classEntries = skidfuscator
+                .getJarContents()
+                .getClassContents()
+                .namedMap();
+
+        JarClassData jarClass = classEntries.get(owner + ".class");
+        if (jarClass == null) {
+            jarClass = classEntries.get(owner);
+        }
+        return jarClass;
+    }
+
+    private Boolean resolveInterfaceFromInnerClasses(final String owner) {
+        if (node.innerClasses == null) {
+            return null;
+        }
+
+        for (InnerClassNode innerClass : node.innerClasses) {
+            if (innerClass.name != null && innerClass.name.equals(owner)) {
+                return (innerClass.access & Opcodes.ACC_INTERFACE) != 0;
+            }
+        }
+
+        return null;
     }
 }

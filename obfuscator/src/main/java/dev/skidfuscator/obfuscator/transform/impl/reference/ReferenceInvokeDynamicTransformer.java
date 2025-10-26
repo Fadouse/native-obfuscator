@@ -11,11 +11,13 @@ import dev.skidfuscator.obfuscator.util.RandomUtil;
 import dev.skidfuscator.runtime.InvokeDynamicRuntime;
 import lombok.RequiredArgsConstructor;
 import org.mapleir.asm.ClassHelper;
+import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
@@ -47,6 +49,7 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
     private final List<RuntimeShard> runtimeShards = new ArrayList<>();
     private final Map<String, RuntimeShard> classAssignments = new HashMap<>();
     private final Set<String> runtimeOwnerNames = new HashSet<>();
+    private final Map<String, Integer> fieldAccessCache = new HashMap<>();
 
     public ReferenceInvokeDynamicTransformer(Skidfuscator skidfuscator) {
         super(skidfuscator, "Reference");
@@ -329,6 +332,9 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
         if (runtimeOwnerNames.contains(fieldInsn.owner)) {
             return null;
         }
+        if ((opcode == Opcodes.PUTSTATIC || opcode == Opcodes.PUTFIELD) && isFinalField(fieldInsn)) {
+            return null;
+        }
 
         final Type ownerType = Type.getObjectType(fieldInsn.owner);
         final Type fieldType = Type.getType(fieldInsn.desc);
@@ -415,5 +421,86 @@ public class ReferenceInvokeDynamicTransformer extends AbstractTransformer {
     private static final class RuntimeShard {
         private final String ownerName;
         private final Handle bootstrapHandle;
+    }
+
+    private boolean isFinalField(FieldInsnNode fieldInsn) {
+        final Integer access = resolveFieldAccess(fieldInsn.owner, fieldInsn.name, fieldInsn.desc);
+        return access != null && (access & Opcodes.ACC_FINAL) != 0;
+    }
+
+    private Integer resolveFieldAccess(String owner, String name, String desc) {
+        final String key = owner + '.' + name + desc;
+        if (fieldAccessCache.containsKey(key)) {
+            return fieldAccessCache.get(key);
+        }
+
+        Integer access = resolveFieldAccessFromLoaded(owner, name, desc);
+        if (access == null) {
+            access = resolveFieldAccessFromJar(owner, name, desc);
+        }
+
+        if (access != null) {
+            fieldAccessCache.put(key, access);
+        }
+        return access;
+    }
+
+    private Integer resolveFieldAccessFromLoaded(String owner, String name, String desc) {
+        if (skidfuscator.getClassSource() == null) {
+            return null;
+        }
+
+        final org.mapleir.asm.ClassNode target = skidfuscator.getClassSource().findClassNode(owner);
+        if (target == null || target.node == null || target.node.fields == null) {
+            return null;
+        }
+
+        for (FieldNode field : target.node.fields) {
+            if (field.name.equals(name) && field.desc.equals(desc)) {
+                return field.access;
+            }
+        }
+        return null;
+    }
+
+    private Integer resolveFieldAccessFromJar(String owner, String name, String desc) {
+        final JarClassData jarClassData = findJarClass(owner);
+        if (jarClassData == null) {
+            return null;
+        }
+
+        if (jarClassData.getClassNode() != null && jarClassData.getClassNode().node != null) {
+            for (FieldNode field : jarClassData.getClassNode().node.fields) {
+                if (field.name.equals(name) && field.desc.equals(desc)) {
+                    return field.access;
+                }
+            }
+        }
+
+        final byte[] data = jarClassData.getData();
+        if (data == null) {
+            return null;
+        }
+
+        final org.objectweb.asm.tree.ClassNode asmNode = new org.objectweb.asm.tree.ClassNode();
+        new ClassReader(data).accept(asmNode, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        for (FieldNode field : asmNode.fields) {
+            if (field.name.equals(name) && field.desc.equals(desc)) {
+                return field.access;
+            }
+        }
+        return null;
+    }
+
+    private JarClassData findJarClass(String owner) {
+        if (skidfuscator.getJarContents() == null || skidfuscator.getJarContents().getClassContents() == null) {
+            return null;
+        }
+        final Map<String, JarClassData> entries = skidfuscator.getJarContents().getClassContents().namedMap();
+        JarClassData data = entries.get(owner + ".class");
+        if (data == null) {
+            data = entries.get(owner);
+        }
+        return data;
     }
 }
