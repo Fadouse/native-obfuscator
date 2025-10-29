@@ -12,8 +12,34 @@ Warning: blacklist/whitelist usage is recommended because this tool slows down c
  - 基础虚拟化保护
  - dev分支中优化了native性能
  - windows/linux中的部分反调试
+ - **JVM 重命名混淆器** (类、方法、字段重命名，详细配置选项)
 
 **本项目仅作测试项目**
+
+---
+
+### ⭐ New Feature: JVM Renamer Obfuscation
+
+Complete JVM-level renaming obfuscation for classes, methods, and fields with detailed customization options.
+
+**Quick Start:**
+```bash
+java -jar native-obfuscator.jar \
+    --enable-java-obfuscation \
+    --enable-native-obfuscation=false \
+    --enable-renamer \
+    input.jar output-dir
+```
+
+📚 [Read the Renamer Quick Start Guide](RENAMER_QUICKSTART.md)  
+📖 [Full Renamer Documentation](RENAMER_USAGE.md)
+
+**Features:**
+- Rename all classes, methods, and fields (including injected classes)
+- Customizable prefixes and character sets for each type
+- Control package structure and naming
+- Compatible with InvokeDynamic and control flow obfuscation
+- Reflection loading compatible
 
 ---
 
