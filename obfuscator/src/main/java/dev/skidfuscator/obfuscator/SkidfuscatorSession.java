@@ -136,6 +136,10 @@ public class SkidfuscatorSession {
         return debug;
     }
 
+    public boolean isRenamer() {
+        return renamer;
+    }
+
     public boolean isSkidStringObfuscationEnabled() {
         return skidStringObfuscation;
     }

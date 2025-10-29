@@ -81,6 +81,10 @@ public class SkidRemapper extends Remapper {
         this.mapping.put(mapping, remapped);
     }
 
+    public Map<String, String> getMappings() {
+        return Collections.unmodifiableMap(mapping);
+    }
+
     @Override
     public String toString() {
         return "SkidRemapper{\n" +
