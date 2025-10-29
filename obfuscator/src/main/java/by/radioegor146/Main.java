@@ -161,6 +161,55 @@ public class Main {
         @CommandLine.Option(names = {"--anti-debug-logging"}, negatable = true,
                 description = "Toggle verbose anti-debug debug logging output")
         private Boolean antiDebugLogging;
+        
+        // Renamer configuration options
+        @CommandLine.Option(names = {"--enable-renamer"}, negatable = true,
+                description = "Enable JVM renamer obfuscation for classes, methods, and fields (default: disabled)")
+        private boolean enableRenamer = false;
+        
+        @CommandLine.Option(names = {"--rename-classes"}, negatable = true,
+                description = "Rename classes (default: enabled when renamer is enabled)")
+        private Boolean renameClasses;
+        
+        @CommandLine.Option(names = {"--rename-methods"}, negatable = true,
+                description = "Rename methods (default: enabled when renamer is enabled)")
+        private Boolean renameMethods;
+        
+        @CommandLine.Option(names = {"--rename-fields"}, negatable = true,
+                description = "Rename fields (default: enabled when renamer is enabled)")
+        private Boolean renameFields;
+        
+        @CommandLine.Option(names = {"--class-name-prefix"},
+                description = "Prefix for renamed class names (default: empty)")
+        private String classNamePrefix = "";
+        
+        @CommandLine.Option(names = {"--class-name-charset"},
+                description = "Character set for class name generation (default: a-zA-Z)")
+        private String classNameCharset;
+        
+        @CommandLine.Option(names = {"--class-keep-package-structure"}, negatable = true,
+                description = "Keep original package structure when renaming classes (default: false)")
+        private boolean classKeepPackageStructure = false;
+        
+        @CommandLine.Option(names = {"--class-package-prefix"},
+                description = "Package prefix for renamed classes (default: empty)")
+        private String classPackagePrefix = "";
+        
+        @CommandLine.Option(names = {"--method-name-prefix"},
+                description = "Prefix for renamed method names (default: empty)")
+        private String methodNamePrefix = "";
+        
+        @CommandLine.Option(names = {"--method-name-charset"},
+                description = "Character set for method name generation (default: a-zA-Z)")
+        private String methodNameCharset;
+        
+        @CommandLine.Option(names = {"--field-name-prefix"},
+                description = "Prefix for renamed field names (default: empty)")
+        private String fieldNamePrefix = "";
+        
+        @CommandLine.Option(names = {"--field-name-charset"},
+                description = "Character set for field name generation (default: a-zA-Z)")
+        private String fieldNameCharset;
 
 
         @Override
@@ -236,6 +285,35 @@ public class Main {
             }
 
             AntiDebugConfig antiDebugConfig = antiDebugBuilder.build();
+            
+            // Create renamer configuration
+            RenamerConfig renamerConfig = RenamerConfig.createDisabled();
+            if (enableRenamer) {
+                RenamerConfig.Builder renamerBuilder = new RenamerConfig.Builder()
+                        .setEnabled(true)
+                        .setRenameClasses(renameClasses != null ? renameClasses : true)
+                        .setRenameMethods(renameMethods != null ? renameMethods : true)
+                        .setRenameFields(renameFields != null ? renameFields : true)
+                        .setClassPrefix(classNamePrefix)
+                        .setClassKeepPackageStructure(classKeepPackageStructure)
+                        .setClassPackagePrefix(classPackagePrefix)
+                        .setMethodPrefix(methodNamePrefix)
+                        .setFieldPrefix(fieldNamePrefix)
+                        .setReflectionCompatible(true)
+                        .setInvokeDynamicCompatible(true);
+                
+                if (classNameCharset != null && !classNameCharset.isEmpty()) {
+                    renamerBuilder.setClassCharset(classNameCharset);
+                }
+                if (methodNameCharset != null && !methodNameCharset.isEmpty()) {
+                    renamerBuilder.setMethodCharset(methodNameCharset);
+                }
+                if (fieldNameCharset != null && !fieldNameCharset.isEmpty()) {
+                    renamerBuilder.setFieldCharset(fieldNameCharset);
+                }
+                
+                renamerConfig = renamerBuilder.build();
+            }
 
             // Create comprehensive configuration
             ObfuscatorConfig config = new ObfuscatorConfig.Builder()
@@ -263,6 +341,7 @@ public class Main {
                     .setSkidFlowExceptionMode(javaFlowExceptionMode)
                     .setSkidSdkInjection(javaSdkInjection)
                     .setSkidVmHashing(javaVmHashing)
+                    .setRenamerConfig(renamerConfig)
                     .build();
 
             // Validate configuration
