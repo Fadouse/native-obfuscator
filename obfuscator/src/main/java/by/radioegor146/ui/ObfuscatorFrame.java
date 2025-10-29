@@ -7,9 +7,12 @@ import by.radioegor146.ObfuscatorConfig;
 import by.radioegor146.Platform;
 import by.radioegor146.ProtectionConfig;
 import by.radioegor146.javaobf.JavaObfuscationConfig;
+import by.radioegor146.javaobf.JvmRenamerConfig;
+import by.radioegor146.javaobf.JvmRenamerEntityConfig;
 import dev.skidfuscator.obfuscator.FlowExceptionMode;
 import dev.skidfuscator.obfuscator.transform.impl.flow.FlowObfuscationMode;
 import dev.skidfuscator.obfuscator.transform.impl.flow.FlowObfuscationProfile;
+import dev.skidfuscator.obfuscator.renamer.config.RenamerMode;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -28,6 +31,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.prefs.Preferences;
@@ -106,6 +110,22 @@ public class ObfuscatorFrame extends JFrame {
     private final JCheckBox javaVmHashingBox = new JCheckBox("VM hashing (experimental)", false);
     private final JTextField javaBlacklistField = new JTextField();
     private final JTextField javaWhitelistField = new JTextField();
+    private final JCheckBox enableJvmRenamerBox = new JCheckBox("Enable JVM identifier renamer");
+    private final JCheckBox classRenamerBox = new JCheckBox("Rename classes", true);
+    private final JComboBox<RenamerMode> classRenamerModeCombo = new JComboBox<>(RenamerMode.values());
+    private final JSpinner classRenamerDepthSpinner = new JSpinner(new SpinnerNumberModel(3, 1, 64, 1));
+    private final JSpinner classRenamerDirDepthSpinner = new JSpinner(new SpinnerNumberModel(1, 1, 8, 1));
+    private final JSpinner classRenamerSegmentSpinner = new JSpinner(new SpinnerNumberModel(1, 1, 16, 1));
+    private final JTextField classRenamerPrefixField = new JTextField();
+    private final JTextField classRenamerCharsField = new JTextField();
+    private final JCheckBox methodRenamerBox = new JCheckBox("Rename methods", true);
+    private final JComboBox<RenamerMode> methodRenamerModeCombo = new JComboBox<>(RenamerMode.values());
+    private final JSpinner methodRenamerDepthSpinner = new JSpinner(new SpinnerNumberModel(3, 1, 32, 1));
+    private final JTextField methodRenamerCharsField = new JTextField();
+    private final JCheckBox fieldRenamerBox = new JCheckBox("Rename fields", true);
+    private final JComboBox<RenamerMode> fieldRenamerModeCombo = new JComboBox<>(RenamerMode.values());
+    private final JSpinner fieldRenamerDepthSpinner = new JSpinner(new SpinnerNumberModel(3, 1, 32, 1));
+    private final JTextField fieldRenamerCharsField = new JTextField();
     private final JButton runButton = new JButton("▶ Run Obfuscation");
     private final JTextArea logArea = new JTextArea();
     private final JProgressBar progressBar = new JProgressBar();
@@ -585,6 +605,10 @@ public class ObfuscatorFrame extends JFrame {
         form.add(featurePanel);
         form.add(Box.createRigidArea(new Dimension(0, 12)));
 
+        JPanel renamerPanel = buildJvmRenamerPanel();
+        form.add(renamerPanel);
+        form.add(Box.createRigidArea(new Dimension(0, 12)));
+
         // Java Filter Files
         JPanel filterPanel = new JPanel();
         filterPanel.setLayout(new BoxLayout(filterPanel, BoxLayout.Y_AXIS));
@@ -614,6 +638,8 @@ public class ObfuscatorFrame extends JFrame {
             javaSdkInjectionBox.setEnabled(enabled);
             javaVmHashingBox.setEnabled(enabled);
             updateFlowControls();
+            enableJvmRenamerBox.setEnabled(enabled);
+            updateRenamerControls();
         });
 
         javaFlowObfBox.addActionListener(e -> updateFlowControls());
@@ -636,6 +662,8 @@ public class ObfuscatorFrame extends JFrame {
         javaSdkInjectionBox.setEnabled(false);
         javaVmHashingBox.setEnabled(false);
         updateFlowControls();
+        enableJvmRenamerBox.setEnabled(false);
+        updateRenamerControls();
 
         JScrollPane sc = new JScrollPane(form);
         sc.setBorder(null);
@@ -765,6 +793,94 @@ public class ObfuscatorFrame extends JFrame {
         return row;
     }
 
+    private JPanel buildJvmRenamerPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new TitledBorder("🔤 JVM Renamer"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        panel.add(checkWithHint(enableJvmRenamerBox,
+                "Rename classes, methods, and fields after bytecode transforms"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(indent(buildClassRenamerPanel(), 16));
+        panel.add(Box.createRigidArea(new Dimension(0, 8)));
+        panel.add(indent(buildMemberRenamerPanel("Method names",
+                "Rename declared methods and constructors",
+                methodRenamerBox, methodRenamerModeCombo,
+                methodRenamerDepthSpinner, methodRenamerCharsField), 16));
+        panel.add(Box.createRigidArea(new Dimension(0, 8)));
+        panel.add(indent(buildMemberRenamerPanel("Field names",
+                "Rename declared fields",
+                fieldRenamerBox, fieldRenamerModeCombo,
+                fieldRenamerDepthSpinner, fieldRenamerCharsField), 16));
+
+        enableJvmRenamerBox.addActionListener(e -> updateRenamerControls());
+        classRenamerBox.addActionListener(e -> updateRenamerControls());
+        methodRenamerBox.addActionListener(e -> updateRenamerControls());
+        fieldRenamerBox.addActionListener(e -> updateRenamerControls());
+
+        classRenamerModeCombo.setSelectedItem(RenamerMode.ALPHABETICAL);
+        methodRenamerModeCombo.setSelectedItem(RenamerMode.ALPHABETICAL);
+        fieldRenamerModeCombo.setSelectedItem(RenamerMode.ALPHABETICAL);
+
+        return panel;
+    }
+
+    private JPanel buildClassRenamerPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new TitledBorder("Class names"));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        panel.add(checkWithHint(classRenamerBox,
+                "Rename application classes with optional package prefixing"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFlowRow("Mode", classRenamerModeCombo,
+                "Alphabetical, numeric, or custom token order"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFlowRow("Depth", classRenamerDepthSpinner,
+                "Minimum length for generated class names"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFlowRow("Directory depth", classRenamerDirDepthSpinner,
+                "Number of nested package segments to generate"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFlowRow("Segment length", classRenamerSegmentSpinner,
+                "Characters per generated package segment"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFieldRowPanel("Prefix path", classRenamerPrefixField,
+                "Optional package prefix (use '/' or '.' separators)"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFieldRowPanel("Character tokens", classRenamerCharsField,
+                "Comma/space separated tokens; leave blank for defaults"));
+
+        return panel;
+    }
+
+    private JPanel buildMemberRenamerPanel(String title,
+                                           String hint,
+                                           JCheckBox toggle,
+                                           JComboBox<RenamerMode> modeCombo,
+                                           JSpinner depthSpinner,
+                                           JTextField charsField) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new TitledBorder(title));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        panel.add(checkWithHint(toggle, hint));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFlowRow("Mode", modeCombo,
+                "Alphabetical, numeric, or custom token order"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFlowRow("Depth", depthSpinner,
+                "Minimum length for generated identifiers"));
+        panel.add(Box.createRigidArea(new Dimension(0, 6)));
+        panel.add(createFieldRowPanel("Character tokens", charsField,
+                "Comma/space separated tokens; leave blank for defaults"));
+
+        return panel;
+    }
+
     private JPanel buildFlowProfilePanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
@@ -876,6 +992,24 @@ public class ObfuscatorFrame extends JFrame {
         return String.join("/", ops);
     }
 
+    private List<String> parseAlphabet(String value) {
+        if (value == null) {
+            return List.of();
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return List.of();
+        }
+        LinkedHashSet<String> tokens = new LinkedHashSet<>();
+        for (String token : trimmed.split("[,\\s]+")) {
+            String t = token.trim();
+            if (!t.isEmpty()) {
+                tokens.add(t);
+            }
+        }
+        return new ArrayList<>(tokens);
+    }
+
     private JavaFlowSettings collectJavaFlowSettings() {
         if (!enableJavaObfuscationBox.isSelected() || !javaFlowObfBox.isSelected()) {
             return JavaFlowSettings.createDefault();
@@ -899,6 +1033,56 @@ public class ObfuscatorFrame extends JFrame {
                 .setGuardOpsMax((Integer) flowGuardMaxSpinner.getValue())
                 .setOperations(operations)
                 .build();
+    }
+
+    private JvmRenamerConfig collectJvmRenamerConfig() {
+        boolean javaEnabled = enableJavaObfuscationBox.isSelected();
+        boolean renamerMaster = javaEnabled && enableJvmRenamerBox.isSelected();
+
+        JvmRenamerEntityConfig classConfig = JvmRenamerEntityConfig.builder()
+                .enabled(renamerMaster && classRenamerBox.isSelected())
+                .mode((RenamerMode) classRenamerModeCombo.getSelectedItem())
+                .depth((Integer) classRenamerDepthSpinner.getValue())
+                .prefix(classRenamerPrefixField.getText())
+                .directoryDepth((Integer) classRenamerDirDepthSpinner.getValue())
+                .segmentLength((Integer) classRenamerSegmentSpinner.getValue())
+                .alphabet(parseAlphabet(classRenamerCharsField.getText()))
+                .build();
+
+        JvmRenamerEntityConfig methodConfig = JvmRenamerEntityConfig.builder()
+                .enabled(renamerMaster && methodRenamerBox.isSelected())
+                .mode((RenamerMode) methodRenamerModeCombo.getSelectedItem())
+                .depth((Integer) methodRenamerDepthSpinner.getValue())
+                .alphabet(parseAlphabet(methodRenamerCharsField.getText()))
+                .build();
+
+        JvmRenamerEntityConfig fieldConfig = JvmRenamerEntityConfig.builder()
+                .enabled(renamerMaster && fieldRenamerBox.isSelected())
+                .mode((RenamerMode) fieldRenamerModeCombo.getSelectedItem())
+                .depth((Integer) fieldRenamerDepthSpinner.getValue())
+                .alphabet(parseAlphabet(fieldRenamerCharsField.getText()))
+                .build();
+
+        return JvmRenamerConfig.builder()
+                .enabled(renamerMaster)
+                .classConfig(classConfig)
+                .methodConfig(methodConfig)
+                .fieldConfig(fieldConfig)
+                .build();
+    }
+
+    private String summarizeRenamerEntity(String label, JvmRenamerEntityConfig entity) {
+        if (entity == null || !entity.isEnabled()) {
+            return label + ": Off";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(label).append(':').append(' ')
+                .append(entity.getMode())
+                .append(" (depth=").append(entity.getDepth()).append(')');
+        if (entity.getPrefix() != null && !entity.getPrefix().isEmpty()) {
+            sb.append(", prefix=").append(entity.getPrefix());
+        }
+        return sb.toString();
     }
 
 
@@ -1166,6 +1350,9 @@ public class ObfuscatorFrame extends JFrame {
                             .map(String::trim).filter(s -> !s.isEmpty()).collect(Collectors.toList());
                 }
 
+                JavaFlowSettings flowSettings = collectJavaFlowSettings();
+                JvmRenamerConfig renamerConfig = collectJvmRenamerConfig();
+
                 publish("🛡️ Protection settings:");
                 publish("  🔧 Native Obfuscation: " + (enableNativeObfuscation ? "✅ Enabled" : "❌ Disabled"));
                 if (enableNativeObfuscation) {
@@ -1193,6 +1380,13 @@ public class ObfuscatorFrame extends JFrame {
                     publish("    • InvokeDynamic references: " + (javaInvokeDynamicBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • SDK injection: " + (javaSdkInjectionBox.isSelected() ? "✅ On" : "❌ Off"));
                     publish("    • VM hashing: " + (javaVmHashingBox.isSelected() ? "✅ On" : "❌ Off"));
+                    boolean renamerActive = renamerConfig.isEnabled() && renamerConfig.isAnyEntityEnabled();
+                    publish("    • JVM renamer: " + (renamerActive ? "✅ On" : "❌ Off"));
+                    if (renamerActive) {
+                        publish("      ↳ " + summarizeRenamerEntity("Classes", renamerConfig.getClassConfig()));
+                        publish("      ↳ " + summarizeRenamerEntity("Methods", renamerConfig.getMethodConfig()));
+                        publish("      ↳ " + summarizeRenamerEntity("Fields", renamerConfig.getFieldConfig()));
+                    }
                 }
                 publish("  🛡️ Anti-Debug Protection: " + (enableAntiDebug ? "✅ Enabled" : "❌ Disabled"));
                 if (enableAntiDebug) {
@@ -1264,7 +1458,8 @@ public class ObfuscatorFrame extends JFrame {
                     .setSkidFlowExceptionMode((FlowExceptionMode) javaFlowExceptionModeCombo.getSelectedItem())
                     .setSkidSdkInjection(javaSdkInjectionBox.isSelected())
                     .setSkidVmHashing(javaVmHashingBox.isSelected())
-                    .setJavaFlowSettings(collectJavaFlowSettings())
+                    .setJavaFlowSettings(flowSettings)
+                    .setJvmRenamerConfig(renamerConfig)
                         .build();
 
                 // Validate configuration
@@ -1350,6 +1545,8 @@ public class ObfuscatorFrame extends JFrame {
         javaSdkInjectionBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         javaVmHashingBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
         updateFlowControls();
+        enableJvmRenamerBox.setEnabled(enabled && enableJavaObfuscationBox.isSelected());
+        updateRenamerControls();
 
         // Anti-debug controls
         enableAntiDebugBox.setEnabled(enabled);
@@ -1370,6 +1567,38 @@ public class ObfuscatorFrame extends JFrame {
         flowGuardMaxSpinner.setEnabled(flowControlsEnabled);
         flowOpXorCheck.setEnabled(flowControlsEnabled);
         flowOpAddCheck.setEnabled(flowControlsEnabled);
+    }
+
+    private void updateRenamerControls() {
+        boolean javaEnabled = enableJavaObfuscationBox.isEnabled() && enableJavaObfuscationBox.isSelected();
+        enableJvmRenamerBox.setEnabled(javaEnabled);
+
+        boolean masterEnabled = javaEnabled && enableJvmRenamerBox.isSelected();
+
+        setRenamerControlsEnabled(classRenamerBox, masterEnabled,
+                classRenamerModeCombo, classRenamerDepthSpinner,
+                classRenamerDirDepthSpinner, classRenamerSegmentSpinner,
+                classRenamerPrefixField, classRenamerCharsField);
+
+        setRenamerControlsEnabled(methodRenamerBox, masterEnabled,
+                methodRenamerModeCombo, methodRenamerDepthSpinner,
+                methodRenamerCharsField);
+
+        setRenamerControlsEnabled(fieldRenamerBox, masterEnabled,
+                fieldRenamerModeCombo, fieldRenamerDepthSpinner,
+                fieldRenamerCharsField);
+    }
+
+    private void setRenamerControlsEnabled(JCheckBox toggle,
+                                           boolean masterEnabled,
+                                           JComponent... components) {
+        toggle.setEnabled(masterEnabled);
+        boolean entityEnabled = masterEnabled && toggle.isSelected();
+        for (JComponent component : components) {
+            if (component != null) {
+                component.setEnabled(entityEnabled);
+            }
+        }
     }
     private void updateAntiDebugControls(boolean formEnabled) {
         boolean antiDebugSelected = enableAntiDebugBox.isSelected();

@@ -99,6 +99,8 @@ classRenamer {
     "o0"
   ]
   depth: 3
+  directoryDepth: 1
+  segmentLength: 3
 }
 
 methodRenamer {

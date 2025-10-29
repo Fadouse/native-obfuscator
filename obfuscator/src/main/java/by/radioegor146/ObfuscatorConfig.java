@@ -1,5 +1,6 @@
 package by.radioegor146;
 
+import by.radioegor146.javaobf.JvmRenamerConfig;
 import dev.skidfuscator.obfuscator.FlowExceptionMode;
 
 import java.nio.file.Path;
@@ -44,6 +45,7 @@ public class ObfuscatorConfig {
     private final boolean skidInvokeDynamicObfuscation;
     private final FlowExceptionMode skidFlowExceptionMode;
     private final JavaFlowSettings javaFlowSettings;
+    private final JvmRenamerConfig jvmRenamerConfig;
 
     public ObfuscatorConfig(Path inputJarPath, Path outputDir, List<Path> inputLibs,
                            List<String> blackList, List<String> whiteList,
@@ -57,7 +59,8 @@ public class ObfuscatorConfig {
                            boolean skidFlowObfuscation, boolean skidSdkInjection,
                            boolean skidVmHashing, boolean skidInvokeDynamicObfuscation,
                            FlowExceptionMode skidFlowExceptionMode,
-                           JavaFlowSettings javaFlowSettings) {
+                           JavaFlowSettings javaFlowSettings,
+                           JvmRenamerConfig jvmRenamerConfig) {
         this.inputJarPath = inputJarPath;
         this.outputDir = outputDir;
         this.inputLibs = inputLibs;
@@ -83,6 +86,7 @@ public class ObfuscatorConfig {
         this.skidInvokeDynamicObfuscation = skidInvokeDynamicObfuscation;
         this.skidFlowExceptionMode = skidFlowExceptionMode;
         this.javaFlowSettings = javaFlowSettings == null ? JavaFlowSettings.createDefault() : javaFlowSettings;
+        this.jvmRenamerConfig = jvmRenamerConfig == null ? JvmRenamerConfig.disabled() : jvmRenamerConfig;
     }
 
     // Getters for basic settings
@@ -115,6 +119,8 @@ public class ObfuscatorConfig {
     public boolean isSkidInvokeDynamicObfuscation() { return skidInvokeDynamicObfuscation; }
     public FlowExceptionMode getSkidFlowExceptionMode() { return skidFlowExceptionMode; }
     public JavaFlowSettings getJavaFlowSettings() { return javaFlowSettings; }
+
+    public JvmRenamerConfig getJvmRenamerConfig() { return jvmRenamerConfig; }
 
     // Convenience methods for accessing nested configuration properties
     public boolean isVirtualizationEnabled() { return protectionConfig.isVirtualizationEnabled(); }
@@ -161,6 +167,7 @@ public class ObfuscatorConfig {
                 "  skidInvokeDynamicObfuscation=%s,\n" +
                 "  skidFlowExceptionMode=%s,\n" +
                 "  javaFlowSettings=%s,\n" +
+                "  jvmRenamerConfigEnabled=%s,\n" +
                 "  protectionConfig=%s,\n" +
                 "  antiDebugConfig=%s\n" +
                 "}",
@@ -170,6 +177,7 @@ public class ObfuscatorConfig {
                 skidInvokeDynamicObfuscation,
                 skidFlowExceptionMode,
                 javaFlowSettings,
+                jvmRenamerConfig != null && jvmRenamerConfig.isEnabled(),
                 protectionConfig, antiDebugConfig);
     }
 
@@ -202,6 +210,7 @@ public class ObfuscatorConfig {
         private boolean skidInvokeDynamicObfuscation = false;
         private FlowExceptionMode skidFlowExceptionMode = FlowExceptionMode.STANDARD;
         private JavaFlowSettings javaFlowSettings = JavaFlowSettings.createDefault();
+        private JvmRenamerConfig jvmRenamerConfig = JvmRenamerConfig.disabled();
 
         public Builder setInputJarPath(Path inputJarPath) {
             this.inputJarPath = inputJarPath;
@@ -330,6 +339,13 @@ public class ObfuscatorConfig {
             return this;
         }
 
+        public Builder setJvmRenamerConfig(JvmRenamerConfig jvmRenamerConfig) {
+            if (jvmRenamerConfig != null) {
+                this.jvmRenamerConfig = jvmRenamerConfig;
+            }
+            return this;
+        }
+
         public ObfuscatorConfig build() {
             if (inputJarPath == null || outputDir == null) {
                 throw new IllegalArgumentException("Input JAR path and output directory are required");
@@ -340,7 +356,8 @@ public class ObfuscatorConfig {
                     javaBlackList, javaWhiteList, enableNativeObfuscation,
                     skidStringObfuscation, skidNumberObfuscation,
                     skidFlowObfuscation, skidSdkInjection, skidVmHashing,
-                    skidInvokeDynamicObfuscation, skidFlowExceptionMode, javaFlowSettings);
+                    skidInvokeDynamicObfuscation, skidFlowExceptionMode, javaFlowSettings,
+                    jvmRenamerConfig);
         }
     }
 }

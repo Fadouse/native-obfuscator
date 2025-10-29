@@ -40,7 +40,9 @@ import dev.skidfuscator.obfuscator.predicate.renderer.IntegerBlockPredicateRende
 import dev.skidfuscator.obfuscator.protection.ProtectionProvider;
 import dev.skidfuscator.obfuscator.protection.TokenLoggerProtectionProvider;
 import dev.skidfuscator.obfuscator.protection.MinecraftStealerProtectionProvider;
+import dev.skidfuscator.obfuscator.renamer.JvmRenamer;
 import dev.skidfuscator.obfuscator.renamer.SkidRemapper;
+import dev.skidfuscator.obfuscator.renamer.config.RenamerSettings;
 import dev.skidfuscator.obfuscator.resolver.SkidInvocationResolver;
 import dev.skidfuscator.obfuscator.skidasm.SkidClassNode;
 import dev.skidfuscator.obfuscator.skidasm.SkidGroup;
@@ -133,6 +135,7 @@ public class Skidfuscator {
     private ExemptManager exemptAnalysis;
     private Config tsConfig;
     private DefaultSkidConfig config;
+    private RenamerSettings renamerSettings;
     private PredicateAnalysis predicateAnalysis;
 
     private final SkidRemapper classRemapper = new SkidRemapper(new HashMap<>());
@@ -380,6 +383,8 @@ public class Skidfuscator {
         LOGGER.log("Finished dumping classes...");
         EventBus.end();
 
+        runJvmRenamer();
+
         _cleanup();
 
         _dump();
@@ -480,6 +485,7 @@ public class Skidfuscator {
                     ? ConfigFactory.parseString("").resolve()
                     : ConfigFactory.parseFile(session.getConfig()).resolve();
             this.config = new DefaultSkidConfig(tsConfig, "");
+            this.renamerSettings = RenamerSettings.from(tsConfig, session);
 
             progressBar.tick();
         }
@@ -984,6 +990,26 @@ public class Skidfuscator {
         this.irFactory.clear();
         this.irFactory = null;
         System.gc();
+    }
+
+    private void runJvmRenamer() {
+        if (renamerSettings == null || !renamerSettings.isAnyEnabled()) {
+            return;
+        }
+
+        LOGGER.post("Running JVM renamer...");
+        JvmRenamer.RenamerResult result = new JvmRenamer(this, renamerSettings).execute();
+
+        if (result.hasChanges()) {
+            LOGGER.log(String.format(
+                    "Renamed %d classes, %d methods, %d fields.",
+                    result.getClassesRenamed(),
+                    result.getMethodsRenamed(),
+                    result.getFieldsRenamed()
+            ));
+        } else {
+            LOGGER.log("No JVM renaming changes were required.");
+        }
     }
 
     protected void _dump() {
