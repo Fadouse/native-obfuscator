@@ -174,7 +174,14 @@ class JvmRenamerIntegrationTest {
             assertNotNull(mainClass, "Main-Class attribute missing");
             assertNotEquals("test.Sample", mainClass, "Manifest main class was not updated");
 
-            String mainEntry = mainClass.replace('.', '/') + ".class";
+            int methodSeparator = mainClass.lastIndexOf('.');
+            assertTrue(methodSeparator > 0, "Manifest main class must include method name");
+
+            String obfuscatedClass = mainClass.substring(0, methodSeparator);
+            String obfuscatedMethod = mainClass.substring(methodSeparator + 1);
+            assertFalse(obfuscatedMethod.isEmpty(), "Manifest method segment should not be empty");
+
+            String mainEntry = obfuscatedClass.replace('.', '/') + ".class";
             assertNotNull(jar.getEntry(mainEntry), "Obfuscated main class missing from jar");
 
             List<String> classEntries = new ArrayList<>();
@@ -199,10 +206,17 @@ class JvmRenamerIntegrationTest {
             String mainClass = manifest.getMainAttributes().getValue(Attributes.Name.MAIN_CLASS);
             assertNotNull(mainClass, "Main-Class attribute missing");
 
+            int methodSeparator = mainClass.lastIndexOf('.');
+            assertTrue(methodSeparator > 0, "Main-Class should encode method segment");
+
+            String className = mainClass.substring(0, methodSeparator);
+            String methodName = mainClass.substring(methodSeparator + 1);
+            assertFalse(methodName.isEmpty(), "Method segment should not be empty");
+
             try (URLClassLoader loader = new URLClassLoader(new URL[]{outputJar.toUri().toURL()},
                     ClassLoader.getPlatformClassLoader())) {
-                Class<?> entry = Class.forName(mainClass, true, loader);
-                Method main = entry.getMethod("main", String[].class);
+                Class<?> entry = Class.forName(className, true, loader);
+                Method main = entry.getMethod(methodName, String[].class);
 
                 ByteArrayOutputStream buffer = new ByteArrayOutputStream();
                 PrintStream previous = System.out;

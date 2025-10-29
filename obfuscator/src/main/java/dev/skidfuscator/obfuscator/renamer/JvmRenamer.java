@@ -36,6 +36,7 @@ import java.util.jar.Manifest;
 public final class JvmRenamer {
     private final Skidfuscator skidfuscator;
     private final RenamerSettings settings;
+    private static final String MAIN_METHOD_DESCRIPTOR = "([Ljava/lang/String;)V";
 
     public JvmRenamer(Skidfuscator skidfuscator, RenamerSettings settings) {
         this.skidfuscator = skidfuscator;
@@ -52,6 +53,13 @@ public final class JvmRenamer {
             return RenamerResult.empty();
         }
 
+        Map<String, SkidClassNode> classIndex = new HashMap<>();
+        for (SkidClassNode classNode : classes) {
+            classIndex.put(classNode.getName(), classNode);
+        }
+
+        EntryPoint entryPoint = readManifestEntryPoint(classIndex);
+
         Map<String, String> classMappings = new LinkedHashMap<>();
         Map<MethodSignature, String> methodMappings = new LinkedHashMap<>();
         Map<FieldSignature, String> fieldMappings = new LinkedHashMap<>();
@@ -65,9 +73,57 @@ public final class JvmRenamer {
         }
 
         rewriteReflectionSites(classes, classMappings, methodMappings, fieldMappings);
-        updateManifest(classMappings);
+        updateManifest(classMappings, methodMappings, entryPoint);
 
         return new RenamerResult(classMappings.size(), methodMappings.size(), fieldMappings.size());
+    }
+
+    private EntryPoint readManifestEntryPoint(Map<String, SkidClassNode> classIndex) {
+        JarResource manifestResource = skidfuscator.getJarContents()
+                .getResourceContents()
+                .namedMap()
+                .get(JarFile.MANIFEST_NAME);
+
+        if (manifestResource == null) {
+            return null;
+        }
+
+        try (ByteArrayInputStream input = new ByteArrayInputStream(manifestResource.getData())) {
+            Manifest manifest = new Manifest(input);
+            Attributes attributes = manifest.getMainAttributes();
+            String rawMainClass = attributes.getValue(Attributes.Name.MAIN_CLASS);
+            if (rawMainClass == null || rawMainClass.isEmpty()) {
+                return null;
+            }
+
+            String owner = rawMainClass;
+            String method = "main";
+
+            String internalOwner = owner.replace('.', '/');
+            if (!classIndex.containsKey(internalOwner)) {
+                int split = rawMainClass.lastIndexOf('.');
+                if (split > 0) {
+                    owner = rawMainClass.substring(0, split);
+                    method = rawMainClass.substring(split + 1);
+                    internalOwner = owner.replace('.', '/');
+                }
+            }
+
+            SkidClassNode classNode = classIndex.get(internalOwner);
+            String descriptor = null;
+            if (classNode != null) {
+                for (MethodNode methodNode : classNode.getMethods()) {
+                    if (methodNode.getName().equals(method)) {
+                        descriptor = methodNode.getDesc();
+                        break;
+                    }
+                }
+            }
+
+            return new EntryPoint(internalOwner, method, descriptor != null ? descriptor : MAIN_METHOD_DESCRIPTOR);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to inspect manifest before renaming", exception);
+        }
     }
 
     private List<SkidClassNode> collectClasses() {
@@ -308,8 +364,10 @@ public final class JvmRenamer {
         }
     }
 
-    private void updateManifest(Map<String, String> classMappings) {
-        if (classMappings.isEmpty()) {
+    private void updateManifest(Map<String, String> classMappings,
+                                Map<MethodSignature, String> methodMappings,
+                                EntryPoint entryPoint) {
+        if (entryPoint == null) {
             return;
         }
 
@@ -330,13 +388,15 @@ public final class JvmRenamer {
                 return;
             }
 
-            String internalName = mainClass.replace('.', '/');
-            String mapped = classMappings.get(internalName);
-            if (mapped == null) {
-                return;
-            }
+            String owner = entryPoint.owner;
+            String method = entryPoint.method;
+            String descriptor = entryPoint.descriptor;
 
-            attributes.putValue(Attributes.Name.MAIN_CLASS.toString(), Type.getObjectType(mapped).getClassName());
+            String mappedOwner = classMappings.getOrDefault(owner, owner);
+            String mappedMethod = methodMappings.getOrDefault(new MethodSignature(owner, method, descriptor), method);
+
+            String manifestValue = Type.getObjectType(mappedOwner).getClassName() + '.' + mappedMethod;
+            attributes.putValue(Attributes.Name.MAIN_CLASS.toString(), manifestValue);
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             manifest.write(output);
@@ -600,6 +660,18 @@ public final class JvmRenamer {
 
         public boolean hasChanges() {
             return classesRenamed > 0 || methodsRenamed > 0 || fieldsRenamed > 0;
+        }
+    }
+
+    private static final class EntryPoint {
+        private final String owner;
+        private final String method;
+        private final String descriptor;
+
+        private EntryPoint(String owner, String method, String descriptor) {
+            this.owner = owner;
+            this.method = method;
+            this.descriptor = descriptor;
         }
     }
 
