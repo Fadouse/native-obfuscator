@@ -8,8 +8,9 @@ import org.junit.jupiter.api.Test;
 import javax.tools.JavaCompiler;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.lang.reflect.Field;
+import java.io.PrintStream;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -19,9 +20,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -35,8 +38,16 @@ class JvmRenamerIntegrationTest {
             "        java.util.function.Supplier<String> supplier = () -> message + \" \" + name;" +
             "        return supplier.get();" +
             "    }" +
-            "    public static void main(String[] args) {" +
-            "        System.out.println(new Sample().greet(args.length == 0 ? \"world\" : args[0]));" +
+            "    public static void main(String[] args) throws Exception {" +
+            "        Class<?> clazz = Class.forName(\"test.Sample\");" +
+            "        java.lang.reflect.Method method = clazz.getDeclaredMethod(\"greet\", String.class);" +
+            "        method.setAccessible(true);" +
+            "        java.lang.reflect.Field field = clazz.getDeclaredField(\"message\");" +
+            "        field.setAccessible(true);" +
+            "        Object instance = clazz.getDeclaredConstructor().newInstance();" +
+            "        field.set(instance, \"Hola\");" +
+            "        String target = args.length == 0 ? \"world\" : args[0];" +
+            "        System.out.println(method.invoke(instance, target));" +
             "    }" +
             "}";
 
@@ -114,7 +125,7 @@ class JvmRenamerIntegrationTest {
             assertTrue(Files.exists(outputJar), "Obfuscated jar was not created");
 
             verifyJarContents(outputJar);
-            verifyRuntimeMappings(outputJar);
+            verifyRuntimeBehavior(outputJar);
         } finally {
             deleteRecursive(tempDir);
         }
@@ -133,7 +144,11 @@ class JvmRenamerIntegrationTest {
     }
 
     private static void createJar(Path classesDir, Path jarPath) throws IOException {
-        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(jarPath))) {
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, "test.Sample");
+
+        try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(jarPath), manifest)) {
             List<Path> files = Files.walk(classesDir)
                     .filter(Files::isRegularFile)
                     .collect(Collectors.toList());
@@ -150,8 +165,17 @@ class JvmRenamerIntegrationTest {
     private static void verifyJarContents(Path outputJar) throws IOException {
         try (JarFile jar = new JarFile(outputJar.toFile())) {
             assertNull(jar.getEntry("test/Sample.class"), "Original class name should be absent");
-            assertNotNull(jar.getEntry("dev/skidfuscator/runtime/ReflectionMappings.class"), "Metadata class missing");
-            assertNotNull(jar.getEntry("dev/skidfuscator/runtime/ReflectionSupport.class"), "Reflection helper missing");
+            assertNull(jar.getEntry("dev/skidfuscator/runtime/ReflectionMappings.class"), "Reflection metadata should not be emitted");
+            assertNull(jar.getEntry("dev/skidfuscator/runtime/ReflectionSupport.class"), "Reflection helper should not be emitted");
+
+            Manifest manifest = jar.getManifest();
+            assertNotNull(manifest, "Manifest missing from jar");
+            String mainClass = manifest.getMainAttributes().getValue(Attributes.Name.MAIN_CLASS);
+            assertNotNull(mainClass, "Main-Class attribute missing");
+            assertNotEquals("test.Sample", mainClass, "Manifest main class was not updated");
+
+            String mainEntry = mainClass.replace('.', '/') + ".class";
+            assertNotNull(jar.getEntry(mainEntry), "Obfuscated main class missing from jar");
 
             List<String> classEntries = new ArrayList<>();
             var entries = jar.entries();
@@ -168,40 +192,32 @@ class JvmRenamerIntegrationTest {
         }
     }
 
-    private static void verifyRuntimeMappings(Path outputJar) throws Exception {
-        try (URLClassLoader loader = new URLClassLoader(new URL[]{outputJar.toUri().toURL()},
-                ClassLoader.getPlatformClassLoader())) {
-            Class<?> support = Class.forName("dev.skidfuscator.runtime.ReflectionSupport", true, loader);
-            Method obfuscateClassName = support.getMethod("obfuscateClassName", String.class);
-            Method obfuscateMethodName = support.getMethod("obfuscateMethodName", String.class, String.class, String.class);
-            Method obfuscateFieldName = support.getMethod("obfuscateFieldName", String.class, String.class, String.class);
-            Method forName = support.getMethod("forName", String.class);
+    private static void verifyRuntimeBehavior(Path outputJar) throws Exception {
+        try (JarFile jar = new JarFile(outputJar.toFile())) {
+            Manifest manifest = jar.getManifest();
+            assertNotNull(manifest, "Manifest missing");
+            String mainClass = manifest.getMainAttributes().getValue(Attributes.Name.MAIN_CLASS);
+            assertNotNull(mainClass, "Main-Class attribute missing");
 
-            String obfuscatedClass = (String) obfuscateClassName.invoke(null, "test.Sample");
-            assertNotEquals("test.Sample", obfuscatedClass, "Class name was not remapped");
+            try (URLClassLoader loader = new URLClassLoader(new URL[]{outputJar.toUri().toURL()},
+                    ClassLoader.getPlatformClassLoader())) {
+                Class<?> entry = Class.forName(mainClass, true, loader);
+                Method main = entry.getMethod("main", String[].class);
 
-            Class<?> sampleClass = Class.forName(obfuscatedClass, true, loader);
-            Object instance = sampleClass.getDeclaredConstructor().newInstance();
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                PrintStream previous = System.out;
+                PrintStream capture = new PrintStream(buffer, true, StandardCharsets.UTF_8.name());
+                try {
+                    System.setOut(capture);
+                    main.invoke(null, new Object[]{new String[]{"Agent"}});
+                } finally {
+                    capture.close();
+                    System.setOut(previous);
+                }
 
-            String obfuscatedMethod = (String) obfuscateMethodName.invoke(null,
-                    "test.Sample",
-                    "greet",
-                    "(Ljava/lang/String;)Ljava/lang/String;");
-            Method greet = sampleClass.getDeclaredMethod(obfuscatedMethod, String.class);
-            greet.setAccessible(true);
-            assertEquals("Hello Agent", greet.invoke(instance, "Agent"));
-
-            String obfuscatedField = (String) obfuscateFieldName.invoke(null,
-                    "test.Sample",
-                    "message",
-                    "Ljava/lang/String;");
-            Field field = sampleClass.getDeclaredField(obfuscatedField);
-            field.setAccessible(true);
-            field.set(instance, "Hi");
-            assertEquals("Hi Agent", greet.invoke(instance, "Agent"));
-
-            Class<?> reflected = (Class<?>) forName.invoke(null, "test.Sample");
-            assertEquals(sampleClass, reflected);
+                String output = buffer.toString(StandardCharsets.UTF_8.name());
+                assertTrue(output.contains("Hola Agent"), "Reflection-based main execution failed: " + output);
+            }
         }
     }
 

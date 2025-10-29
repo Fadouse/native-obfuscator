@@ -9,27 +9,31 @@ import dev.skidfuscator.obfuscator.renamer.generator.RadixNameGenerator;
 import dev.skidfuscator.obfuscator.skidasm.SkidClassNode;
 import dev.skidfuscator.obfuscator.skidasm.SkidFieldNode;
 import dev.skidfuscator.obfuscator.skidasm.SkidMethodNode;
-import dev.skidfuscator.runtime.ReflectionSupport;
-import org.mapleir.asm.ClassHelper;
 import org.mapleir.asm.ClassNode;
 import org.mapleir.asm.FieldNode;
 import org.mapleir.asm.MethodNode;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.InsnList;
-import org.objectweb.asm.tree.InsnNode;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.Frame;
+import org.objectweb.asm.tree.analysis.SourceInterpreter;
+import org.objectweb.asm.tree.analysis.SourceValue;
 import org.topdank.byteengineer.commons.data.JarClassData;
+import org.topdank.byteengineer.commons.data.JarResource;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.*;
+import java.util.jar.Attributes;
+import java.util.jar.JarFile;
+import java.util.jar.Manifest;
 
 public final class JvmRenamer {
-    private static final String REFLECTION_SUPPORT_INTERNAL = "dev/skidfuscator/runtime/ReflectionSupport";
-    private static final String METADATA_INTERNAL = "dev/skidfuscator/runtime/ReflectionMappings";
-
     private final Skidfuscator skidfuscator;
     private final RenamerSettings settings;
 
@@ -60,7 +64,8 @@ public final class JvmRenamer {
             return RenamerResult.empty();
         }
 
-        injectReflectionMetadata(classMappings, methodMappings, fieldMappings);
+        rewriteReflectionSites(classes, classMappings, methodMappings, fieldMappings);
+        updateManifest(classMappings);
 
         return new RenamerResult(classMappings.size(), methodMappings.size(), fieldMappings.size());
     }
@@ -92,9 +97,6 @@ public final class JvmRenamer {
         for (SkidClassNode classNode : classes) {
             usedNames.add(classNode.getName());
         }
-        usedNames.add(METADATA_INTERNAL);
-        usedNames.add(REFLECTION_SUPPORT_INTERNAL);
-
         NameGenerator generator = new RadixNameGenerator(classSettings.getAlphabet(), classSettings.getMinLength());
         ExemptManager exemptManager = skidfuscator.getExemptAnalysis();
 
@@ -236,102 +238,337 @@ public final class JvmRenamer {
         }
     }
 
-    private void injectReflectionMetadata(Map<String, String> classMappings,
-                                          Map<MethodSignature, String> methodMappings,
-                                          Map<FieldSignature, String> fieldMappings) {
+    private void rewriteReflectionSites(List<SkidClassNode> classes,
+                                        Map<String, String> classMappings,
+                                        Map<MethodSignature, String> methodMappings,
+                                        Map<FieldSignature, String> fieldMappings) {
         if (classMappings.isEmpty() && methodMappings.isEmpty() && fieldMappings.isEmpty()) {
             return;
         }
 
-        ensureReflectionSupportClass();
-
-        if (skidfuscator.getClassSource().findClassNode(METADATA_INTERNAL) != null) {
-            return;
-        }
-
-        org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
-        node.version = Opcodes.V1_8;
-        node.access = Opcodes.ACC_PUBLIC | Opcodes.ACC_FINAL | Opcodes.ACC_SUPER;
-        node.name = METADATA_INTERNAL;
-        node.superName = "java/lang/Object";
-
-        SkidClassNode metadata = new SkidClassNode(node, skidfuscator);
-
-        org.objectweb.asm.tree.MethodNode clinit = new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
-        InsnList insnList = clinit.instructions;
-
-        for (Map.Entry<String, String> entry : classMappings.entrySet()) {
-            insnList.add(new LdcInsnNode(Type.getObjectType(entry.getKey()).getClassName()));
-            insnList.add(new LdcInsnNode(Type.getObjectType(entry.getValue()).getClassName()));
-            insnList.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
-                    REFLECTION_SUPPORT_INTERNAL,
-                    "registerClassInternal",
-                    "(Ljava/lang/String;Ljava/lang/String;)V",
-                    false));
-        }
-
+        Map<String, List<Map.Entry<MethodSignature, String>>> methodsByOwner = new HashMap<>();
         for (Map.Entry<MethodSignature, String> entry : methodMappings.entrySet()) {
-            MethodSignature signature = entry.getKey();
-            insnList.add(new LdcInsnNode(Type.getObjectType(signature.owner).getClassName()));
-            insnList.add(new LdcInsnNode(signature.desc));
-            insnList.add(new LdcInsnNode(signature.name));
-            insnList.add(new LdcInsnNode(entry.getValue()));
-            insnList.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
-                    REFLECTION_SUPPORT_INTERNAL,
-                    "registerMethodInternal",
-                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
-                    false));
+            methodsByOwner.computeIfAbsent(entry.getKey().owner, key -> new ArrayList<>()).add(entry);
         }
 
+        Map<String, List<Map.Entry<FieldSignature, String>>> fieldsByOwner = new HashMap<>();
         for (Map.Entry<FieldSignature, String> entry : fieldMappings.entrySet()) {
-            FieldSignature signature = entry.getKey();
-            insnList.add(new LdcInsnNode(Type.getObjectType(signature.owner).getClassName()));
-            insnList.add(new LdcInsnNode(signature.desc));
-            insnList.add(new LdcInsnNode(signature.name));
-            insnList.add(new LdcInsnNode(entry.getValue()));
-            insnList.add(new MethodInsnNode(Opcodes.INVOKESTATIC,
-                    REFLECTION_SUPPORT_INTERNAL,
-                    "registerFieldInternal",
-                    "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
-                    false));
+            fieldsByOwner.computeIfAbsent(entry.getKey().owner, key -> new ArrayList<>()).add(entry);
         }
 
-        insnList.add(new InsnNode(Opcodes.RETURN));
-        metadata.node.methods.add(clinit);
+        IdentityHashMap<AbstractInsnNode, String> classLoadOrigins = new IdentityHashMap<>();
 
-        org.objectweb.asm.tree.MethodNode ctor = new org.objectweb.asm.tree.MethodNode(Opcodes.ACC_PRIVATE, "<init>", "()V", null, null);
-        ctor.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
-        ctor.instructions.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false));
-        ctor.instructions.add(new InsnNode(Opcodes.RETURN));
-        metadata.node.methods.add(ctor);
+        for (SkidClassNode classNode : classes) {
+            for (MethodNode method : classNode.getMethods()) {
+                org.objectweb.asm.tree.MethodNode asmMethod = method.node;
+                if (asmMethod.instructions == null || asmMethod.instructions.size() == 0) {
+                    continue;
+                }
 
-        skidfuscator.getClassSource().add(metadata);
-        skidfuscator.getJarContents().getClassContents().add(new JarClassData(
-                METADATA_INTERNAL + ".class",
-                metadata.toByteArray(),
-                metadata
-        ));
+                Analyzer<SourceValue> analyzer = new Analyzer<>(new SourceInterpreter());
+                Frame<SourceValue>[] frames;
+                try {
+                    frames = analyzer.analyze(classNode.getName(), asmMethod);
+                } catch (AnalyzerException exception) {
+                    continue;
+                }
+
+                for (int index = 0; index < asmMethod.instructions.size(); index++) {
+                    AbstractInsnNode insn = asmMethod.instructions.get(index);
+                    if (!(insn instanceof MethodInsnNode)) {
+                        continue;
+                    }
+
+                    MethodInsnNode call = (MethodInsnNode) insn;
+                    Frame<SourceValue> frame = frames[index];
+                    if (frame == null) {
+                        continue;
+                    }
+
+                    if (isClassForName(call)) {
+                        handleClassForName(call, frame, classMappings, classLoadOrigins);
+                        continue;
+                    }
+
+                    if (isClassLoaderLoadClass(call)) {
+                        handleClassLoaderLoadClass(call, frame, classMappings, classLoadOrigins);
+                        continue;
+                    }
+
+                    if (isMethodLookup(call)) {
+                        handleMethodLookup(call, frame, methodsByOwner, classLoadOrigins);
+                        continue;
+                    }
+
+                    if (isFieldLookup(call)) {
+                        handleFieldLookup(call, frame, fieldsByOwner, classLoadOrigins);
+                    }
+                }
+            }
+        }
     }
 
-    private void ensureReflectionSupportClass() {
-        if (skidfuscator.getClassSource().findClassNode(REFLECTION_SUPPORT_INTERNAL) != null) {
+    private void updateManifest(Map<String, String> classMappings) {
+        if (classMappings.isEmpty()) {
             return;
         }
 
-        final org.mapleir.asm.ClassNode runtimeNode;
-        try {
-            runtimeNode = ClassHelper.create(ReflectionSupport.class.getName());
-        } catch (IOException exception) {
-            throw new IllegalStateException("Failed to load ReflectionSupport runtime class", exception);
+        JarResource manifestResource = skidfuscator.getJarContents()
+                .getResourceContents()
+                .namedMap()
+                .get(JarFile.MANIFEST_NAME);
+
+        if (manifestResource == null) {
+            return;
         }
 
-        SkidClassNode skidNode = new SkidClassNode(runtimeNode.node, skidfuscator);
-        skidfuscator.getClassSource().add(skidNode);
-        skidfuscator.getJarContents().getClassContents().add(new JarClassData(
-                REFLECTION_SUPPORT_INTERNAL + ".class",
-                skidNode.toByteArray(),
-                skidNode
-        ));
+        try (ByteArrayInputStream input = new ByteArrayInputStream(manifestResource.getData())) {
+            Manifest manifest = new Manifest(input);
+            Attributes attributes = manifest.getMainAttributes();
+            String mainClass = attributes.getValue(Attributes.Name.MAIN_CLASS);
+            if (mainClass == null) {
+                return;
+            }
+
+            String internalName = mainClass.replace('.', '/');
+            String mapped = classMappings.get(internalName);
+            if (mapped == null) {
+                return;
+            }
+
+            attributes.putValue(Attributes.Name.MAIN_CLASS.toString(), Type.getObjectType(mapped).getClassName());
+
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            manifest.write(output);
+            manifestResource.setData(output.toByteArray());
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to update manifest after renaming", exception);
+        }
+    }
+
+    private boolean isClassForName(MethodInsnNode call) {
+        return call.getOpcode() == Opcodes.INVOKESTATIC
+                && "java/lang/Class".equals(call.owner)
+                && "forName".equals(call.name);
+    }
+
+    private boolean isClassLoaderLoadClass(MethodInsnNode call) {
+        return call.getOpcode() == Opcodes.INVOKEVIRTUAL
+                && "java/lang/ClassLoader".equals(call.owner)
+                && "loadClass".equals(call.name);
+    }
+
+    private boolean isMethodLookup(MethodInsnNode call) {
+        if (!"java/lang/Class".equals(call.owner)) {
+            return false;
+        }
+        return "getDeclaredMethod".equals(call.name) || "getMethod".equals(call.name);
+    }
+
+    private boolean isFieldLookup(MethodInsnNode call) {
+        if (!"java/lang/Class".equals(call.owner)) {
+            return false;
+        }
+        return "getDeclaredField".equals(call.name) || "getField".equals(call.name);
+    }
+
+    private void handleClassForName(MethodInsnNode call,
+                                    Frame<SourceValue> frame,
+                                    Map<String, String> classMappings,
+                                    IdentityHashMap<AbstractInsnNode, String> classLoadOrigins) {
+        Type[] args = Type.getArgumentTypes(call.desc);
+        int stackIndex = frame.getStackSize() - args.length;
+        SourceValue stringValue = frame.getStack(stackIndex);
+        String original = extractStringLiteral(stringValue);
+        if (original == null) {
+            return;
+        }
+
+        String internal = original.replace('.', '/');
+        String mapped = classMappings.get(internal);
+        if (mapped == null) {
+            return;
+        }
+
+        updateStringLiteral(stringValue, Type.getObjectType(mapped).getClassName());
+        classLoadOrigins.put(call, internal);
+    }
+
+    private void handleClassLoaderLoadClass(MethodInsnNode call,
+                                            Frame<SourceValue> frame,
+                                            Map<String, String> classMappings,
+                                            IdentityHashMap<AbstractInsnNode, String> classLoadOrigins) {
+        Type[] args = Type.getArgumentTypes(call.desc);
+        int stackIndex = frame.getStackSize() - args.length;
+        SourceValue stringValue = frame.getStack(stackIndex);
+        String original = extractStringLiteral(stringValue);
+        if (original == null) {
+            return;
+        }
+
+        String internal = original.replace('.', '/');
+        String mapped = classMappings.get(internal);
+        if (mapped == null) {
+            return;
+        }
+
+        updateStringLiteral(stringValue, Type.getObjectType(mapped).getClassName());
+        classLoadOrigins.put(call, internal);
+    }
+
+    private void handleMethodLookup(MethodInsnNode call,
+                                    Frame<SourceValue> frame,
+                                    Map<String, List<Map.Entry<MethodSignature, String>>> methodsByOwner,
+                                    IdentityHashMap<AbstractInsnNode, String> classLoadOrigins) {
+        Type[] args = Type.getArgumentTypes(call.desc);
+        int argCount = args.length;
+        int firstArgIndex = frame.getStackSize() - argCount;
+        if (call.getOpcode() != Opcodes.INVOKESTATIC) {
+            firstArgIndex -= 1;
+        }
+
+        if (firstArgIndex < 0) {
+            return;
+        }
+
+        SourceValue nameValue = frame.getStack(firstArgIndex);
+        String originalName = extractStringLiteral(nameValue);
+        if (originalName == null) {
+            return;
+        }
+
+        String owner = resolveOwnerInternal(frame, firstArgIndex, classLoadOrigins);
+        if (owner == null) {
+            return;
+        }
+
+        List<Map.Entry<MethodSignature, String>> candidates = methodsByOwner.get(owner);
+        if (candidates == null || candidates.isEmpty()) {
+            return;
+        }
+
+        List<Map.Entry<MethodSignature, String>> matches = new ArrayList<>();
+        for (Map.Entry<MethodSignature, String> entry : candidates) {
+            if (entry.getKey().name.equals(originalName)) {
+                matches.add(entry);
+            }
+        }
+
+        if (matches.isEmpty()) {
+            return;
+        }
+
+        if (matches.size() != 1) {
+            return;
+        }
+
+        updateStringLiteral(nameValue, matches.get(0).getValue());
+    }
+
+    private void handleFieldLookup(MethodInsnNode call,
+                                   Frame<SourceValue> frame,
+                                   Map<String, List<Map.Entry<FieldSignature, String>>> fieldsByOwner,
+                                   IdentityHashMap<AbstractInsnNode, String> classLoadOrigins) {
+        Type[] args = Type.getArgumentTypes(call.desc);
+        int argCount = args.length;
+        int firstArgIndex = frame.getStackSize() - argCount;
+        if (call.getOpcode() != Opcodes.INVOKESTATIC) {
+            firstArgIndex -= 1;
+        }
+
+        if (firstArgIndex < 0) {
+            return;
+        }
+
+        SourceValue nameValue = frame.getStack(firstArgIndex);
+        String originalName = extractStringLiteral(nameValue);
+        if (originalName == null) {
+            return;
+        }
+
+        String owner = resolveOwnerInternal(frame, firstArgIndex, classLoadOrigins);
+        if (owner == null) {
+            return;
+        }
+
+        List<Map.Entry<FieldSignature, String>> candidates = fieldsByOwner.get(owner);
+        if (candidates == null || candidates.isEmpty()) {
+            return;
+        }
+
+        List<Map.Entry<FieldSignature, String>> matches = new ArrayList<>();
+        for (Map.Entry<FieldSignature, String> entry : candidates) {
+            if (entry.getKey().name.equals(originalName)) {
+                matches.add(entry);
+            }
+        }
+
+        if (matches.size() != 1) {
+            return;
+        }
+
+        updateStringLiteral(nameValue, matches.get(0).getValue());
+    }
+
+    private String resolveOwnerInternal(Frame<SourceValue> frame,
+                                        int firstArgIndex,
+                                        IdentityHashMap<AbstractInsnNode, String> classLoadOrigins) {
+        int ownerIndex = firstArgIndex - 1;
+        if (ownerIndex < 0) {
+            return null;
+        }
+
+        SourceValue ownerValue = frame.getStack(ownerIndex);
+        if (ownerValue == null) {
+            return null;
+        }
+
+        for (AbstractInsnNode source : ownerValue.insns) {
+            if (source instanceof LdcInsnNode) {
+                Object cst = ((LdcInsnNode) source).cst;
+                if (cst instanceof Type) {
+                    return ((Type) cst).getInternalName();
+                }
+            }
+            if (source instanceof MethodInsnNode) {
+                String mapped = classLoadOrigins.get(source);
+                if (mapped != null) {
+                    return mapped;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private String extractStringLiteral(SourceValue value) {
+        if (value == null) {
+            return null;
+        }
+        for (AbstractInsnNode source : value.insns) {
+            if (source instanceof LdcInsnNode) {
+                Object cst = ((LdcInsnNode) source).cst;
+                if (cst instanceof String) {
+                    return (String) cst;
+                }
+            }
+        }
+        return null;
+    }
+
+    private void updateStringLiteral(SourceValue value, String updated) {
+        if (value == null) {
+            return;
+        }
+        for (AbstractInsnNode source : value.insns) {
+            if (source instanceof LdcInsnNode) {
+                LdcInsnNode ldc = (LdcInsnNode) source;
+                if (ldc.cst instanceof String) {
+                    ldc.cst = updated;
+                    return;
+                }
+            }
+        }
     }
 
     public static final class RenamerResult {
