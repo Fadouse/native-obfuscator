@@ -121,7 +121,7 @@ public class NativeObfuscator {
                 obfuscateStrings, obfuscateConstants,
                 false, "MEDIUM", new ArrayList<>(), new ArrayList<>(), true,
                 true, true, true, false, false, false, FlowExceptionMode.STANDARD,
-                JavaFlowSettings.createDefault());
+                JavaFlowSettings.createDefault(), RenamerConfig.createDisabled());
     }
 
     public void process(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -136,7 +136,7 @@ public class NativeObfuscator {
                         boolean skidFlowObfuscation, boolean skidSdkInjection,
                         boolean skidVmHashing, boolean skidInvokeDynamicObfuscation,
                         FlowExceptionMode skidFlowExceptionMode,
-                        JavaFlowSettings javaFlowSettings) throws IOException {
+                        JavaFlowSettings javaFlowSettings, RenamerConfig renamerConfig) throws IOException {
         ProtectionConfig protectionConfig = new ProtectionConfig(enableVirtualization, enableJit, flattenControlFlow,
                 obfuscateStrings, obfuscateConstants);
         if (Files.exists(outputDir) && Files.isSameFile(inputJarPath.toRealPath().getParent(), outputDir.toRealPath())) {
@@ -156,6 +156,12 @@ public class NativeObfuscator {
             Path skidConfig = createSkidConfig(javaBlackList, javaWhiteList, javaObfOutputDir, javaFlowSettings);
             File[] skidLibs = inputLibs.stream().map(Path::toFile).toArray(File[]::new);
 
+            // Enable renamer based on configuration
+            boolean enableRenamer = renamerConfig != null && renamerConfig.isEnabled();
+            if (enableRenamer) {
+                logger.info("JVM Renamer enabled: {}", renamerConfig);
+            }
+
             SkidfuscatorSession session = SkidfuscatorSession.builder()
                     .input(inputJarPath.toFile())
                     .output(skidOutputJar.toFile())
@@ -164,7 +170,7 @@ public class NativeObfuscator {
                     .analytics(false)
                     .phantom(false)
                     .fuckit(false)
-                    .renamer(false)
+                    .renamer(enableRenamer)
                     .debug(logger.isDebugEnabled())
                     .skidStringObfuscation(skidStringObfuscation)
                     .skidNumberObfuscation(skidNumberObfuscation)
@@ -578,7 +584,7 @@ public class NativeObfuscator {
                 config.isSkidStringObfuscation(), config.isSkidNumberObfuscation(),
                 config.isSkidFlowObfuscation(), config.isSkidSdkInjection(),
                 config.isSkidVmHashing(), config.isSkidInvokeDynamicObfuscation(),
-                config.getSkidFlowExceptionMode(), config.getJavaFlowSettings());
+                config.getSkidFlowExceptionMode(), config.getJavaFlowSettings(), config.getRenamerConfig());
     }
 
     private void processWithAntiDebug(Path inputJarPath, Path outputDir, List<Path> inputLibs,
@@ -592,7 +598,7 @@ public class NativeObfuscator {
                         boolean skidFlowObfuscation, boolean skidSdkInjection,
                         boolean skidVmHashing, boolean skidInvokeDynamicObfuscation,
                         FlowExceptionMode skidFlowExceptionMode,
-                        JavaFlowSettings javaFlowSettings) throws IOException {
+                        JavaFlowSettings javaFlowSettings, RenamerConfig renamerConfig) throws IOException {
 
         // Call the existing process method but with extended functionality
         process(inputJarPath, outputDir, inputLibs, blackList, whiteList, plainLibName, customLibraryDirectory,
@@ -602,7 +608,7 @@ public class NativeObfuscator {
                 protectionConfig.isStringObfuscationEnabled(), protectionConfig.isConstantObfuscationEnabled(),
                 enableJavaObfuscation, javaObfuscationStrength, javaBlackList, javaWhiteList, enableNativeObfuscation,
                 skidStringObfuscation, skidNumberObfuscation, skidFlowObfuscation, skidSdkInjection, skidVmHashing,
-                skidInvokeDynamicObfuscation, skidFlowExceptionMode, javaFlowSettings);
+                skidInvokeDynamicObfuscation, skidFlowExceptionMode, javaFlowSettings, renamerConfig);
 
         // Generate anti-debug configuration header if any anti-debug features are enabled
         if (antiDebugConfig.isAnyEnabled()) {
